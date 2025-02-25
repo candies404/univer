@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,66 +14,82 @@
  * limitations under the License.
  */
 
-import type { Dependency } from '@univerjs/core';
-import { DependentOn, Inject, Injector, Plugin, UniverInstanceType } from '@univerjs/core';
-import { UniverSheetsHyperLinkPlugin } from '@univerjs/sheets-hyper-link';
+import type { Dependency, Workbook } from '@univerjs/core';
+import type { IUniverSheetsHyperLinkUIConfig } from './controllers/config.schema';
+import { DependentOn, IConfigService, Inject, Injector, merge, Plugin, UniverInstanceType } from '@univerjs/core';
+import { UniverDocsUIPlugin } from '@univerjs/docs-ui';
 import { IRenderManagerService } from '@univerjs/engine-render';
-import { SheetsHyperLinkRemoveSheetController } from './controllers/remove-sheet.controller';
+import { UniverSheetsHyperLinkPlugin } from '@univerjs/sheets-hyper-link';
+import { SheetsHyperLinkAutoFillController } from './controllers/auto-fill.controller';
+import { defaultPluginConfig, SHEETS_HYPER_LINK_UI_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
+import { SheetsHyperLinkCopyPasteController } from './controllers/copy-paste.controller';
+import { SheetsHyperLinkPermissionController } from './controllers/hyper-link-permission.controller';
+import { SheetsHyperLinkPopupController } from './controllers/popup.controller';
 import { SheetsHyperLinkRenderController, SheetsHyperLinkRenderManagerController } from './controllers/render-controllers/render.controller';
+import { SheetsHyperLinkUIController } from './controllers/ui.controller';
+import { SheetHyperLinkUrlController } from './controllers/url.controller';
 import { SheetsHyperLinkPopupService } from './services/popup.service';
 import { SheetsHyperLinkResolverService } from './services/resolver.service';
-import { SheetHyperLinkSetRangeController } from './controllers/set-range.controller';
-import { SheetsHyperLinkPopupController } from './controllers/popup.controller';
-import type { IUniverSheetsHyperLinkUIConfig } from './controllers/ui.controller';
-import { SheetsHyperLinkUIController } from './controllers/ui.controller';
+import { SheetsHyperLinkSidePanelService } from './services/side-panel.service';
 import { SHEET_HYPER_LINK_UI_PLUGIN } from './types/const';
-import { SheetsHyperLinkAutoFillController } from './controllers/auto-fill.controller';
-import { SheetsHyperLinkCopyPasteController } from './controllers/copy-paste.controller';
-import { SheetHyperLinkUrlController } from './controllers/url.controller';
-import { SheetsHyperLinkPermissionController } from './controllers/hyper-link-permission.controller';
 
-@DependentOn(UniverSheetsHyperLinkPlugin)
+@DependentOn(UniverSheetsHyperLinkPlugin, UniverDocsUIPlugin)
 export class UniverSheetsHyperLinkUIPlugin extends Plugin {
     static override pluginName: string = SHEET_HYPER_LINK_UI_PLUGIN;
     static override type = UniverInstanceType.UNIVER_SHEET;
 
     constructor(
-        private _config: IUniverSheetsHyperLinkUIConfig,
+        private readonly _config: Partial<IUniverSheetsHyperLinkUIConfig> = defaultPluginConfig,
         @Inject(Injector) protected override _injector: Injector,
-        @IRenderManagerService private readonly _renderManagerService: IRenderManagerService
+        @IConfigService private readonly _configService: IConfigService
     ) {
         super();
+
+        // Manage the plugin configuration.
+        const { menu, ...rest } = merge(
+            {},
+            defaultPluginConfig,
+            this._config
+        );
+        if (menu) {
+            this._configService.setConfig('menu', menu, { merge: true });
+        }
+        this._configService.setConfig(SHEETS_HYPER_LINK_UI_PLUGIN_CONFIG_KEY, rest);
     }
 
     override onStarting(): void {
         const dependencies: Dependency[] = [
             [SheetsHyperLinkResolverService],
             [SheetsHyperLinkPopupService],
+            [SheetsHyperLinkSidePanelService],
 
-            [SheetsHyperLinkRemoveSheetController],
             [SheetsHyperLinkRenderManagerController],
-            [SheetHyperLinkSetRangeController],
+
             [SheetsHyperLinkPopupController],
-            [
-                SheetsHyperLinkUIController,
-                {
-                    useFactory: () => this._injector.createInstance(SheetsHyperLinkUIController, this._config),
-                },
-            ],
+            [SheetsHyperLinkUIController],
             [SheetsHyperLinkAutoFillController],
             [SheetsHyperLinkCopyPasteController],
             [SheetsHyperLinkPermissionController],
             [SheetHyperLinkUrlController],
-        ];
 
+        ];
         dependencies.forEach((dep) => this._injector.add(dep));
+
+        this._injector.get(SheetsHyperLinkRenderManagerController);
     }
 
     override onReady(): void {
-        const renderDependencies: Dependency[] = [
-            [SheetsHyperLinkRenderController],
-        ];
+        const renderManager = this._injector.get(IRenderManagerService);
+        renderManager.registerRenderModule<Workbook>(UniverInstanceType.UNIVER_SHEET, [SheetsHyperLinkRenderController] as Dependency);
 
-        renderDependencies.forEach((d) => this._renderManagerService.registerRenderModule(UniverInstanceType.UNIVER_SHEET, d));
+        this._injector.get(SheetsHyperLinkAutoFillController);
+        this._injector.get(SheetsHyperLinkCopyPasteController);
+        this._injector.get(SheetsHyperLinkUIController);
+    }
+
+    override onRendered(): void {
+        this._injector.get(SheetsHyperLinkPermissionController);
+        this._injector.get(SheetHyperLinkUrlController);
+        this._injector.get(SheetsHyperLinkPopupController);
     }
 }

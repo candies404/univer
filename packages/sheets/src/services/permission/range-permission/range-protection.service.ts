@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,22 +14,25 @@
  * limitations under the License.
  */
 
-import { Disposable, Inject, IPermissionService, IResourceManagerService, LifecycleStages, OnLifecycle } from '@univerjs/core';
+import type { UnitAction } from '@univerjs/protocol';
 
-import { UnitAction, UnitObject, UniverType } from '@univerjs/protocol';
 import type { IObjectModel } from '../../../model/range-protection-rule.model';
+import { Disposable, Inject, IPermissionService, IResourceManagerService, IUniverInstanceService } from '@univerjs/core';
+import { UnitObject, UniverType } from '@univerjs/protocol';
 import { RangeProtectionRuleModel } from '../../../model/range-protection-rule.model';
 
-import { getAllRangePermissionPoint } from './util';
+import { RangeProtectionCache } from '../../../model/range-protection.cache';
+import { baseProtectionActions, getAllRangePermissionPoint } from './util';
 
 const PLUGIN_NAME = 'SHEET_RANGE_PROTECTION_PLUGIN';
 
-@OnLifecycle(LifecycleStages.Starting, RangeProtectionService)
 export class RangeProtectionService extends Disposable {
     constructor(
         @Inject(RangeProtectionRuleModel) private _selectionProtectionRuleModel: RangeProtectionRuleModel,
         @Inject(IPermissionService) private _permissionService: IPermissionService,
-        @Inject(IResourceManagerService) private _resourceManagerService: IResourceManagerService
+        @Inject(IResourceManagerService) private _resourceManagerService: IResourceManagerService,
+        @Inject(RangeProtectionCache) private _selectionProtectionCache: RangeProtectionCache,
+        @Inject(IUniverInstanceService) private _univerInstanceService: IUniverInstanceService
 
     ) {
         super();
@@ -37,7 +40,7 @@ export class RangeProtectionService extends Disposable {
         this._initRuleChange();
     }
 
-    private _initRuleChange() {
+    private _initRuleChange(): void {
         this.disposeWithMe(
             this._selectionProtectionRuleModel.ruleChange$.subscribe((info) => {
                 switch (info.type) {
@@ -108,7 +111,7 @@ export class RangeProtectionService extends Disposable {
                                 objectID: rule.permissionId,
                                 unitID: unitId,
                                 objectType: UnitObject.SelectRange,
-                                actions: [UnitAction.View, UnitAction.Edit],
+                                actions: baseProtectionActions,
                             });
                         });
 
@@ -119,13 +122,13 @@ export class RangeProtectionService extends Disposable {
                                 this._permissionService.addPermissionPoint(instance);
                             });
                         });
+                        this._selectionProtectionCache.reBuildCache(unitId, subUnitId);
                     });
                 },
-                onUnLoad: () => {
-                    this._selectionProtectionRuleModel.deleteUnitModel();
+                onUnLoad: (unitId: string) => {
+                    this._selectionProtectionCache.deleteUnit(unitId);
                 },
             })
         );
     }
 }
-

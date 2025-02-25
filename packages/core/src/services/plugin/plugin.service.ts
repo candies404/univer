@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,18 +14,87 @@
  * limitations under the License.
  */
 
-import { skip } from 'rxjs';
 import type { Ctor, IDisposable } from '../../common/di';
+import type { UnitType } from '../../common/unit';
+import { skip } from 'rxjs';
 import { Inject, Injector } from '../../common/di';
-
+import { UniverInstanceType } from '../../common/unit';
 import { Disposable } from '../../shared/lifecycle';
-import { type UnitType, UniverInstanceType } from '../../common/unit';
 import { LifecycleStages } from '../lifecycle/lifecycle';
-import { getLifecycleStagesAndBefore, LifecycleInitializerService, LifecycleService } from '../lifecycle/lifecycle.service';
+import { getLifecycleStagesAndBefore, LifecycleService } from '../lifecycle/lifecycle.service';
 import { ILogService } from '../log/log.service';
-import { DependentOnSymbol, Plugin, type PluginCtor, PluginRegistry, PluginStore } from './plugin';
 
 const INIT_LAZY_PLUGINS_TIMEOUT = 4;
+
+export const DependentOnSymbol = Symbol('DependentOn');
+
+export type PluginCtor<T extends Plugin = Plugin> = Ctor<T> & {
+    type: UnitType;
+    pluginName: string;
+    [DependentOnSymbol]?: PluginCtor[];
+};
+
+/**
+ * Plug-in base class, all plug-ins must inherit from this base class. Provide basic methods.
+ */
+export abstract class Plugin extends Disposable {
+    static pluginName: string;
+
+    static type: UnitType = UniverInstanceType.UNIVER_UNKNOWN;
+
+    protected abstract _injector: Injector;
+
+    onStarting(): void {
+        // empty
+    }
+
+    onReady(): void {
+        // empty
+    }
+
+    onRendered(): void {
+        // empty
+    }
+
+    onSteady(): void {
+        // empty
+    }
+
+    getUnitType(): UnitType {
+        return (this.constructor as typeof Plugin).type;
+    }
+
+    getPluginName(): string {
+        return (this.constructor as typeof Plugin).pluginName;
+    }
+}
+
+interface IPluginRegistryItem {
+    plugin: PluginCtor<Plugin>;
+    // eslint-disable-next-line ts/no-explicit-any
+    options: any;
+}
+
+/**
+ * Store plugin instances.
+ */
+export class PluginStore {
+    private readonly _plugins: Plugin[] = [];
+
+    addPlugin(plugin: Plugin): void {
+        this._plugins.push(plugin);
+    }
+
+    removePlugins(): Plugin[] {
+        const plugins = this._plugins.slice();
+        this._plugins.length = 0;
+        return plugins;
+    }
+
+    forEachPlugin(callback: (plugin: Plugin) => void): void {
+        this._plugins.forEach(callback);
+    }
+}
 
 /**
  * Use this decorator to declare dependencies among plugins. If a dependent plugin is not registered yet,
@@ -49,85 +118,79 @@ export function DependentOn(...plugins: PluginCtor<Plugin>[]) {
  * This service manages plugin registration.
  */
 export class PluginService implements IDisposable {
-    private readonly _pluginHolderForUniver: PluginHolder;
-    private readonly _pluginHoldersForTypes = new Map<UnitType, PluginHolder>();
+    private _pluginRegistry = new Map<string, IPluginRegistryItem>();
+    private readonly _pluginStore = new PluginStore();
+
     private readonly _seenPlugins = new Set<string>();
+    private readonly _loadedPlugins = new Set<string>();
+
+    private readonly _loadedPluginTypes = new Set<UnitType>([UniverInstanceType.UNIVER_UNKNOWN]);
 
     constructor(
-        @Inject(Injector) private readonly _injector: Injector
-    ) {
-        this._pluginHolderForUniver = this._injector.createInstance(PluginHolder,
-            this._checkPluginSeen.bind(this),
-            this._immediateInitPlugin.bind(this)
-        );
-
-        this._pluginHolderForUniver.start();
-    }
+        @Inject(Injector) private readonly _injector: Injector,
+        @Inject(LifecycleService) private readonly _lifecycleService: LifecycleService,
+        @ILogService private readonly _logService: ILogService
+    ) { }
 
     dispose(): void {
-        this._clearFlushTimer();
-
-        for (const holder of this._pluginHoldersForTypes.values()) {
-            holder.dispose();
-        }
-
-        this._pluginHolderForUniver.dispose();
+        this._pluginStore.removePlugins().forEach((p) => p.dispose());
+        this._flushTimerByType.forEach((timer) => clearTimeout(timer));
     }
 
-    /** Register a plugin into univer. */
+    /**
+     * Register a plugin into univer.
+     * @param {PluginCtor} ctor The plugin's constructor.
+     * @param {ConstructorParameters} [config] The configuration for the plugin.
+     */
     registerPlugin<T extends PluginCtor>(ctor: T, config?: ConstructorParameters<T>[0]): void {
         this._assertPluginValid(ctor);
-        this._scheduleInitPlugin();
+
+        const item = { plugin: ctor, options: config };
+        this._pluginRegistry.set(ctor.pluginName, item);
+
+        this._logService.debug('[PluginService]', `Plugin "${ctor.pluginName}" registered.`);
 
         const { type } = ctor;
-        if (type === UniverInstanceType.UNIVER_UNKNOWN) {
-            this._pluginHolderForUniver.register(ctor, config);
-            this._pluginHolderForUniver.flush();
-        } else {
-            // If it's type is for specific document, we should run them at specific time.
-            const holder = this._ensurePluginHolderForType(type);
-            holder.register(ctor, config);
+        if (this._loadedPluginTypes.has(type)) {
+            if (type === UniverInstanceType.UNIVER_UNKNOWN) {
+                this._loadFromPlugins([item]);
+            } else {
+                this._flushType(type);
+            }
         }
     }
 
-    startPluginForType(type: UniverInstanceType): void {
-        const holder = this._ensurePluginHolderForType(type);
-        holder.start();
-    }
-
-    private _ensurePluginHolderForType(type: UnitType): PluginHolder {
-        if (!this._pluginHoldersForTypes.has(type)) {
-            const pluginHolder = this._injector.createInstance(PluginHolder,
-                this._checkPluginSeen.bind(this),
-                this._immediateInitPlugin.bind(this)
-            );
-            this._pluginHoldersForTypes.set(type, pluginHolder);
-            return pluginHolder;
+    startPluginsForType(type: UnitType): void {
+        if (this._loadedPluginTypes.has(type)) {
+            return;
         }
 
-        return this._pluginHoldersForTypes.get(type)!;
+        this._loadPluginsForType(type);
     }
 
-    private _immediateInitPlugin(ctor: PluginCtor): void {
-        this._seenPlugins.add(ctor.pluginName);
+    private _loadPluginsForType(type: UnitType): void {
+        const keys = Array.from(this._pluginRegistry.keys());
+        const allPluginsOfThisType: IPluginRegistryItem[] = [];
+        keys.forEach((key) => {
+            const item = this._pluginRegistry.get(key)!;
+            if (item.plugin.type === type) {
+                allPluginsOfThisType.push(item);
+            }
+        });
 
-        const holder = this._ensurePluginHolderForType(ctor.type);
-        holder.immediateInitPlugin(ctor);
-    }
-
-    private _checkPluginSeen(ctor: PluginCtor<Plugin>): boolean {
-        return this._seenPlugins.has(ctor.pluginName);
+        this._loadFromPlugins(allPluginsOfThisType);
+        this._loadedPluginTypes.add(type);
     }
 
     private _assertPluginValid(ctor: PluginCtor<Plugin>): void {
         const { type, pluginName } = ctor;
 
         if (type === UniverInstanceType.UNRECOGNIZED) {
-            throw new Error(`[PluginService]: invalid plugin type for ${ctor}. Please assign a "type" to your plugin.`);
+            throw new Error(`[PluginService]: invalid plugin type for ${ctor.name}. Please assign a "type" to your plugin.`);
         }
 
-        if (pluginName === '') {
-            throw new Error(`[PluginService]: no plugin name for ${ctor}. Please assign a "pluginName" to your plugin.`);
+        if (!pluginName) {
+            throw new Error(`[PluginService]: no plugin name for ${ctor.name}. Please assign a "pluginName" to your plugin.`);
         }
 
         if (this._seenPlugins.has(pluginName)) {
@@ -137,165 +200,101 @@ export class PluginService implements IDisposable {
         this._seenPlugins.add(ctor.pluginName);
     }
 
-    private _flushTimer?: number;
-    private _scheduleInitPlugin() {
-        if (this._flushTimer === undefined) {
-            this._flushTimer = setTimeout(
-                () => {
-                    if (!this._pluginHolderForUniver.started) {
-                        this._pluginHolderForUniver.start();
-                    }
-
-                    this._flushPlugins();
-                    this._clearFlushTimer();
-                },
-                INIT_LAZY_PLUGINS_TIMEOUT
-            ) as unknown as number;
+    private _flushTimerByType = new Map<UnitType, number>();
+    private _flushType(type: UnitType): void {
+        if (this._flushTimerByType.get(type) === undefined) {
+            this._flushTimerByType.set(type, setTimeout(() => {
+                this._loadPluginsForType(type);
+                this._flushTimerByType.delete(type);
+            }, INIT_LAZY_PLUGINS_TIMEOUT) as unknown as number);
         }
     }
 
-    private _clearFlushTimer() {
-        if (this._flushTimer) {
-            clearTimeout(this._flushTimer);
-            this._flushTimer = undefined;
-        }
-    }
+    private _loadFromPlugins(plugins: IPluginRegistryItem[]): void {
+        const finalPlugins: IPluginRegistryItem[] = [];
 
-    private _flushPlugins() {
-        this._pluginHolderForUniver.flush();
-        for (const [_, holder] of this._pluginHoldersForTypes) {
-            if (holder.started) {
-                holder.flush();
+        // We do a topological sort here to make sure that plugins with dependencies are registered first.
+        const visited = new Set<string>();
+        const dfs = (item: IPluginRegistryItem) => {
+            const { plugin } = item;
+            const { pluginName } = plugin;
+
+            // See if the plugin has already been loaded or visited.
+            if (this._loadedPlugins.has(pluginName) || visited.has(pluginName)) {
+                return;
             }
-        }
-    }
-}
 
-export class PluginHolder extends Disposable {
-    protected _started: boolean = false;
-    get started(): boolean { return this._started; }
+            // Mark it self as visited.
+            visited.add(pluginName);
 
-    private _warnedAboutOnStartingDeprecation = false;
+            // We do not need to load it again because it will be loaded in this `_loadFromPlugins`.
+            this._pluginRegistry.delete(pluginName);
 
-    /** Plugin constructors waiting to be initialized. */
-    protected readonly _pluginRegistry = new PluginRegistry();
-    /** Stores initialized plugin instances. */
-    protected readonly _pluginStore = new PluginStore();
+            const dependents = plugin[DependentOnSymbol];
+            if (dependents) {
+                // Loop over its dependencies.
+                dependents.forEach((d) => {
+                    // If the dependency is among those who are already registered, we should push it to the queue.
+                    const dItem = this._pluginRegistry.get(d.pluginName);
+                    if (dItem) {
+                        dfs(dItem);
+                    } else if (!this._seenPlugins.has(d.pluginName) && !visited.has(d.pluginName)) {
+                        // Otherwise, it maybe a plugin that is not registered yet.
+                        if (plugin.type === UniverInstanceType.UNIVER_UNKNOWN && d.type !== UniverInstanceType.UNIVER_UNKNOWN) {
+                            throw new Error('[PluginService]: cannot register a plugin with Univer type that depends on a plugin with other type. '
+                                + `The dependent is ${plugin.pluginName} and the dependency is ${d.pluginName}.`
+                            );
+                        }
 
-    private readonly _awaitingPlugins: Plugin[][] = [];
+                        if (plugin.type !== d.type && d.type !== UniverInstanceType.UNIVER_UNKNOWN) {
+                            this._logService.debug(
+                                '[PluginService]',
+                                `Plugin "${pluginName}" depends on "${d.pluginName}" which has different type.`
+                            );
+                        }
 
-    constructor(
-        private _checkPluginRegistered: (pluginCtor: PluginCtor) => boolean,
-        private _registerPlugin: <T extends PluginCtor>(plugin: T, config?: ConstructorParameters<T>[0]) => void,
-        @ILogService protected readonly _logService: ILogService,
-        @Inject(Injector) protected readonly _injector: Injector,
-        @Inject(LifecycleService) protected readonly _lifecycleService: LifecycleService,
-        @Inject(LifecycleInitializerService) protected readonly _lifecycleInitializerService: LifecycleInitializerService
-    ) {
-        super();
+                        this._logService.debug(
+                            '[PluginService]',
+                            `Plugin "${pluginName}" depends on "${d.pluginName}" which is not registered. Univer will automatically register it with default configuration.`
+                        );
 
-        this.disposeWithMe(this._lifecycleService.lifecycle$.pipe(skip(1)).subscribe((stage) => {
-            this._awaitingPlugins.forEach((plugins) => this._runStage(plugins, stage));
-        }));
-    }
+                        this._assertPluginValid(d);
+                        dfs({ plugin: d, options: undefined });
+                    }
+                });
+            }
 
-    override dispose(): void {
-        super.dispose();
-
-        this._pluginStore.forEachPlugin((plugin) => plugin.dispose());
-        this._pluginStore.removePlugins();
-
-        this._pluginRegistry.removePlugins();
-
-        this._awaitingPlugins.length = 0;
-    }
-
-    register<T extends PluginCtor<Plugin>>(pluginCtor: T, config?: ConstructorParameters<T>[0]): void {
-        this._pluginRegistry.registerPlugin(pluginCtor, config);
-    }
-
-    immediateInitPlugin<T extends Plugin>(plugin: PluginCtor<T>): void {
-        const p = this._initPlugin(plugin, undefined);
-        this._pluginsRunLifecycle([p]);
-    }
-
-    start(): void {
-        if (this._started) return;
-        this._started = true;
-
-        this.flush();
-    }
-
-    flush(): void {
-        if (!this._started) {
-            return;
+            finalPlugins.push(item);
         };
 
-        const plugins = this._pluginRegistry.getRegisterPlugins().map(({ plugin, options }) => this._initPlugin(plugin, options));
-        if (!plugins.length) {
-            return;
-        }
+        plugins.forEach((p) => dfs(p));
 
-        this._pluginsRunLifecycle(plugins);
-        this._pluginRegistry.removePlugins();
+        const pluginInstances = finalPlugins.map((p) => this._initPlugin(p.plugin, p.options));
+        this._pluginsRunLifecycle(pluginInstances);
     }
-
-    // eslint-disable-next-line ts/no-explicit-any
-    private _initPlugin<T extends Plugin>(plugin: PluginCtor<T>, options: any): Plugin {
-        const dependents = plugin[DependentOnSymbol];
-        if (dependents) {
-            const exhaustUnregisteredDependents = () => {
-                const NotRegistered = dependents.find((d) => !this._checkPluginRegistered(d));
-                if (NotRegistered) {
-                    this._logService.debug(
-                        '[PluginService]',
-                        `plugin "${plugin.pluginName}" depends on "${NotRegistered.pluginName}" which is not registered. Univer will automatically register it with default configuration.`
-                    );
-
-                    this._registerPlugin(NotRegistered, undefined);
-                    return true;
-                }
-
-                return false;
-            };
-
-            while (exhaustUnregisteredDependents()) {
-                continue;
-            }
-        }
-
-        // eslint-disable-next-line ts/no-explicit-any
-        const pluginInstance: Plugin = this._injector.createInstance(plugin as unknown as Ctor<any>, options);
-        this._pluginStore.addPlugin(pluginInstance);
-
-        return pluginInstance;
-    }
-
-    // Here we should be careful with the sequence of which plugin should run first. We should manually add a queue here.
-    // Because lately registered plugins may get executed first.
 
     protected _pluginsRunLifecycle(plugins: Plugin[]): void {
         // Let plugins go through already reached lifecycle stages.
-        getLifecycleStagesAndBefore(this._lifecycleService.stage).subscribe((stage) => this._runStage(plugins, stage));
-        // Push to the queue for later lifecycle.
-        this._awaitingPlugins.push(plugins);
+        const currentStage = this._lifecycleService.stage;
+        getLifecycleStagesAndBefore(currentStage).subscribe((stage) => this._runStage(plugins, stage));
+
+        if (currentStage !== LifecycleStages.Steady) {
+            const subscription = this._lifecycleService.lifecycle$.pipe(
+                skip(1)
+            ).subscribe((stage) => {
+                this._runStage(plugins, stage);
+                if (stage === LifecycleStages.Steady) {
+                    subscription.unsubscribe();
+                }
+            });
+        }
     }
 
     private _runStage(plugins: Plugin[], stage: LifecycleStages): void {
         plugins.forEach((p) => {
             switch (stage) {
                 case LifecycleStages.Starting:
-                    if (p.onStarting.length > 0 && p.onStarting !== Plugin.prototype.onStarting && !this._warnedAboutOnStartingDeprecation) {
-                        this._logService.warn(
-                            '[PluginService]',
-                            p.onStarting.length,
-                            `Plugin "${p.getPluginName()}" is using deprecated "onStarting" method with arguments. Please use "this._injector" instead.`
-                        );
-
-                        this._warnedAboutOnStartingDeprecation = true;
-                    }
-
-                    p.onStarting(this._injector);
+                    p.onStarting();
                     break;
                 case LifecycleStages.Ready:
                     p.onReady();
@@ -308,8 +307,15 @@ export class PluginHolder extends Disposable {
                     break;
             }
         });
+    }
 
-        // Plugins run first, and then we should run the modules.
-        this._lifecycleInitializerService.initModulesOnStage(stage);
+    private _initPlugin<T extends Plugin>(plugin: PluginCtor<T>, options: any): Plugin {
+        // eslint-disable-next-line ts/no-explicit-any
+        const pluginInstance: Plugin = this._injector.createInstance(plugin as unknown as Ctor<any>, options);
+        this._pluginStore.addPlugin(pluginInstance);
+        this._loadedPlugins.add(plugin.pluginName);
+
+        this._logService.debug('[PluginService]', `Plugin "${pluginInstance.getPluginName()}" loaded.`);
+        return pluginInstance;
     }
 }

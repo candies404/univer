@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,11 @@
  * limitations under the License.
  */
 
+import './global.css';
+
 export { UniverSheetsDrawingUIPlugin } from './plugin';
-export { SheetCanvasFloatDomManagerService, type ICanvasFloatDom } from './services/canvas-float-dom-manager.service';
+export { type ICanvasFloatDom, type IDOMAnchor, SheetCanvasFloatDomManagerService } from './services/canvas-float-dom-manager.service';
+export { SHEETS_IMAGE_MENU_ID } from './views/menu/image.menu';
 
 // #region - all commands
 
@@ -30,7 +33,8 @@ export { UngroupSheetDrawingCommand } from './commands/commands/ungroup-sheet-dr
 
 export { ClearSheetDrawingTransformerOperation } from './commands/operations/clear-drawing-transformer.operation';
 export { EditSheetDrawingOperation } from './commands/operations/edit-sheet-drawing.operation';
-export { InsertFloatImageOperation, InsertCellImageOperation } from './commands/operations/insert-image.operation';
+export { type IInsertImageCommandParams, InsertFloatImageCommand } from './commands/commands/insert-image.command';
 export { SidebarSheetDrawingOperation } from './commands/operations/open-drawing-panel.operation';
 
+export type { IDeleteDrawingCommandParams, IInsertDrawingCommandParams, ISetDrawingCommandParams } from './commands/commands/interfaces';
 // #endregion

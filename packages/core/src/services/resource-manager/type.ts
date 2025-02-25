@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,11 @@
  */
 
 import type { Observable } from 'rxjs';
-import type { UniverInstanceType } from '@univerjs/core';
 import type { IDisposable } from '../../common/di';
+import type { UniverInstanceType } from '../../common/unit';
 import { createIdentifier } from '../../common/di';
-import type { IWorkbookData } from '../../types/interfaces/i-workbook-data';
+
+export type IResources = Array<{ id?: string; name: string; data: string }>;
 
 type IBusinessName = 'SHEET' | 'DOC';
 export type IResourceName = `${IBusinessName}_${string}_PLUGIN`;
@@ -27,7 +28,8 @@ export interface IResourceHook<T = any> {
     businesses: UniverInstanceType[];
     onLoad: (unitID: string, resource: T) => void;
     onUnLoad: (unitID: string) => void;
-    toJson: (unitID: string) => string;
+    toJson: (unitID: string, model?: T) => string;
+
     parseJson: (bytes: string) => T;
 }
 
@@ -36,10 +38,15 @@ export interface IResourceManagerService {
     registerPluginResource: <T = any>(hook: IResourceHook<T>) => IDisposable;
     disposePluginResource: (pluginName: IResourceName) => void;
     getAllResourceHooks: () => IResourceHook[];
-    getResources: (unitId: string) => IWorkbookData['resources'];
-    getResourcesByType: (unitId: string, type: UniverInstanceType) => IWorkbookData['resources'];
-    loadResources: (unitId: string, resources: IWorkbookData['resources']) => void;
+
+    /**
+     * @deprecated You should get resource with type specified.
+     */
+    getResources(unitId: string): IResources;
+    getResources(unitId: string, type: UniverInstanceType): IResources;
+    getResourcesByType: (unitId: string, type: UniverInstanceType) => IResources;
+    loadResources: (unitId: string, resources?: IResources) => void;
     unloadResources(unitId: string): void;
 }
 
-export const IResourceManagerService = createIdentifier<IResourceManagerService>('resource-manager-service');
+export const IResourceManagerService = createIdentifier<IResourceManagerService>('core.resource-manager.service');

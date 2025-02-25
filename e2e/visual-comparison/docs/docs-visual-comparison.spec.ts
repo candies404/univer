@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,22 @@
  */
 
 import { expect, test } from '@playwright/test';
+import { generateSnapshotName } from '../const';
 
 test('diff default doc content', async ({ page }) => {
+    let errored = false;
+
+    page.on('pageerror', (error) => {
+        console.error('Page error:', error);
+        errored = true;
+    });
+
     await page.goto('http://localhost:3000/docs/');
     await page.waitForTimeout(2000);
 
     await page.evaluate(() => window.E2EControllerAPI.loadDefaultDoc());
     await page.waitForTimeout(5000);
 
-    await expect(page).toHaveScreenshot({ maxDiffPixels: 30 });
+    await expect(page).toHaveScreenshot(generateSnapshotName('default-doc'), { maxDiffPixels: 30 });
+    expect(errored).toBeFalsy();
 });

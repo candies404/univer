@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,11 +14,15 @@
  * limitations under the License.
  */
 
-import type { IWorkbookData } from '@univerjs/core';
-import { ICommandService, IUniverInstanceService, LocaleType, Plugin, Univer, UniverInstanceType } from '@univerjs/core';
-
 import type { Dependency } from '../../common/di';
+import type { IWorkbookData } from '../../sheets/typedef';
 import { Inject, Injector } from '../../common/di';
+import { UniverInstanceType } from '../../common/unit';
+import { LocaleType } from '../../types/enum';
+import { Univer } from '../../univer';
+import { ICommandService } from '../command/command.service';
+import { IUniverInstanceService } from '../instance/instance.service';
+import { Plugin } from '../plugin/plugin.service';
 
 const TEST_WORKBOOK_DATA_DEMO: () => IWorkbookData = () => ({
     id: 'test',
@@ -42,7 +46,7 @@ const TEST_WORKBOOK_DATA_DEMO: () => IWorkbookData = () => ({
     name: '',
     sheetOrder: [],
     styles: {},
-    resources: [],
+    resources: [{ name: 'SHEET_test_PLUGIN', data: '{"a":123}' }],
 });
 
 export const createTestBed = (dependencies?: Dependency[]) => {
@@ -59,9 +63,6 @@ export const createTestBed = (dependencies?: Dependency[]) => {
             @Inject(Injector) override readonly _injector: Injector
         ) {
             super();
-        }
-
-        override onStarting(): void {
             dependencies?.forEach((d) => this._injector.add(d));
         }
     }
@@ -69,7 +70,7 @@ export const createTestBed = (dependencies?: Dependency[]) => {
     univer.registerPlugin(TestPlugin);
 
     const workbookJson = TEST_WORKBOOK_DATA_DEMO();
-    const workbook = univer.createUniverSheet(workbookJson);
+    const workbook = univer.createUnit(UniverInstanceType.UNIVER_SHEET, workbookJson);
 
     const univerInstanceService = injector.get(IUniverInstanceService);
     const commandService = injector.get(ICommandService);

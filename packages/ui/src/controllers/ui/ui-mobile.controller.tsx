@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,18 +14,20 @@
  * limitations under the License.
  */
 
-import { connectInjector, Disposable, Inject, Injector, IUniverInstanceService, LifecycleService, LifecycleStages, Optional, toDisposable, UniverInstanceType } from '@univerjs/core';
-import { IRenderManagerService } from '@univerjs/engine-render';
 import type { IDisposable } from '@univerjs/core';
-import { render as createRoot, unmount } from 'rc-util/lib/React/render';
-import React from 'react';
-
+import type { IUniverUIConfig } from '../config.schema';
+import type { IUIController, IWorkbenchOptions } from './ui.controller';
+import { Disposable, Inject, Injector, IUniverInstanceService, LifecycleService, LifecycleStages, Optional, toDisposable, UniverInstanceType } from '@univerjs/core';
+import { render as createRoot, unmount } from '@univerjs/design';
+import { IRenderManagerService } from '@univerjs/engine-render';
 import { ILayoutService } from '../../services/layout/layout.service';
+import { IMenuManagerService } from '../../services/menu/menu-manager.service';
 import { BuiltInUIPart, IUIPartsService } from '../../services/parts/parts.service';
-import { CanvasPopup } from '../../views/components/popup/CanvasPopup';
+import { connectInjector } from '../../utils/di';
 import { FloatDom } from '../../views/components/dom/FloatDom';
-import { MobileApp } from '../../views/MobileApp';
-import type { IUIController, IUniverUIConfig, IWorkbenchOptions } from './ui.controller';
+import { CanvasPopup } from '../../views/components/popup/CanvasPopup';
+import { MobileWorkbench } from '../../views/mobile-workbench/MobileWorkbench';
+import { menuSchema } from '../menus/menu.schema';
 
 const STEADY_TIMEOUT = 3000;
 
@@ -37,6 +39,7 @@ export class MobileUIController extends Disposable implements IUIController {
         @Inject(Injector) private readonly _injector: Injector,
         @Inject(LifecycleService) private readonly _lifecycleService: LifecycleService,
         @IUIPartsService private readonly _uiPartsService: IUIPartsService,
+        @IMenuManagerService private readonly _menuManagerService: IMenuManagerService,
         @Optional(ILayoutService) private readonly _layoutService?: ILayoutService
     ) {
         super();
@@ -46,12 +49,16 @@ export class MobileUIController extends Disposable implements IUIController {
         Promise.resolve().then(() => this._bootstrapWorkbench());
     }
 
+    private _initMenus(): void {
+        this._menuManagerService.mergeMenu(menuSchema);
+    }
+
     private _bootstrapWorkbench(): void {
         this.disposeWithMe(
             bootstrap(this._injector, this._config, (canvasElement, containerElement) => {
                 if (this._layoutService) {
                     this.disposeWithMe(this._layoutService.registerRootContainerElement(containerElement));
-                    this.disposeWithMe(this._layoutService.registerCanvasElement(canvasElement as HTMLCanvasElement));
+                    this.disposeWithMe(this._layoutService.registerContentElement(canvasElement as HTMLCanvasElement));
                 }
 
                 this._renderManagerService.currentRender$.subscribe((renderId) => {
@@ -103,7 +110,7 @@ function bootstrap(
         mountContainer = createContainer('univer');
     }
 
-    const ConnectedApp = connectInjector(MobileApp, injector);
+    const ConnectedApp = connectInjector(MobileWorkbench, injector);
     const onRendered = (canvasElement: HTMLElement) => callback(canvasElement, mountContainer);
 
     function render() {

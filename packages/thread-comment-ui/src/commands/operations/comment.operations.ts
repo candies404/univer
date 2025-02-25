@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-import type { IAccessor, ICommand } from '@univerjs/core';
 import { CommandType } from '@univerjs/core';
 import { ISidebarService } from '@univerjs/ui';
+import type { IAccessor, ICommand } from '@univerjs/core';
 import { ThreadCommentPanelService } from '../../services/thread-comment-panel.service';
 import { THREAD_COMMENT_PANEL } from '../../types/const';
 
@@ -34,7 +34,7 @@ export const ToggleSheetCommentPanelOperation: ICommand = {
             sidebarService.open({
                 header: { title: 'threadCommentUI.panel.title' },
                 children: { label: THREAD_COMMENT_PANEL },
-                width: 320,
+                width: 330,
             });
             panelService.setPanelVisible(true);
         }

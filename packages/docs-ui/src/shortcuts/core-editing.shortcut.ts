@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@
 
 import type { IShortcutItem } from '@univerjs/ui';
 import { KeyCode } from '@univerjs/ui';
-
-import { DeleteLeftCommand, DeleteRightCommand, EnterCommand } from '@univerjs/docs';
+import { EnterCommand } from '../commands/commands/auto-format.command';
+import { DeleteLeftCommand, DeleteRightCommand } from '../commands/commands/doc-delete.command';
 import { whenDocAndEditorFocused, whenDocAndEditorFocusedWithBreakLine } from './utils';
 
 export const BreakLineShortcut: IShortcutItem = {
@@ -37,3 +37,15 @@ export const DeleteRightShortcut: IShortcutItem = {
     preconditions: whenDocAndEditorFocused,
     binding: KeyCode.DELETE,
 };
+
+// export const TabShortcut: IShortcutItem = {
+//     id: DocTabCommand.id,
+//     preconditions: whenDocAndEditorFocused,
+//     binding: KeyCode.TAB,
+// };
+
+// export const ShiftTabShortcut: IShortcutItem = {
+//     id: DocShiftTabCommand.id,
+//     preconditions: whenDocAndEditorFocused,
+//     binding: KeyCode.TAB | MetaKeys.SHIFT,
+// };

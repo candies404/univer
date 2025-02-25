@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,8 @@
  */
 
 import { createIdentifier, Disposable, ILogService, Inject, Injector } from '@univerjs/core';
-import { FUniver } from '@univerjs/facade';
+// eslint-disable-next-line univer/no-facade-imports-outside-facade
+import { FUniver } from '@univerjs/core/facade';
 
 export const IUniscriptExecutionService = createIdentifier<IUniscriptExecutionService>('univer.uniscript.execution-service');
 

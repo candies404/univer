@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,28 +14,27 @@
  * limitations under the License.
  */
 
-import { LocaleService, ThemeService, useDependency } from '@univerjs/core';
+import type { DocumentDataModel, IDocumentData, Nullable } from '@univerjs/core';
 import type { ILocale } from '@univerjs/design';
-import { ConfigContext, ConfigProvider, defaultTheme, themeInstance } from '@univerjs/design';
-import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
-
-import { createPortal } from 'react-dom';
 import type { IWorkbenchOptions } from '../../controllers/ui/ui.controller';
-import { IMessageService } from '../../services/message/message.service';
+import { DocumentFlavor, IUniverInstanceService, LocaleService, ThemeService, UniverInstanceType } from '@univerjs/core';
+import { ConfigContext, ConfigProvider, defaultTheme, themeInstance } from '@univerjs/design';
+import clsx from 'clsx';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { BuiltInUIPart } from '../../services/parts/parts.service';
+import { useDependency } from '../../utils/di';
 import { ComponentContainer, useComponentsOfPart } from '../components/ComponentContainer';
 import { DesktopContextMenu } from '../components/context-menu/ContextMenu';
-import { Toolbar } from '../components/doc-bars/Toolbar';
+import { GlobalZone } from '../components/global-zone/GlobalZone';
 import { Sidebar } from '../components/sidebar/Sidebar';
 import { ZenZone } from '../components/zen-zone/ZenZone';
-import { builtInGlobalComponents } from '../parts';
-
 import styles from './workbench.module.less';
 
 export interface IUniverWorkbenchProps extends IWorkbenchOptions {
     mountContainer: HTMLElement;
 
-    onRendered?: (container: HTMLElement) => void;
+    onRendered?: (containerElement: HTMLElement) => void;
 }
 
 export function DesktopWorkbench(props: IUniverWorkbenchProps) {
@@ -50,15 +49,38 @@ export function DesktopWorkbench(props: IUniverWorkbenchProps) {
 
     const localeService = useDependency(LocaleService);
     const themeService = useDependency(ThemeService);
-    const messageService = useDependency(IMessageService);
+    const instanceService = useDependency(IUniverInstanceService);
     const contentRef = useRef<HTMLDivElement>(null);
 
+    const customHeaderComponents = useComponentsOfPart(BuiltInUIPart.CUSTOM_HEADER);
     const footerComponents = useComponentsOfPart(BuiltInUIPart.FOOTER);
     const headerComponents = useComponentsOfPart(BuiltInUIPart.HEADER);
     const headerMenuComponents = useComponentsOfPart(BuiltInUIPart.HEADER_MENU);
     const contentComponents = useComponentsOfPart(BuiltInUIPart.CONTENT);
     const leftSidebarComponents = useComponentsOfPart(BuiltInUIPart.LEFT_SIDEBAR);
     const globalComponents = useComponentsOfPart(BuiltInUIPart.GLOBAL);
+    const toolbarComponents = useComponentsOfPart(BuiltInUIPart.TOOLBAR);
+
+    const [docSnapShot, setDocSnapShot] = useState<Nullable<IDocumentData>>(null);
+
+    useEffect(() => {
+        const sub = instanceService.focused$.subscribe((id) => {
+            if (id == null) {
+                return;
+            }
+            const instanceType = instanceService.getUnitType(id);
+            const instance = instanceService.getUnit(id);
+
+            if (instanceType === UniverInstanceType.UNIVER_DOC && instance) {
+                setDocSnapShot((instance as DocumentDataModel).getSnapshot());
+            }
+        });
+
+        return () => {
+            sub.unsubscribe();
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     useEffect(() => {
         if (!themeService.getCurrentTheme()) {
@@ -80,7 +102,6 @@ export function DesktopWorkbench(props: IUniverWorkbenchProps) {
 
     useEffect(() => {
         document.body.appendChild(portalContainer);
-        messageService.setContainer(portalContainer);
 
         const subscriptions = [
             localeService.localeChanged$.subscribe(() => {
@@ -88,7 +109,9 @@ export function DesktopWorkbench(props: IUniverWorkbenchProps) {
             }),
             themeService.currentTheme$.subscribe((theme) => {
                 themeInstance.setTheme(mountContainer, theme);
-                portalContainer && themeInstance.setTheme(portalContainer, theme);
+                if (portalContainer) {
+                    themeInstance.setTheme(portalContainer, theme);
+                }
             }),
         ];
 
@@ -99,7 +122,7 @@ export function DesktopWorkbench(props: IUniverWorkbenchProps) {
             // cleanup
             document.body.removeChild(portalContainer);
         };
-    }, [localeService, messageService, mountContainer, portalContainer, themeService.currentTheme$]);
+    }, [localeService, mountContainer, portalContainer, themeService.currentTheme$]);
 
     return (
         <ConfigProvider locale={locale?.design} mountContainer={portalContainer}>
@@ -109,10 +132,21 @@ export function DesktopWorkbench(props: IUniverWorkbenchProps) {
               * bubbled to this element and refocus the input element.
               */}
             <div className={styles.workbenchLayout} tabIndex={-1} onBlur={(e) => e.stopPropagation()}>
+                {/* user header */}
+                <div className={styles.workbenchCustomHeader}>
+                    <ComponentContainer key="custom-header" components={customHeaderComponents} />
+                </div>
+
                 {/* header */}
                 {header && toolbar && (
                     <header className={styles.workbenchContainerHeader}>
-                        <Toolbar headerMenuComponents={headerMenuComponents} />
+                        <ComponentContainer
+                            key="toolbar"
+                            components={toolbarComponents}
+                            sharedProps={{
+                                headerMenuComponents,
+                            }}
+                        />
                     </header>
                 )}
 
@@ -123,7 +157,14 @@ export function DesktopWorkbench(props: IUniverWorkbenchProps) {
                             <ComponentContainer key="left-sidebar" components={leftSidebarComponents} />
                         </aside>
 
-                        <section className={styles.workbenchContainerContent}>
+                        <section
+                            className={clsx(
+                                styles.workbenchContainerContent,
+                                {
+                                    [styles.workbenchContainerDocContent]: docSnapShot?.documentStyle.documentFlavor === DocumentFlavor.TRADITIONAL,
+                                }
+                            )}
+                        >
                             <header>
                                 {header && <ComponentContainer key="header" components={headerComponents} />}
                             </header>
@@ -136,6 +177,7 @@ export function DesktopWorkbench(props: IUniverWorkbenchProps) {
                             >
                                 <ComponentContainer key="content" components={contentComponents} />
                             </section>
+
                         </section>
 
                         <aside className={styles.workbenchContainerSidebar}>
@@ -150,12 +192,14 @@ export function DesktopWorkbench(props: IUniverWorkbenchProps) {
                         </footer>
                     )}
                     <ZenZone />
+
                 </section>
             </div>
             <ComponentContainer key="global" components={globalComponents} />
-            <ComponentContainer key="built-in-global" components={builtInGlobalComponents} />
+            <GlobalZone />
             {contextMenu && <DesktopContextMenu />}
             <FloatingContainer />
+            <div id="univer-popup-portal" />
         </ConfigProvider>
     );
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,18 +14,15 @@
  * limitations under the License.
  */
 
-import PickerViVN from 'rc-picker/lib/locale/vi_VN';
-import dajsViVN from 'dayjs/locale/vi';
 import type { ILocale } from './interface';
+import dajsViVN from 'dayjs/locale/vi';
+import PickerViVN from 'rc-picker/lib/locale/vi_VN';
 
 const locale: ILocale = {
     design: {
         Confirm: {
             cancel: 'Hủy bỏ',
             confirm: 'Xác nhận',
-        },
-        Slider: {
-            resetTo: 'Khôi phục đến',
         },
         Picker: {
             ...dajsViVN,
@@ -34,8 +31,10 @@ const locale: ILocale = {
         CascaderList: {
             empty: 'Không có',
         },
+        Select: {
+            empty: 'Không có',
+        },
     },
-
 };
 
 export default locale;

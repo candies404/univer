@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,30 +15,35 @@
  */
 
 import type { IAccessor, IOperation, SlideDataModel } from '@univerjs/core';
-import { CommandType, IUniverInstanceService, UniverInstanceType } from '@univerjs/core';
-import { CanvasView } from '@univerjs/slides';
+import { CommandType, IUniverInstanceService } from '@univerjs/core';
+import { CanvasView } from '../../controllers/canvas-view';
 
 export interface IActiveSlidePageOperationParams {
+    unitId: string;
     id: string;
 }
 export const ActivateSlidePageOperation: IOperation<IActiveSlidePageOperationParams> = {
     id: 'slide.operation.activate-slide',
     type: CommandType.OPERATION,
     handler: (accessor: IAccessor, params: IActiveSlidePageOperationParams) => {
+        const unitId = params.unitId;
         const canvasView = accessor.get(CanvasView);
         const univerInstanceService = accessor.get(IUniverInstanceService);
-        const model = univerInstanceService.getCurrentUnitForType<SlideDataModel>(UniverInstanceType.UNIVER_SLIDE);
-        const id = model?.getActivePage()?.id;
+        // const model = univerInstanceService.getCurrentUnitForType<SlideDataModel>(UniverInstanceType.UNIVER_SLIDE);
 
-        if (!id) return false;
+        const model = univerInstanceService.getUnit<SlideDataModel>(unitId);
+        const pageId = model?.getActivePage()?.id;
 
-        const page = canvasView.getRenderUnitByPageId(id);
+        if (!pageId) return false;
+
+        const page = canvasView.getRenderUnitByPageId(pageId, unitId);
+        if (!page) return false;
         const transformer = page.scene?.getTransformer();
+        if (transformer) {
+            transformer.clearControls();
+        }
 
-        if (!transformer) return false;
-        transformer.clearControls();
-
-        canvasView.activePage(params.id);
+        canvasView.activePage(params.id, unitId);
         return true;
     },
 };

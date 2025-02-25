@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-import { CommandType, CustomRangeType, generateRandomId, type ICommand, ICommandService, sequenceExecuteAsync } from '@univerjs/core';
+import type { ICommand, ITextRangeParam } from '@univerjs/core';
+import { CommandType, CustomRangeType, generateRandomId, ICommandService } from '@univerjs/core';
 import { addCustomRangeBySelectionFactory } from '@univerjs/docs';
-import { AddDocHyperLinkMutation } from '@univerjs/docs-hyper-link';
 
 export interface IAddDocHyperLinkCommandParams {
     payload: string;
     unitId: string;
+    selections?: ITextRangeParam[];
 }
 
 export const AddDocHyperLinkCommand: ICommand<IAddDocHyperLinkCommandParams> = {
@@ -31,7 +32,7 @@ export const AddDocHyperLinkCommand: ICommand<IAddDocHyperLinkCommandParams> = {
             return false;
         }
 
-        const { payload, unitId } = params;
+        const { payload, unitId, selections } = params;
         const commandService = accessor.get(ICommandService);
         const id = generateRandomId();
         const doMutation = addCustomRangeBySelectionFactory(
@@ -39,15 +40,16 @@ export const AddDocHyperLinkCommand: ICommand<IAddDocHyperLinkCommandParams> = {
             {
                 rangeId: id,
                 rangeType: CustomRangeType.HYPERLINK,
+                properties: {
+                    url: payload,
+                },
+                unitId,
+                selections,
             }
         );
-        if (doMutation) {
-            const hyperLinkMutation = {
-                id: AddDocHyperLinkMutation.id,
-                params: { unitId, link: { payload, id } },
-            };
 
-            return (await sequenceExecuteAsync([hyperLinkMutation, doMutation], commandService)).result;
+        if (doMutation) {
+            return commandService.syncExecuteCommand(doMutation.id, doMutation.params);
         }
 
         return false;

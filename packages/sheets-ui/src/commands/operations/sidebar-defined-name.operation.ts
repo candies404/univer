@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,9 @@
 
 import type { IAccessor, ICommand } from '@univerjs/core';
 import { CommandType, IUniverInstanceService, LocaleService } from '@univerjs/core';
-import { IEditorService, ISidebarService } from '@univerjs/ui';
+import { IEditorService } from '@univerjs/docs-ui';
 import { getSheetCommandTarget } from '@univerjs/sheets';
+import { ISidebarService } from '@univerjs/ui';
 import { DEFINED_NAME_CONTAINER } from '../../views/defined-name/component-name';
 
 export interface IUIComponentCommandParams {
@@ -39,12 +40,11 @@ export const SidebarDefinedNameOperation: ICommand = {
         const { unitId } = target;
         switch (params.value) {
             case 'open':
-                editorService.setOperationSheetUnitId(unitId);
                 sidebarService.open({
+                    id: DEFINED_NAME_CONTAINER,
                     header: { title: localeService.t('definedName.featureTitle') },
                     children: { label: DEFINED_NAME_CONTAINER },
                     onClose: () => {
-                        editorService.closeRangePrompt();
                     },
                     width: 333,
                 });

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,9 +22,11 @@ const enUS: typeof zhCN = {
             confirm: 'Confirm',
             cancel: 'Cancel',
             title: 'Link',
-            address: 'Link address',
+            address: 'Link',
             placeholder: 'Please input a link url',
             addressError: 'Url is illegal!',
+            label: 'Label',
+            labelError: 'Please input label of link',
         },
         info: {
             copy: 'Copy',

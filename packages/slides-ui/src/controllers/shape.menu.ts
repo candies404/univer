@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,20 +15,18 @@
  */
 
 import type { IMenuButtonItem, IMenuItem } from '@univerjs/ui';
-import { getMenuHiddenObservable, MenuGroup, MenuItemType, MenuPosition } from '@univerjs/ui';
+import { getMenuHiddenObservable, MenuItemType } from '@univerjs/ui';
 import type { IAccessor } from '@univerjs/core';
 import { UniverInstanceType } from '@univerjs/core';
-import { InsertSlideShapeRectangleOperation } from '../commands/operations/insert-shape.operation';
+import { InsertSlideShapeRectangleCommand } from '../commands/operations/insert-shape.operation';
 
 export const GRAPH_SINGLE_ICON = 'graph-single';
-const IMAGE_MENU_ID = 'slide.menu.shape';
+export const SHAPE_MENU_ID = 'slide.menu.shape';
 
 export function SlideShapeMenuFactory(accessor: IAccessor): IMenuItem {
     return {
-        id: IMAGE_MENU_ID,
+        id: SHAPE_MENU_ID,
         type: MenuItemType.SUBITEMS,
-        positions: [MenuPosition.TOOLBAR_START],
-        group: MenuGroup.TOOLBAR_FORMULAS_INSERT,
         icon: GRAPH_SINGLE_ICON,
         tooltip: 'slide.shape.insert.title',
         hidden$: getMenuHiddenObservable(accessor, UniverInstanceType.UNIVER_SLIDE),
@@ -38,10 +36,9 @@ export function SlideShapeMenuFactory(accessor: IAccessor): IMenuItem {
 
 export function UploadSlideFloatShapeMenuFactory(_accessor: IAccessor): IMenuButtonItem {
     return {
-        id: InsertSlideShapeRectangleOperation.id,
+        id: InsertSlideShapeRectangleCommand.id,
         title: 'slide.shape.insert.rectangle',
         type: MenuItemType.BUTTON,
-        positions: [IMAGE_MENU_ID],
         hidden$: getMenuHiddenObservable(_accessor, UniverInstanceType.UNIVER_SLIDE),
     };
 }

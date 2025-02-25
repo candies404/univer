@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-import { retry } from 'rxjs/operators';
 import type { Nullable } from '@univerjs/core';
 import type { HTTPInterceptorFnFactory } from '../interceptor';
+import { retry } from 'rxjs/operators';
 
 const DEFAULT_MAX_RETRY_ATTEMPTS = 3;
 const DELAY_INTERVAL = 1000;
@@ -26,9 +26,8 @@ export interface IRetryInterceptorFactoryParams {
     delayInterval?: number;
 }
 
-export const RetryInterceptorFactory: HTTPInterceptorFnFactory<[Nullable<undefined>, Nullable<IRetryInterceptorFactoryParams>]> = (_accessor, params) => {
+export const RetryInterceptorFactory: HTTPInterceptorFnFactory<[Nullable<IRetryInterceptorFactoryParams>]> = (params) => {
     const maxRetryAttempts = params?.maxRetryAttempts ?? DEFAULT_MAX_RETRY_ATTEMPTS;
     const delayInterval = params?.delayInterval ?? DELAY_INTERVAL;
     return (request, next) => next(request).pipe(retry({ delay: delayInterval, count: maxRetryAttempts }));
 };
-

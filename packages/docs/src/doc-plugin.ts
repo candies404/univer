@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,149 +15,73 @@
  */
 
 import type { Dependency, ICommand } from '@univerjs/core';
+import type { IUniverDocsConfig } from './controllers/config.schema';
 import {
     ICommandService,
+    IConfigService,
     Inject,
     Injector,
+    merge,
     Plugin,
-    UniverInstanceType,
 } from '@univerjs/core';
-import { ITextSelectionRenderManager, TextSelectionRenderManager } from '@univerjs/engine-render';
-import { BreakLineCommand } from './commands/commands/break-line.command';
-import { DeleteCommand, InsertCommand, UpdateCommand } from './commands/commands/core-editing.command';
-import { DeleteCustomBlockCommand, DeleteLeftCommand, DeleteRightCommand, MergeTwoParagraphCommand } from './commands/commands/delete.command';
-import { IMEInputCommand } from './commands/commands/ime-input.command';
-import {
-    ResetInlineFormatTextBackgroundColorCommand,
-    SetInlineFormatBoldCommand,
-    SetInlineFormatCommand,
-    SetInlineFormatFontFamilyCommand,
-    SetInlineFormatFontSizeCommand,
-    SetInlineFormatItalicCommand,
-    SetInlineFormatStrikethroughCommand,
-    SetInlineFormatSubscriptCommand,
-    SetInlineFormatSuperscriptCommand,
-    SetInlineFormatTextBackgroundColorCommand,
-    SetInlineFormatTextColorCommand,
-    SetInlineFormatUnderlineCommand,
-} from './commands/commands/inline-format.command';
-import { BulletListCommand, ChangeListNestingLevelCommand, ChangeListTypeCommand, ListOperationCommand, OrderListCommand } from './commands/commands/list.command';
-import { CoverContentCommand, ReplaceContentCommand } from './commands/commands/replace-content.command';
-import { SetDocZoomRatioCommand } from './commands/commands/set-doc-zoom-ratio.command';
 import { RichTextEditingMutation } from './commands/mutations/core-editing.mutation';
-import { MoveCursorOperation, MoveSelectionOperation } from './commands/operations/cursor.operation';
-import { SelectAllOperation } from './commands/operations/select-all.operation';
-import { SetDocZoomRatioOperation } from './commands/operations/set-doc-zoom-ratio.operation';
-import { SetTextSelectionsOperation } from './commands/operations/text-selection.operation';
-import { IMEInputController } from './controllers/ime-input.controller';
-import { MoveCursorController } from './controllers/move-cursor.controller';
-import { NormalInputController } from './controllers/normal-input.controller';
-import { IMEInputManagerService } from './services/ime-input-manager.service';
-import { TextSelectionManagerService } from './services/text-selection-manager.service';
-import { DocStateChangeManagerService } from './services/doc-state-change-manager.service';
-import { AlignCenterCommand, AlignJustifyCommand, AlignLeftCommand, AlignOperationCommand, AlignRightCommand } from './commands/commands/paragraph-align.command';
-import { DocCustomRangeService } from './services/doc-custom-range.service';
-import { DocCustomRangeController } from './controllers/custom-range.controller';
 import { DocsRenameMutation } from './commands/mutations/docs-rename.mutation';
-import { DocAutoFormatService } from './services/doc-auto-format.service';
-import { EnterCommand, SpaceCommand, TabCommand } from './commands/commands/auto-format.command';
-
-export interface IUniverDocsConfig {
-    hasScroll?: boolean;
-}
+import { SetTextSelectionsOperation } from './commands/operations/text-selection.operation';
+import { defaultPluginConfig, DOCS_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
+import { DocCustomRangeController } from './controllers/custom-range.controller';
+import { DocSelectionManagerService } from './services/doc-selection-manager.service';
+import { DocStateEmitService } from './services/doc-state-emit.service';
 
 const PLUGIN_NAME = 'DOCS_PLUGIN';
 
 export class UniverDocsPlugin extends Plugin {
     static override pluginName = PLUGIN_NAME;
-    static override type = UniverInstanceType.UNIVER_DOC;
+    // static override type = UniverInstanceType.UNIVER_DOC;
 
     constructor(
-        _config: Partial<IUniverDocsConfig> = {},
-        @Inject(Injector) override _injector: Injector
+        private readonly _config: Partial<IUniverDocsConfig> = defaultPluginConfig,
+        @Inject(Injector) override _injector: Injector,
+        @IConfigService private readonly _configService: IConfigService
     ) {
         super();
-        this._initializeDependencies(_injector);
 
+        // Manage the plugin configuration.
+        const { ...rest } = merge(
+            {},
+            defaultPluginConfig,
+            this._config
+        );
+        this._configService.setConfig(DOCS_PLUGIN_CONFIG_KEY, rest);
+    }
+
+    override onStarting(): void {
+        this._initializeDependencies();
         this._initializeCommands();
     }
 
     private _initializeCommands(): void {
         (
             [
-                MoveCursorOperation,
-                MoveSelectionOperation,
-                DeleteLeftCommand,
-                DeleteRightCommand,
-                SetInlineFormatBoldCommand,
-                SetInlineFormatItalicCommand,
-                SetInlineFormatUnderlineCommand,
-                SetInlineFormatStrikethroughCommand,
-                SetInlineFormatSubscriptCommand,
-                SetInlineFormatSuperscriptCommand,
-                SetInlineFormatFontSizeCommand,
-                SetInlineFormatFontFamilyCommand,
-                SetInlineFormatTextColorCommand,
-                ResetInlineFormatTextBackgroundColorCommand,
-                SetInlineFormatTextBackgroundColorCommand,
-                SetInlineFormatCommand,
-                BreakLineCommand,
-                InsertCommand,
-                DeleteCommand,
-                DeleteCustomBlockCommand,
-                UpdateCommand,
-                IMEInputCommand,
-                MergeTwoParagraphCommand,
                 RichTextEditingMutation,
-                ReplaceContentCommand,
-                CoverContentCommand,
-                SetDocZoomRatioCommand,
-                SetDocZoomRatioOperation,
-                SetTextSelectionsOperation,
-                SelectAllOperation,
-                OrderListCommand,
-                BulletListCommand,
-                ListOperationCommand,
-                AlignLeftCommand,
-                AlignCenterCommand,
-                AlignRightCommand,
-                AlignOperationCommand,
-                AlignJustifyCommand,
                 DocsRenameMutation,
-                TabCommand,
-                SpaceCommand,
-                EnterCommand,
-                ChangeListNestingLevelCommand,
-                ChangeListTypeCommand,
+                SetTextSelectionsOperation,
             ] as ICommand[]
         ).forEach((command) => {
             this._injector.get(ICommandService).registerCommand(command);
         });
     }
 
-    private _initializeDependencies(docInjector: Injector) {
+    private _initializeDependencies() {
         (
             [
-                // services
-                [DocStateChangeManagerService],
-                [IMEInputManagerService],
-                [
-                    ITextSelectionRenderManager,
-                    {
-                        useClass: TextSelectionRenderManager,
-                    },
-                ],
-                [TextSelectionManagerService],
-                [DocCustomRangeService],
-                [DocAutoFormatService],
-
-                // controllers
-                [NormalInputController],
-                [IMEInputController],
-                [MoveCursorController],
+                [DocSelectionManagerService],
+                [DocStateEmitService],
                 [DocCustomRangeController],
-
             ] as Dependency[]
-        ).forEach((d) => docInjector.add(d));
+        ).forEach((d) => this._injector.add(d));
+    }
+
+    override onReady(): void {
+        this._injector.get(DocCustomRangeController);
     }
 }

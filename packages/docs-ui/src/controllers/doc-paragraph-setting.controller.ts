@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,15 @@
  * limitations under the License.
  */
 
-import { Disposable, ICommandService, Inject, LifecycleStages, OnLifecycle } from '@univerjs/core';
+import { Disposable, ICommandService, Inject } from '@univerjs/core';
 import { ComponentManager, ISidebarService } from '@univerjs/ui';
 import { ParagraphSettingIndex } from '../views/paragraph-setting/index';
 
 const paragraphSettingIndexKey = 'doc_ui_paragraph-setting-panel';
 
-@OnLifecycle(LifecycleStages.Rendered, DocParagraphSettingController)
 export class DocParagraphSettingController extends Disposable {
+    private _id: 'DocParagraphSetting';
+
     constructor(
         @ICommandService private readonly _commandService: ICommandService,
         @Inject(ComponentManager) private readonly _componentManager: ComponentManager,
@@ -39,12 +40,16 @@ export class DocParagraphSettingController extends Disposable {
     public openPanel() {
         const props = {
             header: { title: 'doc.slider.paragraphSetting' },
+            id: this._id,
             children: {
                 label: paragraphSettingIndexKey,
             },
             width: 300,
         };
-
         this._sidebarService.open(props);
+    }
+
+    public closePanel() {
+        this._sidebarService.close(this._id);
     }
 }

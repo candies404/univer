@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,12 @@
  */
 
 import type { IMutationInfo } from '@univerjs/core';
-import { Disposable, Inject, LifecycleStages, OnLifecycle, Range, Rectangle, Tools } from '@univerjs/core';
-import { AddHyperLinkMutation, HyperLinkModel, RemoveHyperLinkMutation } from '@univerjs/sheets-hyper-link';
 import type { IAutoFillLocation, ISheetAutoFillHook } from '@univerjs/sheets-ui';
+import { Disposable, Inject, Range, Rectangle, Tools } from '@univerjs/core';
+import { AddHyperLinkMutation, HyperLinkModel, RemoveHyperLinkMutation } from '@univerjs/sheets-hyper-link';
 import { APPLY_TYPE, getAutoFillRepeatRange, IAutoFillService, virtualizeDiscreteRanges } from '@univerjs/sheets-ui';
 import { SHEET_HYPER_LINK_UI_PLUGIN } from '../types/const';
 
-@OnLifecycle(LifecycleStages.Ready, SheetsHyperLinkAutoFillController)
 export class SheetsHyperLinkAutoFillController extends Disposable {
     constructor(
         @IAutoFillService private readonly _autoFillService: IAutoFillService,
@@ -78,62 +77,60 @@ export class SheetsHyperLinkAutoFillController extends Disposable {
                     );
                     const { row: sourceRow, col: sourceCol } = mapFunc(sourcePositionRange.startRow, sourcePositionRange.startColumn);
                     const link = this._hyperLinkModel.getHyperLinkByLocation(unitId, subUnitId, sourceRow, sourceCol);
-                    if (link) {
-                        const targetPositionRange = Rectangle.getPositionRange(
-                            {
-                                startRow: row,
-                                startColumn: col,
-                                endColumn: col,
-                                endRow: row,
+                    const targetPositionRange = Rectangle.getPositionRange(
+                        {
+                            startRow: row,
+                            startColumn: col,
+                            endColumn: col,
+                            endRow: row,
+                        },
+                        targetRange
+                    );
+                    const { row: targetRow, col: targetCol } = mapFunc(targetPositionRange.startRow, targetPositionRange.startColumn);
+                    const id = Tools.generateRandomId();
+                    const currentLink = this._hyperLinkModel.getHyperLinkByLocation(unitId, subUnitId, targetRow, targetCol);
+                    if (currentLink) {
+                        redos.push({
+                            id: RemoveHyperLinkMutation.id,
+                            params: {
+                                unitId,
+                                subUnitId,
+                                id: currentLink.id,
                             },
-                            targetRange
-                        );
-                        const { row: targetRow, col: targetCol } = mapFunc(targetPositionRange.startRow, targetPositionRange.startColumn);
-                        const id = Tools.generateRandomId();
-                        const currentLink = this._hyperLinkModel.getHyperLinkByLocation(unitId, subUnitId, targetRow, targetCol);
-                        if (currentLink) {
-                            redos.push({
-                                id: RemoveHyperLinkMutation.id,
-                                params: {
-                                    unitId,
-                                    subUnitId,
-                                    id: currentLink.id,
-                                },
-                            });
-                        }
-                        if (APPLY_TYPE.COPY === applyType || APPLY_TYPE.SERIES === applyType) {
-                            redos.push({
-                                id: AddHyperLinkMutation.id,
-                                params: {
-                                    unitId,
-                                    subUnitId,
-                                    link: {
-                                        ...link,
-                                        id,
-                                        row: targetRow,
-                                        column: targetCol,
-                                    },
-                                },
-                            });
-                            undos.push({
-                                id: RemoveHyperLinkMutation.id,
-                                params: {
-                                    unitId,
-                                    subUnitId,
+                        });
+                    }
+                    if ((APPLY_TYPE.COPY === applyType || APPLY_TYPE.SERIES === applyType) && link) {
+                        redos.push({
+                            id: AddHyperLinkMutation.id,
+                            params: {
+                                unitId,
+                                subUnitId,
+                                link: {
+                                    ...link,
                                     id,
+                                    row: targetRow,
+                                    column: targetCol,
                                 },
-                            });
-                        }
-                        if (currentLink) {
-                            undos.push({
-                                id: AddHyperLinkMutation.id,
-                                params: {
-                                    unitId,
-                                    subUnitId,
-                                    link: currentLink,
-                                },
-                            });
-                        }
+                            },
+                        });
+                        undos.push({
+                            id: RemoveHyperLinkMutation.id,
+                            params: {
+                                unitId,
+                                subUnitId,
+                                id,
+                            },
+                        });
+                    }
+                    if (currentLink) {
+                        undos.push({
+                            id: AddHyperLinkMutation.id,
+                            params: {
+                                unitId,
+                                subUnitId,
+                                link: currentLink,
+                            },
+                        });
                     }
                 });
             });

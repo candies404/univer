@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,7 @@
  * limitations under the License.
  */
 
-import type { EventState, Injector, IPageElement } from '@univerjs/core';
 import { DocumentDataModel, Inject, LocaleService, PageElementType } from '@univerjs/core';
-import type { BaseObject, IDocumentSkeletonDrawing, IPageRenderConfig, IWheelEvent } from '@univerjs/engine-render';
 import {
     Documents,
     DocumentSkeleton,
@@ -24,12 +22,14 @@ import {
     Image,
     Liquid,
     PageLayoutType,
-    Rect,
+    // Rect,
     Scene,
     SceneViewer,
     ScrollBar,
     Viewport,
 } from '@univerjs/engine-render';
+import type { EventState, Injector, IPageElement } from '@univerjs/core';
+import type { BaseObject, IDocumentSkeletonDrawing, IPageRenderConfig, IWheelEvent } from '@univerjs/engine-render';
 
 import { CanvasObjectProviderRegistry, ObjectAdaptor } from '../adaptor';
 
@@ -111,8 +111,8 @@ export class DocsAdaptor extends ObjectAdaptor {
             top: 0,
             bottom: 0,
             right: 0,
-            isRelativeX: true,
-            isRelativeY: true,
+            explicitViewportWidthSet: false,
+            explicitViewportHeightSet: false,
             isWheelPreventDefaultX: true,
         });
 
@@ -165,14 +165,14 @@ export class DocsAdaptor extends ObjectAdaptor {
             const { width, height, marginBottom, marginLeft, marginRight, marginTop } = page;
             ctx.save();
             ctx.translate(pageLeft - 0.5, pageTop - 0.5);
-            Rect.drawWith(ctx, {
-                width: pageSize?.width || width,
-                height: pageSize?.height || height,
-                strokeWidth: 1,
-                stroke: 'rgba(198,198,198, 1)',
-                fill: 'rgba(255,255,255, 1)',
-                zIndex: 3,
-            });
+            // Rect.drawWith(ctx, {
+            //     width: pageSize?.width || width,
+            //     height: pageSize?.height || height,
+            //     strokeWidth: 1,
+            //     stroke: 'rgba(198,198,198, 1)',
+            //     fill: 'rgba(255,255,255, 1)',
+            //     zIndex: 3,
+            // });
             ctx.restore();
         });
 

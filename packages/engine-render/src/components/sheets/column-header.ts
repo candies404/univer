@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,16 +14,18 @@
  * limitations under the License.
  */
 
+/* eslint-disable unused-imports/no-unused-vars */
+
 import type { Nullable } from '@univerjs/core';
 import type { IViewportInfo, Vector2 } from '../../basics/vector2';
 import type { UniverRenderingContext } from '../../context';
-import { SheetColumnHeaderExtensionRegistry } from '../extension';
 import type { ColumnHeaderLayout, IColumnsHeaderCfgParam } from './extensions/column-header-layout';
+import type { SpreadsheetSkeleton } from './sheet.render-skeleton';
+import { SheetColumnHeaderExtensionRegistry } from '../extension';
 import { SpreadsheetHeader } from './sheet-component';
-import type { SpreadsheetSkeleton } from './sheet-skeleton';
 
 export class SpreadsheetColumnHeader extends SpreadsheetHeader {
-    override getDocuments() {
+    override getDocuments(): void {
         throw new Error('Method not implemented.');
     }
 
@@ -39,40 +41,27 @@ export class SpreadsheetColumnHeader extends SpreadsheetHeader {
 
     constructor(oKey: string, spreadsheetSkeleton?: SpreadsheetSkeleton) {
         super(oKey, spreadsheetSkeleton);
-
         this._initialDefaultExtension();
-
         this.makeDirty(true);
     }
 
-    get columnHeaderLayoutExtension() {
+    get columnHeaderLayoutExtension(): ColumnHeaderLayout {
         return this._columnHeaderLayoutExtension;
     }
 
-    override draw(ctx: UniverRenderingContext, bounds?: IViewportInfo) {
+    override draw(ctx: UniverRenderingContext, bounds?: IViewportInfo): void {
         const spreadsheetSkeleton = this.getSkeleton();
-        if (!spreadsheetSkeleton) {
-            return;
-        }
+        if (!spreadsheetSkeleton) return;
 
         const parentScale = this.getParentScale();
-
-        spreadsheetSkeleton.calculateSegment(bounds);
-
+        spreadsheetSkeleton.updateVisibleRange(bounds);
         const segment = spreadsheetSkeleton.rowColumnSegment;
 
-        if (!segment) {
-            return;
-        }
+        if (!segment) return;
 
-        if (segment.startColumn === -1 && segment.endColumn === -1) {
-            return;
-        }
+        if (segment.startColumn === -1 && segment.endColumn === -1) return;
 
         const { rowHeaderWidth } = spreadsheetSkeleton;
-
-        // const { left: fixTranslateLeft, top: fixTranslateTop } = getTranslateInSpreadContextWithPixelRatio();
-
         ctx.translateWithPrecision(rowHeaderWidth, 0);
 
         const extensions = this.getExtensionsByOrder();
@@ -94,7 +83,7 @@ export class SpreadsheetColumnHeader extends SpreadsheetHeader {
         return false;
     }
 
-    private _initialDefaultExtension() {
+    private _initialDefaultExtension(): void {
         SheetColumnHeaderExtensionRegistry.getData().forEach((extension) => {
             this.register(extension);
         });
@@ -103,7 +92,11 @@ export class SpreadsheetColumnHeader extends SpreadsheetHeader {
         ) as ColumnHeaderLayout;
     }
 
-    setCustomHeader(cfg: IColumnsHeaderCfgParam) {
+    /**
+     * Customize column header, such as custom header text and background.
+     * @param cfg
+     */
+    setCustomHeader(cfg: IColumnsHeaderCfgParam): void {
         this.makeDirty(true);
         this._columnHeaderLayoutExtension.configHeaderColumn(cfg);
     }

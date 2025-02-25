@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,12 @@
  */
 
 import type { IDisposable, Nullable } from '@univerjs/core';
-import { Disposable, Inject, LifecycleStages, OnLifecycle } from '@univerjs/core';
+import { Disposable, Inject } from '@univerjs/core';
 import { DocCanvasPopManagerService } from '@univerjs/docs-ui';
 import { BehaviorSubject } from 'rxjs';
-import { DocMentionService } from '@univerjs/docs-mention';
 import { MentionEditPopup } from '../views/mention-edit-popup';
+import { DocMentionService } from './doc-mention.service';
 
-@OnLifecycle(LifecycleStages.Rendered, DocMentionPopupService)
 export class DocMentionPopupService extends Disposable {
     private readonly _infoPopup$ = new BehaviorSubject(undefined);
     readonly infoPopup$ = this._infoPopup$.asObservable();
@@ -29,7 +28,7 @@ export class DocMentionPopupService extends Disposable {
         return this._infoPopup$.value;
     }
 
-    private readonly _editPopup$ = new BehaviorSubject<Nullable<{ anchor: number; popup: IDisposable }>>(undefined);
+    private readonly _editPopup$ = new BehaviorSubject<Nullable<{ anchor: number; popup: IDisposable; unitId: string }>>(undefined);
     readonly editPopup$ = this._editPopup$.asObservable();
     get editPopup() {
         return this._editPopup$.value;
@@ -43,7 +42,7 @@ export class DocMentionPopupService extends Disposable {
 
         this.disposeWithMe(this._docMentionService.editing$.subscribe((editing) => {
             if (editing !== undefined && editing !== null) {
-                this.showEditPopup(editing);
+                this.showEditPopup(editing.unitId, editing.index);
             } else {
                 this.closeEditPopup();
             }
@@ -54,7 +53,7 @@ export class DocMentionPopupService extends Disposable {
 
     closeInfoPopup() {}
 
-    showEditPopup(index: number) {
+    showEditPopup(unitId: string, index: number) {
         this.closeEditPopup();
         const dispose = this._docCanvasPopupManagerService.attachPopupToRange(
             { startOffset: index, endOffset: index, collapsed: true },
@@ -64,9 +63,10 @@ export class DocMentionPopupService extends Disposable {
                     this.closeEditPopup();
                 },
                 direction: 'bottom',
-            }
+            },
+            unitId
         );
-        this._editPopup$.next({ popup: dispose, anchor: index });
+        this._editPopup$.next({ popup: dispose, anchor: index, unitId });
     }
 
     closeEditPopup() {

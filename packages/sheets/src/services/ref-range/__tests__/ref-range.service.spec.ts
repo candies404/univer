@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,15 +14,15 @@
  * limitations under the License.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { Dependency, ICommand, IRange, IWorkbookData, Nullable } from '@univerjs/core';
+import type { Dependency, ICommand, IRange, IWorkbookData, Nullable, Workbook } from '@univerjs/core';
+import type { IInsertColMutationParams } from '../../../basics';
 import { ICommandService, ILogService, Inject, Injector, IUniverInstanceService, LocaleType, LogLevel, Plugin, Univer, UniverInstanceType } from '@univerjs/core';
 
-import { RefRangeService } from '../ref-range.service';
-import { SheetsSelectionsService } from '../../selections/selection-manager.service';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { InsertColMutation } from '../../../commands/mutations/insert-row-col.mutation';
-import type { IInsertColMutationParams } from '../../../basics';
+import { SheetsSelectionsService } from '../../selections/selection.service';
 import { SheetInterceptorService } from '../../sheet-interceptor/sheet-interceptor.service';
+import { RefRangeService } from '../ref-range.service';
 
 const TEST_WORKBOOK_DATA: IWorkbookData = {
     id: 'test',
@@ -83,7 +83,7 @@ export function createRefRangeTestBed() {
     ] as ICommand[]).forEach((command) => commandService.registerCommand(command));
 
     univer.registerPlugin(TestPlugin);
-    const sheet = univer.createUniverSheet(TEST_WORKBOOK_DATA);
+    const sheet = univer.createUnit<IWorkbookData, Workbook>(UniverInstanceType.UNIVER_SHEET, TEST_WORKBOOK_DATA);
 
     const univerInstanceService = get(IUniverInstanceService);
     univerInstanceService.focusUnit('test');

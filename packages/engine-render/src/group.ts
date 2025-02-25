@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,15 @@
  */
 
 import type { Nullable } from '@univerjs/core';
-import { sortRules } from '@univerjs/core';
-
-import { BaseObject } from './base-object';
 import type { CURSOR_TYPE } from './basics/const';
-import { RENDER_CLASS_TYPE } from './basics/const';
-import { isString } from './basics/tools';
-import type { IViewportInfo, Vector2 } from './basics/vector2';
+
+import type { IViewportInfo } from './basics/vector2';
 import type { UniverRenderingContext } from './context';
-import type { ThinScene } from './thin-scene';
+import { sortRules } from '@univerjs/core';
+import { BaseObject } from './base-object';
+import { RENDER_CLASS_TYPE } from './basics/const';
 import { getGroupState, transformObjectOutOfGroup } from './basics/group-transform';
+import { isString } from './basics/tools';
 
 export class Group extends BaseObject {
     private _objects: BaseObject[] = [];
@@ -148,7 +147,7 @@ export class Group extends BaseObject {
     addObject(o: BaseObject | string) {
         let object: Nullable<BaseObject | string> = o;
         if (isString(o)) {
-            const scene = this.getScene() as ThinScene;
+            const scene = this.getScene();
             object = scene?.getObject(o);
             if (!object) {
                 // console.info('No object be added');
@@ -156,19 +155,13 @@ export class Group extends BaseObject {
             }
 
             object.parent = this;
-
             object.isInGroup = true;
-
             object.groupKey = this.oKey;
-
             this._objects.push(object);
         } else {
             o.parent = this;
-
             o.isInGroup = true;
-
             o.groupKey = this.oKey;
-
             this._objects.push(o);
         }
     }
@@ -266,26 +259,25 @@ export class Group extends BaseObject {
         ctx.restore();
     }
 
-    override resize(width?: number | string, height?: number | string) {
-        return this;
-    }
+    // override resize(width?: number | string, height?: number | string) {
+    //     return this;
+    // }
 
-    override scale(scaleX?: number, scaleY?: number) {
-        return this;
-    }
+    // override scale(scaleX?: number, scaleY?: number) {
+    //     return this;
+    // }
 
-    override skew(skewX?: number, skewY?: number) {
-        return this;
-    }
+    // override skew(skewX?: number, skewY?: number) {
+    //     return this;
+    // }
 
-    override flip(flipX?: boolean, flipY?: boolean) {
-        return this;
-    }
+    // override flip(flipX?: boolean, flipY?: boolean) {
+    //     return this;
+    // }
 
-    // 判断自己scope下的所有对象是否有被选中的
-    override isHit(coord: Vector2) {
-        return true;
-    }
+    // override isHit(coord: Vector2) {
+    //     return true;
+    // }
 
     private _clear() {
         this._objects = [];
@@ -298,9 +290,5 @@ export class Group extends BaseObject {
         });
         this._clear();
         super.dispose();
-    }
-
-    private _transformBounds(bounds?: IViewportInfo) {
-        return bounds;
     }
 }

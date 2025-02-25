@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,7 +42,10 @@ export function getParagraphStyle(el: HTMLElement): Nullable<IParagraphStyle> {
             }
 
             case 'line-height': {
-                const lineHeightValue = Number.parseFloat(cssValue);
+                let lineHeightValue = Number.parseFloat(cssValue);
+                if (cssValue.endsWith('%')) {
+                    lineHeightValue /= 100;
+                }
                 paragraphStyle.lineSpacing = lineHeightValue;
 
                 break;

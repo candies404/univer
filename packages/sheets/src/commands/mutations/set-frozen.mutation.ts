@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,15 @@ export interface ISetFrozenMutationParams {
     subUnitId: string;
     startRow: number;
     startColumn: number;
+    /**
+     * Number of frozen rows.
+     * if row freeze start at 7, end at 10, then ySplit is 3
+     */
     ySplit: number;
+    /**
+     * Number of frozen columns.
+     * if column freeze start at 7, end at 10, then xSplit is 3
+     */
     xSplit: number;
     resetScroll?: boolean;
 }

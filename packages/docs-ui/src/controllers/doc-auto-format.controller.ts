@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,34 +14,49 @@
  * limitations under the License.
  */
 
-import { Disposable, Inject, LifecycleStages, OnLifecycle } from '@univerjs/core';
-import type { ITabCommandParams } from '@univerjs/docs';
-import { BreakLineCommand, ChangeListNestingLevelCommand, ChangeListNestingLevelType, DocAutoFormatService, EnterCommand, ListOperationCommand, TabCommand } from '@univerjs/docs';
 import type { Nullable } from 'vitest';
+import type { ITabCommandParams } from '../commands/commands/auto-format.command';
+import { Disposable, Inject, QuickListTypeMap } from '@univerjs/core';
+import { DocSkeletonManagerService } from '@univerjs/docs';
+import { IRenderManagerService } from '@univerjs/engine-render';
+import { AfterSpaceCommand, EnterCommand, TabCommand } from '../commands/commands/auto-format.command';
+import { BreakLineCommand } from '../commands/commands/break-line.command';
+import { ChangeListNestingLevelCommand, ChangeListNestingLevelType, ListOperationCommand, QuickListCommand } from '../commands/commands/list.command';
+import { DocTableTabCommand } from '../commands/commands/table/doc-table-tab.command';
+import { DocAutoFormatService } from '../services/doc-auto-format.service';
+import { isInSameTableCellData } from '../services/selection/convert-rect-range';
 
-@OnLifecycle(LifecycleStages.Rendered, DocAutoFormatController)
 export class DocAutoFormatController extends Disposable {
     constructor(
-        @Inject(DocAutoFormatService) private readonly _docAutoFormatService: DocAutoFormatService
+        @Inject(DocAutoFormatService) private readonly _docAutoFormatService: DocAutoFormatService,
+        @IRenderManagerService private readonly _renderManagerService: IRenderManagerService
     ) {
         super();
 
-        this._initListAutoFormat();
+        this._initListTabAutoFormat();
+        this._initListSpaceAutoFormat();
         this._initDefaultEnterFormat();
         this._initExitListAutoFormat();
     }
 
-    private _initListAutoFormat() {
+    private _initListTabAutoFormat() {
         this.disposeWithMe(
             this._docAutoFormatService.registerAutoFormat({
                 id: TabCommand.id,
                 match: (context) => {
-                    const { selection, paragraphs } = context;
+                    const { selection, paragraphs, unit } = context;
+
                     // 1. match 1 bullet paragraph, range.start == paragraph.start
-                    if (paragraphs.length === 1 && selection.startOffset === paragraphs[0].paragraphStart) {
-                         // 2. cross paragraphs, some paragraph is bullet
+                    if (paragraphs.length === 1 && selection.startOffset === paragraphs[0].paragraphStart && paragraphs[0].bullet) {
+                        // 2. cross paragraphs, some paragraph is bullet
+                        const allParagraphs = unit.getBody()?.paragraphs;
+                        // 3. disable first bullet indent
+                        const bulletParagraphs = allParagraphs?.filter((p) => p.bullet?.listId === paragraphs[0].bullet!.listId);
+                        if (bulletParagraphs?.findIndex((p) => p.startIndex === paragraphs[0].startIndex) === 0) {
+                            return false;
+                        }
                         return true;
-                    } else if (paragraphs.length > 1) {
+                    } else if (paragraphs.length > 1 && paragraphs.some((p) => p.bullet)) {
                         return true;
                     }
                     return false;
@@ -55,6 +70,83 @@ export class DocAutoFormatController extends Disposable {
                             type: params?.shift ? ChangeListNestingLevelType.decrease : ChangeListNestingLevelType.increase,
                         },
                     }];
+                },
+                priority: 100,
+            })
+        );
+
+        this.disposeWithMe(
+            this._docAutoFormatService.registerAutoFormat({
+                id: TabCommand.id,
+                match: (context) => {
+                    const { selection, unit } = context;
+
+                    const { startNodePosition, endNodePosition } = selection;
+
+                    const renderObject = this._renderManagerService.getRenderById(unit.getUnitId());
+                    const skeleton = renderObject?.with(DocSkeletonManagerService).getSkeleton();
+
+                    if (skeleton == null) {
+                        return false;
+                    }
+
+                    if (startNodePosition && endNodePosition && isInSameTableCellData(skeleton, startNodePosition, endNodePosition)) {
+                        return true;
+                    }
+
+                    if (startNodePosition && !endNodePosition && startNodePosition.path.indexOf('cells') > -1) {
+                        return true;
+                    }
+
+                    return false;
+                },
+
+                getMutations(context) {
+                    const params = context.commandParams as Nullable<ITabCommandParams>;
+                    return [{
+                        id: DocTableTabCommand.id,
+                        params: {
+                            shift: !!params?.shift,
+                        },
+                    }];
+                },
+                priority: 99,
+            })
+        );
+    }
+
+    private _initListSpaceAutoFormat() {
+        this.disposeWithMe(
+            this._docAutoFormatService.registerAutoFormat({
+                id: AfterSpaceCommand.id,
+                match: (context) => {
+                    const { selection, paragraphs, unit } = context;
+                    if (!selection.collapsed) {
+                        return false;
+                    }
+                    if (paragraphs.length !== 1) {
+                        return false;
+                    }
+                    const text = unit.getBody()?.dataStream.slice(paragraphs[0].paragraphStart, paragraphs[0].paragraphEnd - 1);
+                    if (text && Object.keys(QuickListTypeMap).includes(text)) {
+                        return true;
+                    }
+                    return false;
+                },
+                getMutations(context) {
+                    const { paragraphs, unit } = context;
+                    const text = unit.getBody()?.dataStream.slice(paragraphs[0].paragraphStart, paragraphs[0].paragraphEnd - 1);
+                    if (text && Object.keys(QuickListTypeMap).includes(text)) {
+                        const type = QuickListTypeMap[text as keyof typeof QuickListTypeMap];
+                        return [{
+                            id: QuickListCommand.id,
+                            params: {
+                                listType: type,
+                                paragraph: paragraphs[0],
+                            },
+                        }];
+                    }
+                    return [];
                 },
             })
         );

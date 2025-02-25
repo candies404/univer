@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,19 +15,16 @@
  */
 
 import type { DocumentDataModel } from '@univerjs/core';
-import { Disposable, ICommandService, Inject, IUniverInstanceService, LifecycleStages, OnLifecycle, UniverInstanceType } from '@univerjs/core';
 import type { ISetTextSelectionsOperationParams } from '@univerjs/docs';
-import { DocSkeletonManagerService, SetTextSelectionsOperation } from '@univerjs/docs';
-import { DocumentEditArea, IRenderManagerService } from '@univerjs/engine-render';
+import { Disposable, ICommandService, Inject, IUniverInstanceService, UniverInstanceType } from '@univerjs/core';
+import { SetTextSelectionsOperation } from '@univerjs/docs';
 import { DocHyperLinkPopupService } from '../services/hyper-link-popup.service';
 
-@OnLifecycle(LifecycleStages.Ready, DocHyperLinkSelectionController)
 export class DocHyperLinkSelectionController extends Disposable {
     constructor(
         @ICommandService private readonly _commandService: ICommandService,
         @IUniverInstanceService private readonly _univerInstanceService: IUniverInstanceService,
-        @Inject(DocHyperLinkPopupService) private readonly _docHyperLinkService: DocHyperLinkPopupService,
-        @IRenderManagerService private readonly _renderMangerService: IRenderManagerService
+        @Inject(DocHyperLinkPopupService) private readonly _docHyperLinkService: DocHyperLinkPopupService
     ) {
         super();
 
@@ -39,30 +36,25 @@ export class DocHyperLinkSelectionController extends Disposable {
             this._commandService.onCommandExecuted((commandInfo) => {
                 if (commandInfo.id === SetTextSelectionsOperation.id) {
                     const params = commandInfo.params as ISetTextSelectionsOperationParams;
-                    const { unitId, ranges } = params;
-                    const render = this._renderMangerService.getRenderById(unitId);
-                    const skeleton = render?.with(DocSkeletonManagerService).getSkeleton();
-                    const editArea = skeleton?.getViewModel().getEditArea();
-                    if (editArea !== DocumentEditArea.BODY) {
-                        this._docHyperLinkService.hideInfoPopup();
-                        this._docHyperLinkService.hideEditPopup();
-                        return;
-                    }
+                    const { unitId, ranges, segmentId } = params;
 
                     const doc = this._univerInstanceService.getUnit<DocumentDataModel>(unitId, UniverInstanceType.UNIVER_DOC);
                     const primary = ranges[0];
                     if (primary && doc) {
-                        const { startOffset, endOffset, collapsed } = primary;
-                        const customRanges = doc.getBody()?.customRanges;
-                        if (collapsed) { // cursor
+                        const { startOffset, endOffset, collapsed, segmentPage } = primary;
+                        const customRanges = doc.getSelfOrHeaderFooterModel(segmentId)?.getBody()?.customRanges;
+                        if (collapsed) {
+                            // cursor
                             const index = customRanges?.findIndex((value) => (value.startIndex) < startOffset && value.endIndex > endOffset - 1) ?? -1;
                             if (index > -1) {
                                 const customRange = customRanges![index];
-                                this._docHyperLinkService.showInfoPopup({ unitId, linkId: customRange.rangeId, rangeIndex: index });
+                                this._docHyperLinkService.showInfoPopup({ unitId, linkId: customRange.rangeId, segmentId, segmentPage, startIndex: customRange.startIndex, endIndex: customRange.endIndex });
                                 return;
                             }
-                        } else { // range
-                            if (customRanges?.find((value) => value.startIndex <= startOffset && value.endIndex >= (endOffset - 1))) {
+                        } else {
+                            // range
+                            const range = customRanges?.find((value) => value.startIndex <= startOffset && value.endIndex >= (endOffset - 1));
+                            if (range) {
                                 return;
                             }
                         }

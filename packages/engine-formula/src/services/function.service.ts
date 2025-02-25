@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,10 @@
  */
 
 import type { IDisposable, Nullable } from '@univerjs/core';
-import { createIdentifier, Disposable, toDisposable } from '@univerjs/core';
-
 import type { IFunctionInfo, IFunctionNames } from '../basics/function';
+
 import type { BaseFunction } from '../functions/base-function';
+import { createIdentifier, Disposable, toDisposable } from '@univerjs/core';
 
 export interface IFunctionService {
     /**
@@ -54,6 +54,7 @@ export interface IFunctionService {
 
     unregisterDescriptions(...functionTokens: IFunctionNames[]): void;
 }
+export const IFunctionService = createIdentifier<FunctionService>('univer.formula-function.service');
 
 export class FunctionService extends Disposable implements IFunctionService {
     private _functionExecutors: Map<IFunctionNames, BaseFunction> = new Map();
@@ -61,6 +62,7 @@ export class FunctionService extends Disposable implements IFunctionService {
     private _functionDescriptions: Map<IFunctionNames, IFunctionInfo> = new Map();
 
     override dispose(): void {
+        super.dispose();
         this._functionExecutors.clear();
         this._functionDescriptions.clear();
     }
@@ -124,5 +126,3 @@ export class FunctionService extends Disposable implements IFunctionService {
         }
     }
 }
-
-export const IFunctionService = createIdentifier<FunctionService>('univer.formula.function.service');

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,11 @@
  */
 
 import type { Injector, IWorkbookData, Univer, Workbook } from '@univerjs/core';
+import type {
+    IExpandSelectionCommandParams,
+    IMoveSelectionCommandParams,
+    ISelectAllCommandParams,
+} from '../set-selection.command';
 import { Direction, ICommandService, IUniverInstanceService, RANGE_TYPE, UniverInstanceType } from '@univerjs/core';
 import {
     SetColHiddenCommand,
@@ -27,13 +32,8 @@ import {
     SetSelectedRowsVisibleCommand,
     SheetsSelectionsService,
 } from '@univerjs/sheets';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import type {
-    IExpandSelectionCommandParams,
-    IMoveSelectionCommandParams,
-    ISelectAllCommandParams,
-} from '../set-selection.command';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ExpandSelectionCommand, JumpOver, MoveSelectionCommand, SelectAllCommand } from '../set-selection.command';
 import {
     createSelectionCommandTestBed,
@@ -171,7 +171,7 @@ describe('Test commands used for change selections', () => {
         univer = null;
     }
 
-    function prepareTestBed(snapshot?: IWorkbookData) {
+    function prepareSelectionsTestBed(snapshot?: IWorkbookData) {
         const testBed = createSelectionCommandTestBed(snapshot);
         univer = testBed.univer;
         get = testBed.get;
@@ -183,7 +183,7 @@ describe('Test commands used for change selections', () => {
     afterEach(disposeTestBed);
 
     describe('Simple movement to next cell', () => {
-        beforeEach(() => prepareTestBed());
+        beforeEach(() => prepareSelectionsTestBed());
 
         it('Should move selection with command', async () => {
             selectTopLeft();
@@ -258,7 +258,7 @@ describe('Test commands used for change selections', () => {
     });
 
     describe('Move cell to/through merged cells', () => {
-        beforeEach(() => prepareTestBed(SELECTION_WITH_MERGED_CELLS_DATA));
+        beforeEach(() => prepareSelectionsTestBed(SELECTION_WITH_MERGED_CELLS_DATA));
 
         /**
          * A1 | B1 | C1
@@ -303,7 +303,7 @@ describe('Test commands used for change selections', () => {
     });
 
     describe('Move to next cell that has value (skip cell)', () => {
-        beforeEach(() => prepareTestBed(SELECTION_WITH_EMPTY_CELLS_DATA));
+        beforeEach(() => prepareSelectionsTestBed(SELECTION_WITH_EMPTY_CELLS_DATA));
 
         it('Works on move', async () => {
             selectTopLeft();
@@ -362,7 +362,7 @@ describe('Test commands used for change selections', () => {
     });
 
     describe('Expand to next selection or shrink to previous selection', () => {
-        beforeEach(() => prepareTestBed(SELECTION_WITH_EMPTY_CELLS_DATA));
+        beforeEach(() => prepareSelectionsTestBed(SELECTION_WITH_EMPTY_CELLS_DATA));
 
         it('Works on expand', async () => {
             selectTopLeft();
@@ -440,7 +440,7 @@ describe('Test commands used for change selections', () => {
      * When A1:C1 is selected and B2 is the primary cell, shrink should only shrink to one side.
      */
     describe('Shrink edge case', () => {
-        beforeEach(() => prepareTestBed(SELECTION_WITH_MERGED_CELLS_DATA));
+        beforeEach(() => prepareSelectionsTestBed(SELECTION_WITH_MERGED_CELLS_DATA));
 
         it('Should shrink on side when primary is in the middle of selections', async () => {
             select(0, 0, 1, 2, 1, 1, true, false);
@@ -458,7 +458,7 @@ describe('Test commands used for change selections', () => {
     });
 
     describe('Expand to next gap position or shrink to previous gap', () => {
-        beforeEach(() => prepareTestBed(SELECTION_WITH_EMPTY_CELLS_DATA));
+        beforeEach(() => prepareSelectionsTestBed(SELECTION_WITH_EMPTY_CELLS_DATA));
 
         it('Works on gap expand', async () => {
             selectTopLeft();
@@ -506,7 +506,7 @@ describe('Test commands used for change selections', () => {
     });
 
     describe('Select all', () => {
-        beforeEach(() => prepareTestBed());
+        beforeEach(() => prepareSelectionsTestBed());
 
         it('Should first select all neighbor cells, and then the whole sheet', async () => {
             selectTopLeft();

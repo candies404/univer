@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,30 +14,26 @@
  * limitations under the License.
  */
 
-/* eslint-disable node/prefer-global/process */
 import { LocaleType, LogLevel, Univer, UniverInstanceType, UserManagerService } from '@univerjs/core';
+import { FUniver } from '@univerjs/core/facade';
+import { UniverDebuggerPlugin } from '@univerjs/debugger';
 import { defaultTheme } from '@univerjs/design';
 import { UniverDocsPlugin } from '@univerjs/docs';
-import { UniverDocsUIPlugin } from '@univerjs/docs-ui';
-import { UniverRenderEnginePlugin } from '@univerjs/engine-render';
-import { UniverUIPlugin } from '@univerjs/ui';
-import { UniverFormulaEnginePlugin } from '@univerjs/engine-formula';
-import { UniverDebuggerPlugin } from '@univerjs/debugger';
 import { UniverDocsDrawingUIPlugin } from '@univerjs/docs-drawing-ui';
-import { UniverDocsThreadCommentUIPlugin } from '@univerjs/docs-thread-comment-ui';
 import { UniverDocsHyperLinkUIPlugin } from '@univerjs/docs-hyper-link-ui';
 import { UniverDocsMentionUIPlugin } from '@univerjs/docs-mention-ui';
-import { DEFAULT_DOCUMENT_DATA_CN } from '../data';
-import { enUS, ruRU, zhCN } from '../locales';
+import { UniverDocsThreadCommentUIPlugin } from '@univerjs/docs-thread-comment-ui';
+import { UniverDocsUIPlugin } from '@univerjs/docs-ui';
+import { UniverFormulaEnginePlugin } from '@univerjs/engine-formula';
+import { UniverRenderEnginePlugin } from '@univerjs/engine-render';
+import { DEFAULT_DOCUMENT_DATA_SIMPLE } from '@univerjs/mockdata';
+import { UniverUIPlugin } from '@univerjs/ui';
+import { enUS, faIR, ruRU, zhCN } from '../locales';
 
-// package info
-// eslint-disable-next-line no-console
-console.table({
-    NODE_ENV: process.env.NODE_ENV,
-    GIT_COMMIT_HASH: process.env.GIT_COMMIT_HASH,
-    GIT_REF_NAME: process.env.GIT_REF_NAME,
-    BUILD_TIME: process.env.BUILD_TIME,
-});
+import '../global.css';
+
+/* eslint-disable node/prefer-global/process */
+const IS_E2E: boolean = !!process.env.IS_E2E;
 
 // univer
 const univer = new Univer({
@@ -47,6 +43,7 @@ const univer = new Univer({
         [LocaleType.ZH_CN]: zhCN,
         [LocaleType.EN_US]: enUS,
         [LocaleType.RU_RU]: ruRU,
+        [LocaleType.FA_IR]: faIR,
     },
     logLevel: LogLevel.VERBOSE,
 });
@@ -57,7 +54,6 @@ univer.registerPlugin(UniverFormulaEnginePlugin);
 univer.registerPlugin(UniverDebuggerPlugin);
 univer.registerPlugin(UniverUIPlugin, {
     container: 'app',
-    // footer: false,
 });
 
 univer.registerPlugin(UniverDocsPlugin);
@@ -74,7 +70,10 @@ univer.registerPlugin(UniverDocsDrawingUIPlugin);
 univer.registerPlugin(UniverDocsThreadCommentUIPlugin);
 univer.registerPlugin(UniverDocsHyperLinkUIPlugin);
 univer.registerPlugin(UniverDocsMentionUIPlugin);
-univer.createUnit(UniverInstanceType.UNIVER_DOC, DEFAULT_DOCUMENT_DATA_CN);
+
+if (!IS_E2E) {
+    univer.createUnit(UniverInstanceType.UNIVER_DOC, DEFAULT_DOCUMENT_DATA_SIMPLE);
+}
 
 // use for console test
 declare global {
@@ -96,3 +95,4 @@ const mockUser = {
     canBindAnonymous: false,
 };
 userManagerService.setCurrentUser(mockUser);
+window.univerAPI = FUniver.newAPI(univer);

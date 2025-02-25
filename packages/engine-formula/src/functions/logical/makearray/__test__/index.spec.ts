@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,16 @@
  */
 
 import type { Injector } from '@univerjs/core';
-import { beforeEach, describe, expect, it } from 'vitest';
-
-import { Lexer } from '../../../../engine/analysis/lexer';
 import type { LexerNode } from '../../../../engine/analysis/lexer-node';
-import { AstTreeBuilder } from '../../../../engine/analysis/parser';
+
 import type { BaseAstNode } from '../../../../engine/ast-node/base-ast-node';
-import { Interpreter } from '../../../../engine/interpreter/interpreter';
 import type { ArrayValueObject } from '../../../../engine/value-object/array-value-object';
+import type { BaseValueObject } from '../../../../engine/value-object/base-value-object';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { Lexer } from '../../../../engine/analysis/lexer';
+import { AstTreeBuilder } from '../../../../engine/analysis/parser';
+import { Interpreter } from '../../../../engine/interpreter/interpreter';
+import { generateExecuteAstNodeData } from '../../../../engine/utils/ast-node-tool';
 import { IFunctionService } from '../../../../services/function.service';
 import { createFunctionTestBed } from '../../../__tests__/create-function-test-bed';
 import { FUNCTION_NAMES_META } from '../../../meta/function-names';
@@ -30,7 +32,6 @@ import { Multiply } from '../../../meta/multiply';
 import { FUNCTION_NAMES_LOGICAL } from '../../function-names';
 import { Lambda } from '../../lambda';
 import { Makearray } from '../index';
-import type { BaseValueObject } from '../../../../engine/value-object/base-value-object';
 
 describe('Test makearray', () => {
     // const testFunction = new Makearray(FUNCTION_NAMES_LOGICAL.MAKEARRAY);
@@ -63,7 +64,7 @@ describe('Test makearray', () => {
 
             const astNode = astTreeBuilder.parse(lexerNode as LexerNode);
 
-            const result = await interpreter.executeAsync(astNode as BaseAstNode);
+            const result = await interpreter.executeAsync(generateExecuteAstNodeData(astNode as BaseAstNode));
 
             expect((result as ArrayValueObject).toValue()).toStrictEqual([
                 [1, 2, 3, 4],
@@ -78,7 +79,7 @@ describe('Test makearray', () => {
 
             const astNode = astTreeBuilder.parse(lexerNode as LexerNode);
 
-            const result = await interpreter.executeAsync(astNode as BaseAstNode);
+            const result = await interpreter.executeAsync(generateExecuteAstNodeData(astNode as BaseAstNode));
 
             expect((result as BaseValueObject).getValue()).toStrictEqual(15);
         });
@@ -88,7 +89,7 @@ describe('Test makearray', () => {
 
             const astNode = astTreeBuilder.parse(lexerNode as LexerNode);
 
-            const result = await interpreter.executeAsync(astNode as BaseAstNode);
+            const result = await interpreter.executeAsync(generateExecuteAstNodeData(astNode as BaseAstNode));
 
             expect((result as ArrayValueObject).toValue()).toStrictEqual([
                 [1, 2, 3, 4],

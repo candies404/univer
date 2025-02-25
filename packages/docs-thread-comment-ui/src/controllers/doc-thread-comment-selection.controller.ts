@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,19 +15,18 @@
  */
 
 import type { DocumentDataModel, ITextRange } from '@univerjs/core';
-import { Disposable, ICommandService, Inject, IUniverInstanceService, LifecycleStages, OnLifecycle, UniverInstanceType } from '@univerjs/core';
 import type { ISetTextSelectionsOperationParams } from '@univerjs/docs';
-import { SetTextSelectionsOperation } from '@univerjs/docs';
-import { SetActiveCommentOperation, ThreadCommentPanelService } from '@univerjs/thread-comment-ui';
-import { DocBackScrollRenderController } from '@univerjs/docs-ui';
 import type { ITextRangeWithStyle } from '@univerjs/engine-render';
+import { Disposable, ICommandService, Inject, isInternalEditorID, IUniverInstanceService, UniverInstanceType } from '@univerjs/core';
+import { SetTextSelectionsOperation } from '@univerjs/docs';
+import { DocBackScrollRenderController } from '@univerjs/docs-ui';
 import { IRenderManagerService } from '@univerjs/engine-render';
 import { ThreadCommentModel } from '@univerjs/thread-comment';
+import { SetActiveCommentOperation, ThreadCommentPanelService } from '@univerjs/thread-comment-ui';
+import { ShowCommentPanelOperation } from '../commands/operations/show-comment-panel.operation';
 import { DEFAULT_DOC_SUBUNIT_ID } from '../common/const';
 import { DocThreadCommentService } from '../services/doc-thread-comment.service';
-import { ShowCommentPanelOperation } from '../commands/operations/show-comment-panel.operation';
 
-@OnLifecycle(LifecycleStages.Rendered, DocThreadCommentSelectionController)
 export class DocThreadCommentSelectionController extends Disposable {
     constructor(
         @Inject(ThreadCommentPanelService) private readonly _threadCommentPanelService: ThreadCommentPanelService,
@@ -50,6 +49,7 @@ export class DocThreadCommentSelectionController extends Disposable {
                 if (commandInfo.id === SetTextSelectionsOperation.id) {
                     const params = commandInfo.params as ISetTextSelectionsOperationParams;
                     const { unitId, ranges } = params;
+                    if (isInternalEditorID(unitId)) return;
                     const doc = this._univerInstanceService.getUnit<DocumentDataModel>(unitId, UniverInstanceType.UNIVER_DOC);
                     const primary = ranges[0] as ITextRangeWithStyle | undefined;
                     if (lastSelection?.startOffset === primary?.startOffset && lastSelection?.endOffset === primary?.endOffset) {
@@ -97,9 +97,9 @@ export class DocThreadCommentSelectionController extends Disposable {
                 const doc = this._univerInstanceService.getUnit<DocumentDataModel>(activeComment.unitId);
                 if (doc) {
                     const backScrollController = this._renderManagerService.getRenderById(activeComment.unitId)?.with(DocBackScrollRenderController);
-                    const customRange = doc.getCustomRanges()?.find((range) => range.rangeId === activeComment.commentId);
+                    const customRange = doc.getBody()?.customDecorations?.find((range) => range.id === activeComment.commentId);
                     if (customRange && backScrollController) {
-                        backScrollController.scrollToRange(activeComment.unitId, {
+                        backScrollController.scrollToRange({
                             startOffset: customRange.startIndex,
                             endOffset: customRange.endIndex,
                             collapsed: false,

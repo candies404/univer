@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,22 +14,21 @@
  * limitations under the License.
  */
 
-import type { DocumentDataModel, IDisposable, ITextRange, Nullable } from '@univerjs/core';
-import { Disposable, ICommandService, Inject, IUniverInstanceService, UniverInstanceType } from '@univerjs/core';
-import { TextSelectionManagerService } from '@univerjs/docs';
+import type { DocumentDataModel, IDisposable, Nullable } from '@univerjs/core';
+import { Disposable, Inject, IUniverInstanceService, UniverInstanceType } from '@univerjs/core';
+import { DocSelectionManagerService } from '@univerjs/docs';
 import { DocCanvasPopManagerService } from '@univerjs/docs-ui';
 import { BehaviorSubject } from 'rxjs';
-import { DocHyperLinkModel } from '@univerjs/docs-hyper-link';
 import { DocHyperLinkEdit } from '../views/hyper-link-edit';
 import { DocLinkPopup } from '../views/hyper-link-popup';
 
-/**
- * A link will have a placeholder, and when it is a link at the beginning, the placeholder does not have a width or height, causing an evaluation error
- */
-const SKIT_PLACEHOLDER = 2;
-
 export interface ILinkInfo {
-    unitId: string; linkId: string; rangeIndex: number;
+    unitId: string;
+    linkId: string;
+    segmentId?: string;
+    segmentPage?: number;
+    startIndex: number;
+    endIndex: number;
 }
 
 export class DocHyperLinkPopupService extends Disposable {
@@ -43,10 +42,8 @@ export class DocHyperLinkPopupService extends Disposable {
 
     constructor(
         @Inject(DocCanvasPopManagerService) private readonly _docCanvasPopupManagerService: DocCanvasPopManagerService,
-        @Inject(TextSelectionManagerService) private readonly _textSelectionManagerService: TextSelectionManagerService,
-        @Inject(DocHyperLinkModel) private readonly _docHyperLinkModel: DocHyperLinkModel,
-        @IUniverInstanceService private readonly _univerInstanceService: IUniverInstanceService,
-        @ICommandService private readonly _commandService: ICommandService
+        @Inject(DocSelectionManagerService) private readonly _textSelectionManagerService: DocSelectionManagerService,
+        @IUniverInstanceService private readonly _univerInstanceService: IUniverInstanceService
     ) {
         super();
 
@@ -64,37 +61,38 @@ export class DocHyperLinkPopupService extends Disposable {
         return this._showingLink$.value;
     }
 
-    showEditPopup(linkInfo: Nullable<ILinkInfo>): Nullable<IDisposable> {
+    showEditPopup(unitId: string, linkInfo: Nullable<ILinkInfo>): Nullable<IDisposable> {
         if (this._editPopup) {
             this._editPopup.dispose();
         }
         this._editingLink$.next(linkInfo);
-        let activeRange: Nullable<ITextRange> = this._textSelectionManagerService.getActiveRange();
+        const textRanges = this._textSelectionManagerService.getTextRanges({ unitId, subUnitId: unitId });
+        let activeRange = textRanges?.[textRanges.length - 1];
+
         if (linkInfo) {
-            const { unitId, rangeIndex } = linkInfo;
-            const doc = this._univerInstanceService.getUnit<DocumentDataModel>(unitId, UniverInstanceType.UNIVER_DOC);
-            const range = doc?.getBody()?.customRanges?.[rangeIndex];
-            if (range) {
-                activeRange = {
-                    collapsed: false,
-                    startOffset: range.startIndex,
-                    endOffset: range.endIndex + 1,
-                };
-                this._textSelectionManagerService.replaceTextRanges([{
-                    startOffset: range.startIndex,
-                    endOffset: range.endIndex + 1,
-                }]);
-            }
+            const { segmentId, segmentPage, startIndex, endIndex } = linkInfo;
+            activeRange = {
+                collapsed: false,
+                startOffset: startIndex,
+                endOffset: endIndex + 1,
+                segmentId,
+                segmentPage,
+            };
+
+            this._textSelectionManagerService.replaceDocRanges([{
+                startOffset: startIndex,
+                endOffset: endIndex + 1,
+            }]);
         }
 
         if (activeRange) {
-            activeRange.startOffset += SKIT_PLACEHOLDER;
             this._editPopup = this._docCanvasPopupManagerService.attachPopupToRange(
                 activeRange,
                 {
                     componentKey: DocHyperLinkEdit.componentKey,
                     direction: 'bottom',
-                }
+                },
+                unitId
             );
             return this._editPopup;
         }
@@ -108,11 +106,14 @@ export class DocHyperLinkPopupService extends Disposable {
     }
 
     showInfoPopup(info: ILinkInfo): Nullable<IDisposable> {
-        const { linkId, unitId, rangeIndex } = info;
+        const { linkId, unitId, segmentId, segmentPage, startIndex, endIndex } = info;
         if (
             this.showing?.linkId === linkId &&
             this.showing?.unitId === unitId &&
-            this.showing.rangeIndex === rangeIndex
+            this.showing?.segmentId === segmentId &&
+            this.showing?.segmentPage === segmentPage &&
+            this.showing?.startIndex === startIndex &&
+            this.showing?.endIndex === endIndex
         ) {
             return;
         }
@@ -120,31 +121,29 @@ export class DocHyperLinkPopupService extends Disposable {
         if (this._infoPopup) {
             this._infoPopup.dispose();
         }
-        const link = this._docHyperLinkModel.getLink(unitId, linkId);
         const doc = this._univerInstanceService.getUnit<DocumentDataModel>(unitId, UniverInstanceType.UNIVER_DOC);
-        if (!doc || !link) {
+        if (!doc) {
             return;
         }
-        const range = doc.getBody()?.customRanges?.[rangeIndex];
-        this._showingLink$.next({ unitId, linkId, rangeIndex });
-        if (!range) {
-            return;
-        }
+        this._showingLink$.next({ unitId, linkId, segmentId, segmentPage, startIndex, endIndex });
 
         this._infoPopup = this._docCanvasPopupManagerService.attachPopupToRange(
             {
                 collapsed: false,
-                startOffset: range.startIndex + SKIT_PLACEHOLDER,
-                endOffset: range.endIndex + 1,
+                startOffset: startIndex,
+                endOffset: endIndex + 1,
+                segmentId,
+                segmentPage,
             },
             {
                 componentKey: DocLinkPopup.componentKey,
-                direction: 'top',
-                closeOnSelfTarget: true,
+                direction: 'top-center',
+                multipleDirection: 'top',
                 onClickOutside: () => {
                     this.hideInfoPopup();
                 },
-            }
+            },
+            unitId
         );
         return this._infoPopup;
     }

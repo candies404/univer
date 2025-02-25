@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,18 +15,16 @@
  */
 
 import type { DocumentDataModel } from '@univerjs/core';
-import { Disposable, ICommandService, Inject, IUniverInstanceService, LifecycleStages, OnLifecycle } from '@univerjs/core';
 import type { ITextRangeWithStyle } from '@univerjs/engine-render';
 import type { ISetTextSelectionsOperationParams } from '../commands/operations/text-selection.operation';
+import { BuildTextUtils, Disposable, ICommandService, Inject, IUniverInstanceService } from '@univerjs/core';
 import { SetTextSelectionsOperation } from '../commands/operations/text-selection.operation';
-import { TextSelectionManagerService } from '../services/text-selection-manager.service';
-import { isSegmentIntersects } from '../basics/selection';
+import { DocSelectionManagerService } from '../services/doc-selection-manager.service';
 
-@OnLifecycle(LifecycleStages.Ready, DocCustomRangeController)
 export class DocCustomRangeController extends Disposable {
     constructor(
         @ICommandService private readonly _commandService: ICommandService,
-        @Inject(TextSelectionManagerService) private readonly _textSelectionManagerService: TextSelectionManagerService,
+        @Inject(DocSelectionManagerService) private readonly _textSelectionManagerService: DocSelectionManagerService,
         @IUniverInstanceService private readonly _univerInstanceService: IUniverInstanceService
     ) {
         super();
@@ -48,7 +46,7 @@ export class DocCustomRangeController extends Disposable {
             if (collapsed) {
                 return range.startIndex < startOffset && range.endIndex >= endOffset;
             }
-            return isSegmentIntersects(startOffset, endOffset - 1, range.startIndex, range.endIndex);
+            return BuildTextUtils.range.isIntersects(startOffset, endOffset - 1, range.startIndex, range.endIndex);
         });
 
         if (customRanges?.length) {

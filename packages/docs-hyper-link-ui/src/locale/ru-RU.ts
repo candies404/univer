@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,9 @@ const ruRU: typeof zhCN = {
             confirm: 'Подтвердить',
             cancel: 'Отменить',
             title: 'Ссылка',
-            address: 'Адрес ссылки',
+            address: 'Cсылки',
+            label: 'Текст',
+            labelError: 'Введите текст ссылки',
             placeholder: 'Пожалуйста, введите URL ссылки',
             addressError: 'URL некорректен!',
         },

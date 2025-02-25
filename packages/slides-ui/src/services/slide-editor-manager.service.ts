@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,11 +48,9 @@ export class SlideEditorManagerService implements ISlideEditorManagerService, ID
     private _rect: Nullable<ICellEditorBoundingClientRect> = null;
 
     private readonly _state$ = new BehaviorSubject<Nullable<ICellEditorManagerParam>>(null);
-
     readonly state$ = this._state$.asObservable();
 
     private readonly _rect$ = new BehaviorSubject<Nullable<ICellEditorBoundingClientRect>>(null);
-
     readonly rect$ = this._rect$.asObservable();
 
     private _focus: boolean = false;

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-import type { ICellDataForSheetInterceptor, IRange, IScale } from '@univerjs/core';
-import { Range } from '@univerjs/core';
+import type { ICellDataForSheetInterceptor, IScale } from '@univerjs/core';
 import type { SpreadsheetSkeleton, UniverRenderingContext } from '@univerjs/engine-render';
+import type { ICellPermission } from '@univerjs/sheets';
+import { Range } from '@univerjs/core';
 import { SheetExtension } from '@univerjs/engine-render';
 import { UnitAction } from '@univerjs/protocol';
-import type { ICellPermission } from '@univerjs/sheets';
 import { base64 } from './protect-background-img';
 
 export const RANGE_PROTECTION_CAN_VIEW_RENDER_EXTENSION_KEY = 'RANGE_PROTECTION_CAN_VIEW_RENDER_EXTENSION_KEY';
@@ -51,11 +51,10 @@ export abstract class RangeProtectionRenderExtension extends SheetExtension {
     override draw(
         ctx: UniverRenderingContext,
         _parentScale: IScale,
-        spreadsheetSkeleton: SpreadsheetSkeleton,
-        _diffRanges?: IRange[]
+        spreadsheetSkeleton: SpreadsheetSkeleton
     ) {
-        const { rowHeightAccumulation, columnWidthAccumulation, worksheet, dataMergeCache } =
-            spreadsheetSkeleton;
+        const { worksheet } = spreadsheetSkeleton;
+
         if (!worksheet) {
             return;
         }
@@ -65,7 +64,7 @@ export abstract class RangeProtectionRenderExtension extends SheetExtension {
         }
         this.renderCache.clear();
         Range.foreach(spreadsheetSkeleton.rowColumnSegment, (row, col) => {
-            if (!worksheet.getColVisible(col) || !worksheet.getRowVisible(row)) {
+            if (!worksheet.getRowVisible(row) || !worksheet.getColVisible(col)) {
                 return;
             }
             const { selectionProtection = [] } = worksheet.getCell(row, col) as IRangeProtectionRenderCellData || {};
@@ -86,8 +85,8 @@ export abstract class RangeProtectionRenderExtension extends SheetExtension {
                     }
                     this.renderCache.add(config.ruleId);
                     config.ranges!.forEach((range) => {
-                        const start = this.getCellIndex(range.startRow, range.startColumn, rowHeightAccumulation, columnWidthAccumulation, dataMergeCache);
-                        const end = this.getCellIndex(range.endRow, range.endColumn, rowHeightAccumulation, columnWidthAccumulation, dataMergeCache);
+                        const start = spreadsheetSkeleton.getCellWithCoordByIndex(range.startRow, range.startColumn, false);
+                        const end = spreadsheetSkeleton.getCellWithCoordByIndex(range.endRow, range.endColumn, false);
                         ctx.fillRect(start.startX, start.startY, end.endX - start.startX, end.endY - start.startY);
                     });
                 }

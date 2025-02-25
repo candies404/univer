@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,7 @@
  * limitations under the License.
  */
 
-import type { ICellData, Nullable } from '@univerjs/core';
-import { DEFAULT_EMPTY_DOCUMENT_VALUE, Tools } from '@univerjs/core';
+import { Tools } from '@univerjs/core';
 
 export function isLegalLink(link: string) {
     return Tools.isLegalUrl(link);
@@ -35,7 +34,13 @@ export function serializeUrl(urlStr: string) {
     if (isLegalLink(urlStr)) {
         const transformedUrl = hasProtocol(urlStr) ? urlStr : isEmail(urlStr) ? `mailto://${urlStr}` : `http://${urlStr}`;
 
-        const url = new URL(transformedUrl);
+        let url: URL;
+        try {
+            url = new URL(transformedUrl);
+        } catch {
+            return urlStr;
+        }
+
         if (
             url.hostname === location.hostname &&
             url.port === location.port &&
@@ -51,26 +56,4 @@ export function serializeUrl(urlStr: string) {
     }
 
     return urlStr;
-}
-
-export function getCellValueOrigin(cell: Nullable<ICellData>) {
-    if (cell === null) {
-        return '';
-    }
-
-    if (cell?.p) {
-        const body = cell?.p.body;
-
-        if (body == null) {
-            return '';
-        }
-
-        const data = body.dataStream;
-        const lastString = data.substring(data.length - 2, data.length);
-        const newDataStream = lastString === DEFAULT_EMPTY_DOCUMENT_VALUE ? data.substring(0, data.length - 2) : data;
-
-        return newDataStream;
-    }
-
-    return cell?.v;
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,20 +14,17 @@
  * limitations under the License.
  */
 
-import { Disposable, ICommandService, Inject, Injector, LifecycleStages, OnLifecycle } from '@univerjs/core';
-
+import type { IShortcutItem } from '../../services/shortcut/shortcut.service';
+import { Disposable, ICommandService, Inject, Injector } from '@univerjs/core';
 import {
     ShortcutPanelComponentName,
     ToggleShortcutPanelOperation,
 } from '../../commands/operations/toggle-shortcut-panel.operation';
 import { ComponentManager } from '../../common/component-manager';
-import { IMenuService } from '../../services/menu/menu.service';
-import { ShortcutPanel } from '../../views/components/shortcut-panel/ShortcutPanel';
-import type { IShortcutItem } from '../../services/shortcut/shortcut.service';
-import { IShortcutService } from '../../services/shortcut/shortcut.service';
+import { IMenuManagerService } from '../../services/menu/menu-manager.service';
 import { KeyCode, MetaKeys } from '../../services/shortcut/keycode';
-import type { IUniverUIConfig } from '../ui/ui.controller';
-import { ShortcutPanelMenuItemFactory } from './menu';
+import { IShortcutService } from '../../services/shortcut/shortcut.service';
+import { ShortcutPanel } from '../../views/components/shortcut-panel/ShortcutPanel';
 
 const ToggleShortcutPanelShortcut: IShortcutItem = {
     id: ToggleShortcutPanelOperation.id,
@@ -39,22 +36,15 @@ const ToggleShortcutPanelShortcut: IShortcutItem = {
 /**
  * This controller add a side panel to the application to display the shortcuts.
  */
-@OnLifecycle(LifecycleStages.Steady, ShortcutPanelController)
 export class ShortcutPanelController extends Disposable {
     constructor(
-        private readonly _config: Partial<IUniverUIConfig>,
         @Inject(Injector) injector: Injector,
         @Inject(ComponentManager) componentManager: ComponentManager,
         @IShortcutService shortcutService: IShortcutService,
-        @IMenuService menuService: IMenuService,
+        @IMenuManagerService private readonly _menuManagerService: IMenuManagerService,
         @ICommandService commandService: ICommandService
     ) {
         super();
-
-        const { menu = {} } = this._config;
-
-        // register the menu item
-        this.disposeWithMe(menuService.addMenuItem(injector.invoke(ShortcutPanelMenuItemFactory), menu));
 
         // register the panel
         this.disposeWithMe(componentManager.register(ShortcutPanelComponentName, ShortcutPanel));

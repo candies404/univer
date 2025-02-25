@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,11 @@
  */
 
 import type { DocumentDataModel, ICustomDecorationForInterceptor, ICustomRangeForInterceptor, IInterceptor, Nullable } from '@univerjs/core';
-import { composeInterceptors, Disposable, DisposableCollection, DOCS_FORMULA_BAR_EDITOR_UNIT_ID_KEY, DOCS_NORMAL_EDITOR_UNIT_ID_KEY, Inject, LifecycleStages, OnLifecycle, remove, toDisposable } from '@univerjs/core';
 import type { DocumentViewModel, IRenderContext, IRenderModule } from '@univerjs/engine-render';
+import { composeInterceptors, Disposable, DisposableCollection, DOCS_FORMULA_BAR_EDITOR_UNIT_ID_KEY, DOCS_NORMAL_EDITOR_UNIT_ID_KEY, Inject, remove, toDisposable } from '@univerjs/core';
 import { DocSkeletonManagerService } from '../doc-skeleton-manager.service';
 import { DOC_INTERCEPTOR_POINT } from './interceptor-const';
 
-@OnLifecycle(LifecycleStages.Starting, DocInterceptorService)
 export class DocInterceptorService extends Disposable implements IRenderModule {
     private _interceptorsByName: Map<string, Array<IInterceptor<unknown, unknown>>> = new Map();
 
@@ -30,16 +29,14 @@ export class DocInterceptorService extends Disposable implements IRenderModule {
     ) {
         super();
 
-        this.disposeWithMe(this._docSkeletonManagerService.currentViewModel$.subscribe((viewModel) => {
-            if (viewModel) {
-                const unitId = viewModel.getDataModel().getUnitId();
-                if (unitId === DOCS_NORMAL_EDITOR_UNIT_ID_KEY || unitId === DOCS_FORMULA_BAR_EDITOR_UNIT_ID_KEY) {
-                    return;
-                }
+        const viewModel = this._docSkeletonManagerService.getViewModel();
 
-                this.interceptDocumentViewModel(viewModel);
-            }
-        }));
+        const unitId = viewModel.getDataModel().getUnitId();
+        if (unitId === DOCS_NORMAL_EDITOR_UNIT_ID_KEY || unitId === DOCS_FORMULA_BAR_EDITOR_UNIT_ID_KEY) {
+            return;
+        }
+
+        this.disposeWithMe(this.interceptDocumentViewModel(viewModel));
 
         this.disposeWithMe(this.intercept(DOC_INTERCEPTOR_POINT.CUSTOM_RANGE, {
             priority: -1,
@@ -47,6 +44,17 @@ export class DocInterceptorService extends Disposable implements IRenderModule {
                 return next(data);
             },
         }));
+
+        let disposableCollection = new DisposableCollection();
+        viewModel.segmentViewModels$.subscribe((segmentViewModels) => {
+            disposableCollection.dispose();
+            disposableCollection = new DisposableCollection();
+            segmentViewModels.forEach((segmentViewModel) => {
+                disposableCollection.add(this.interceptDocumentViewModel(segmentViewModel));
+            });
+        });
+
+        this.disposeWithMe(disposableCollection);
     }
 
     intercept<T extends IInterceptor<any, any>>(name: T, interceptor: T) {

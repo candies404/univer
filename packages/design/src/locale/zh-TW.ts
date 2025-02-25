@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-import PickerZhTw from 'rc-picker/lib/locale/zh_TW';
-import dajsZhTw from 'dayjs/locale/zh-tw';
 import type { ILocale } from './interface';
+import dajsZhTw from 'dayjs/locale/zh-tw';
+import PickerZhTw from 'rc-picker/lib/locale/zh_TW';
 
 const locale: ILocale = {
     design: {
@@ -24,14 +24,14 @@ const locale: ILocale = {
             cancel: '取消',
             confirm: '確定',
         },
-        Slider: {
-            resetTo: '恢復至',
-        },
         Picker: {
             ...dajsZhTw,
             ...PickerZhTw,
         },
         CascaderList: {
+            empty: '無',
+        },
+        Select: {
             empty: '無',
         },
     },

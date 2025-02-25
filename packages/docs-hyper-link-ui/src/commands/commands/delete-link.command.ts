@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,11 @@
 import type { ICommand } from '@univerjs/core';
 import { CommandType, ICommandService } from '@univerjs/core';
 import { deleteCustomRangeFactory } from '@univerjs/docs';
-import { DocHyperLinkModel } from '@univerjs/docs-hyper-link';
 
 export interface IDeleteDocHyperLinkMutationParams {
     unitId: string;
     linkId: string;
+    segmentId?: string;
 }
 
 export const DeleteDocHyperLinkCommand: ICommand<IDeleteDocHyperLinkMutationParams> = {
@@ -31,15 +31,10 @@ export const DeleteDocHyperLinkCommand: ICommand<IDeleteDocHyperLinkMutationPara
         if (!params) {
             return false;
         }
-        const { unitId, linkId } = params;
+        const { unitId, linkId, segmentId } = params;
         const commandService = accessor.get(ICommandService);
-        const hyperLinkModel = accessor.get(DocHyperLinkModel);
-        const link = hyperLinkModel.getLink(unitId, linkId);
-        if (!link) {
-            return false;
-        }
 
-        const doMutation = deleteCustomRangeFactory(accessor, { unitId, rangeId: linkId });
+        const doMutation = deleteCustomRangeFactory(accessor, { unitId, rangeId: linkId, segmentId });
         if (!doMutation) {
             return false;
         }

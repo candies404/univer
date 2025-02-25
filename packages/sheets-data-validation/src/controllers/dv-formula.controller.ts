@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,11 @@
  */
 
 import type { ICellDataForSheetInterceptor, Nullable, Workbook, Worksheet } from '@univerjs/core';
-import { Disposable, Inject, IPermissionService, IUniverInstanceService, LifecycleStages, OnLifecycle, UniverInstanceType } from '@univerjs/core';
-import { deserializeRangeWithSheet, LexerTreeBuilder } from '@univerjs/engine-formula';
-import { type ICellPermission, WorksheetViewPermission } from '@univerjs/sheets';
+import { Disposable, Inject, IPermissionService, IUniverInstanceService, UniverInstanceType } from '@univerjs/core';
+import { deserializeRangeWithSheetWithCache, LexerTreeBuilder } from '@univerjs/engine-formula';
 import { UnitAction } from '@univerjs/protocol';
+import { type ICellPermission, WorksheetViewPermission } from '@univerjs/sheets';
 
-@OnLifecycle(LifecycleStages.Rendered, DataValidationFormulaController)
 export class DataValidationFormulaController extends Disposable {
     constructor(
         @IUniverInstanceService private readonly _univerInstanceService: IUniverInstanceService,
@@ -41,7 +40,7 @@ export class DataValidationFormulaController extends Disposable {
                 continue;
             }
             const { token } = node;
-            const sequenceGrid = deserializeRangeWithSheet(token);
+            const sequenceGrid = deserializeRangeWithSheetWithCache(token);
             const workbook = this._univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
             let targetSheet: Nullable<Worksheet> = workbook.getActiveSheet();
             const unitId = workbook.getUnitId();

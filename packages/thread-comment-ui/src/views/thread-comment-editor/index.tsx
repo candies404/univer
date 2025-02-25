@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,18 +14,16 @@
  * limitations under the License.
  */
 
+import type { IDocumentBody, IDocumentData } from '@univerjs/core';
+import type { Editor, IKeyboardEventConfig } from '@univerjs/docs-ui';
 import type { IThreadComment } from '@univerjs/thread-comment';
-import type { MentionProps } from '@univerjs/design';
-import { Button, Mention, Mentions } from '@univerjs/design';
-import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
-import { ICommandService, LocaleService, useDependency } from '@univerjs/core';
-import type { IDocumentBody } from '@univerjs/core';
-import { ITextSelectionRenderManager } from '@univerjs/engine-render';
-import { TextSelectionManagerService } from '@univerjs/docs';
-import { IThreadCommentMentionDataService } from '../../services/thread-comment-mention-data.service';
+import { BuildTextUtils, DOCS_NORMAL_EDITOR_UNIT_ID_KEY, ICommandService, LocaleService, Tools, UniverInstanceType } from '@univerjs/core';
+import { Button } from '@univerjs/design';
+import { BreakLineCommand, IEditorService, RichTextEditor } from '@univerjs/docs-ui';
+import { KeyCode, useDependency } from '@univerjs/ui';
+import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { SetActiveCommentOperation } from '../../commands/operations/comment.operations';
 import styles from './index.module.less';
-import { parseMentions, transformDocument2TextNodes, transformMention, transformTextNode2Text, transformTextNodes2Document } from './util';
 
 export interface IThreadCommentEditorProps {
     id?: string;
@@ -35,79 +33,94 @@ export interface IThreadCommentEditorProps {
     autoFocus?: boolean;
     unitId: string;
     subUnitId: string;
+    type: UniverInstanceType;
 }
 
 export interface IThreadCommentEditorInstance {
     reply: (text: IDocumentBody) => void;
 }
 
-const defaultRenderSuggestion: MentionProps['renderSuggestion'] = (mention, search, highlightedDisplay, index, focused) => {
-    const icon = (mention as any).raw?.icon;
-    return (
-        <div className={styles.threadCommentEditorSuggestion}>
-            {icon ? <img className={styles.threadCommentEditorSuggestionIcon} src={icon} /> : null}
-            <div>
-                {mention.display ?? mention.id}
-            </div>
-        </div>
-    );
-};
+function getSnapshot(body: IDocumentBody): IDocumentData {
+    return {
+        id: 'd',
+        body,
+        documentStyle: {},
+    };
+}
 
 export const ThreadCommentEditor = forwardRef<IThreadCommentEditorInstance, IThreadCommentEditorProps>((props, ref) => {
-    const { comment, onSave, id, onCancel, autoFocus, unitId, subUnitId } = props;
-    const mentionDataService = useDependency(IThreadCommentMentionDataService);
+    const { comment, onSave, id, onCancel, autoFocus, unitId, type } = props;
     const commandService = useDependency(ICommandService);
     const localeService = useDependency(LocaleService);
-    const [localComment, setLocalComment] = useState({ ...comment });
     const [editing, setEditing] = useState(false);
-    const inputRef = useRef(null);
-    const textSelectionRenderManager = useDependency(ITextSelectionRenderManager);
-    const textSelectionManagerService = useDependency(TextSelectionManagerService);
+    const editorService = useDependency(IEditorService);
+    const editor = useRef<Editor>(null);
+    const rootEditorId = type === UniverInstanceType.UNIVER_SHEET ? DOCS_NORMAL_EDITOR_UNIT_ID_KEY : unitId;
+    const [canSubmit, setCanSubmit] = useState(() => BuildTextUtils.transform.getPlainText(editor.current?.getDocumentData().body?.dataStream ?? ''));
+    useEffect(() => {
+        setCanSubmit(BuildTextUtils.transform.getPlainText(editor.current?.getDocumentData().body?.dataStream ?? ''));
+
+        const sub = editor.current?.selectionChange$.subscribe(() => {
+            setCanSubmit(BuildTextUtils.transform.getPlainText(editor.current?.getDocumentData().body?.dataStream ?? ''));
+        });
+
+        return () => sub?.unsubscribe();
+    }, [editor.current?.selectionChange$]);
+
+    const keyboardEventConfig: IKeyboardEventConfig = useMemo(() => (
+        {
+            keyCodes: [{ keyCode: KeyCode.ENTER }],
+            handler: (keyCode) => {
+                if (keyCode === KeyCode.ENTER) {
+                    commandService.executeCommand(
+                        BreakLineCommand.id
+                    );
+                }
+            },
+        }
+    ), [commandService]);
 
     useImperativeHandle(ref, () => ({
         reply(text) {
-            setLocalComment({
-                ...comment,
-                text,
-                attachments: [],
-            });
-            (inputRef.current as any)?.inputElement.focus();
+            editor.current?.focus();
+            editor.current?.setDocumentData(getSnapshot(text));
         },
     }));
 
+    const handleSave = () => {
+        if (editor.current) {
+            const newText = Tools.deepClone(editor.current.getDocumentData().body);
+            setEditing(false);
+            onSave?.({
+                ...comment,
+                text: newText!,
+            });
+            editor.current.replaceText('');
+            setTimeout(() => {
+                editor.current?.setSelectionRanges([]);
+                editor.current?.blur();
+            }, 10);
+        }
+    };
+
     return (
         <div className={styles.threadCommentEditor} onClick={(e) => e.preventDefault()}>
-            <Mentions
-                ref={inputRef}
+            <RichTextEditor
+                editorRef={editor}
                 autoFocus={autoFocus}
                 style={{ width: '100%' }}
+                keyboardEventConfig={keyboardEventConfig}
                 placeholder={localeService.t('threadCommentUI.editor.placeholder')}
-                value={localComment?.text ? transformTextNode2Text(transformDocument2TextNodes(localComment.text)) : ''}
-                onChange={(e) => {
-                    const text = e.target.value;
-                    if (!text) {
-                        setLocalComment({ ...comment, text: undefined });
-                    }
-                    setLocalComment?.({ ...comment, text: transformTextNodes2Document(parseMentions(e.target.value)) });
+                initialValue={comment?.text && getSnapshot(comment.text)}
+                onFocusChange={(isFocus) => isFocus && setEditing(isFocus)}
+                isSingle={false}
+                maxHeight={64}
+                onClickOutside={() => {
+                    setTimeout(() => {
+                        editorService.focus(rootEditorId);
+                    }, 30);
                 }}
-                onFocus={() => {
-                    const activeRange = textSelectionManagerService.getActiveRange();
-                    if (activeRange && activeRange.collapsed) {
-                        textSelectionRenderManager.removeAllTextRanges();
-                    }
-                    textSelectionRenderManager.blur();
-                    setEditing(true);
-                }}
-            >
-                <Mention
-                    key={mentionDataService.trigger}
-                    trigger={mentionDataService.trigger}
-                    data={(query, callback) => mentionDataService.getMentions!(query, unitId, subUnitId)
-                        .then((res) => res.map(transformMention)).then(callback) as any}
-                    displayTransform={(id, label) => `@${label} `}
-                    renderSuggestion={mentionDataService.renderSuggestion ?? defaultRenderSuggestion}
-                />
-            </Mentions>
+            />
             {editing
                 ? (
                     <div className={styles.threadCommentEditorButtons}>
@@ -116,7 +129,7 @@ export const ThreadCommentEditor = forwardRef<IThreadCommentEditorInstance, IThr
                             onClick={() => {
                                 onCancel?.();
                                 setEditing(false);
-                                setLocalComment({ text: undefined });
+                                editor.current?.replaceText('', true);
                                 commandService.executeCommand(SetActiveCommentOperation.id);
                             }}
                         >
@@ -124,17 +137,8 @@ export const ThreadCommentEditor = forwardRef<IThreadCommentEditorInstance, IThr
                         </Button>
                         <Button
                             type="primary"
-                            disabled={!localComment.text}
-                            onClick={() => {
-                                if (localComment.text) {
-                                    onSave?.({
-                                        ...localComment,
-                                        text: localComment.text,
-                                    });
-                                    setEditing(false);
-                                    setLocalComment({ text: undefined });
-                                }
-                            }}
+                            disabled={!canSubmit}
+                            onClick={handleSave}
                         >
                             {localeService.t(id ? 'threadCommentUI.editor.save' : 'threadCommentUI.editor.reply')}
                         </Button>

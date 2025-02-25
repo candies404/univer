@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 
 import type { IAccessor, ICommand, IMutationInfo, JSONXActions } from '@univerjs/core';
+import type { IRichTextEditingMutationParams } from '@univerjs/docs';
+import type { IDeleteDrawingCommandParams } from './interfaces';
 import {
     CommandType,
     ICommandService,
@@ -24,10 +26,9 @@ import {
     TextX,
     TextXActionType,
 } from '@univerjs/core';
-import type { IRichTextEditingMutationParams } from '@univerjs/docs';
-import { getRichTextEditPath, RichTextEditingMutation } from '@univerjs/docs';
-import { type ITextRangeWithStyle, ITextSelectionRenderManager } from '@univerjs/engine-render';
-import type { IDeleteDrawingCommandParams } from './interfaces';
+import { RichTextEditingMutation } from '@univerjs/docs';
+import { DocSelectionRenderService, getRichTextEditPath } from '@univerjs/docs-ui';
+import { IRenderManagerService, type ITextRangeWithStyle } from '@univerjs/engine-render';
 
 /**
  * The command to remove new sheet image
@@ -39,16 +40,18 @@ export const RemoveDocDrawingCommand: ICommand = {
     handler: (accessor: IAccessor, params?: IDeleteDrawingCommandParams) => {
         const commandService = accessor.get(ICommandService);
         const univerInstanceService = accessor.get(IUniverInstanceService);
-        const textSelectionRenderManager = accessor.get(ITextSelectionRenderManager);
+        const renderManagerService = accessor.get(IRenderManagerService);
         const documentDataModel = univerInstanceService.getCurrentUniverDocInstance();
 
         if (params == null || documentDataModel == null) {
             return false;
         }
 
+        const docSelectionRenderService = renderManagerService.getRenderById(params.unitId)!.with(DocSelectionRenderService)!;
+
         const { drawings: removeDrawings } = params;
 
-        const segmentId = textSelectionRenderManager.getSegment() ?? '';
+        const segmentId = docSelectionRenderService.getSegment() ?? '';
 
         const textX = new TextX();
         const jsonX = JSONX.getInstance();
@@ -90,15 +93,12 @@ export const RemoveDocDrawingCommand: ICommand = {
                 textX.push({
                     t: TextXActionType.RETAIN,
                     len: startIndex - memoryCursor.cursor,
-                    segmentId: '',
                 });
             }
 
             textX.push({
                 t: TextXActionType.DELETE,
                 len: 1,
-                line: 0,
-                segmentId: '',
             });
 
             memoryCursor.moveCursorTo(startIndex + 1);

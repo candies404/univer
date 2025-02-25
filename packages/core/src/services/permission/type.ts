@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-import type { BehaviorSubject, Observable } from 'rxjs';
 import type { UnitAction, UnitObject } from '@univerjs/protocol';
+import type { BehaviorSubject, Observable } from 'rxjs';
+import type { Nullable } from '../../shared/types';
+import type { IRange } from '../../sheets/typedef';
 import { createIdentifier } from '../../common/di';
-import type { Nullable } from '../../common/type-utils';
-import { LifecycleStages, runOnLifecycle } from '../lifecycle/lifecycle';
-import type { IRange } from '../../types/interfaces';
 
 export enum PermissionStatus {
     INIT = 'init',
@@ -63,7 +62,9 @@ export interface IPermissionService {
     composePermission$(permissionId: string[]): Observable<IPermissionPoint<unknown>[]>;
     composePermission(permissionId: string[]): IPermissionPoint<unknown>[];
     getAllPermissionPoint(): Map<string, Observable<IPermissionPoint<unknown>>>;
+
+    getShowComponents(): boolean;
+    setShowComponents(showComponents: boolean): void;
 }
 
 export const IPermissionService = createIdentifier<IPermissionService>('univer.permission-service');
-runOnLifecycle(LifecycleStages.Starting, IPermissionService);

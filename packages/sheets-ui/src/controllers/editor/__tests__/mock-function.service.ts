@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ export class MockFunctionService {
     getDescriptions(): Map<IFunctionNames, IFunctionInfo> {
         const map = new Map<IFunctionNames, IFunctionInfo>();
         map.set('IF', { functionName: 'IF', functionType: FunctionType.Logical, description: 'IF function', abstract: 'IF function', functionParameter: [] });
+        map.set('TAN', { functionName: 'TAN', functionType: FunctionType.Logical, description: 'TAN function', abstract: 'TAN function', functionParameter: [] });
 
         return map;
     }

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,6 +36,12 @@ const locale: typeof zhCN = {
             main: 'Цвет фона текста',
             right: 'Выбрать цвет',
         },
+        table: {
+            main: 'Table',
+            insert: 'Insert Table',
+            colCount: 'Column count',
+            rowCount: 'Row count',
+        },
         resetColor: 'Сбросить',
         order: 'Упорядоченный список',
         unorder: 'Неупорядоченный список',
@@ -44,6 +50,19 @@ const locale: typeof zhCN = {
         alignRight: 'Выровнять по правому краю',
         alignJustify: 'Выровнять по ширине',
         headerFooter: 'Header & Footer',
+        checklist: 'Task list',
+        documentFlavor: 'Modern Mode',
+    },
+    table: {
+        insert: 'Insert',
+        insertRowAbove: 'Insert row above',
+        insertRowBelow: 'Insert row below',
+        insertColumnLeft: 'Insert column left',
+        insertColumnRight: 'Insert column right',
+        delete: 'Table delete',
+        deleteRows: 'Delete row',
+        deleteColumns: 'Delete column',
+        deleteTable: 'Delete table',
     },
     headerFooter: {
         header: 'Header',
@@ -74,6 +93,8 @@ const locale: typeof zhCN = {
             before: 'Before',
             after: 'After',
             lineSpace: 'Line Space',
+            multiSpace: 'Multi Space',
+            fixedValue: 'Fixed Value(px)',
         },
     },
 };

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +14,18 @@
  * limitations under the License.
  */
 
-import React, { useState } from 'react';
+import type { ICollaborator } from '@univerjs/protocol';
+import { LocaleService } from '@univerjs/core';
 import { Avatar, Button, Input } from '@univerjs/design';
-import clsx from 'clsx';
-import { LocaleService, useDependency } from '@univerjs/core';
-import { IDialogService } from '@univerjs/ui';
-import { type ICollaborator, UnitRole } from '@univerjs/protocol';
 import { CheckMarkSingle } from '@univerjs/icons';
+import { UnitRole } from '@univerjs/protocol';
+import { IDialogService, useDependency } from '@univerjs/ui';
+import clsx from 'clsx';
+import React, { useState } from 'react';
+import { UNIVER_SHEET_PERMISSION_USER_DIALOG_ID } from '../../../consts/permission';
 import { SheetPermissionUserManagerService } from '../../../services/permission/sheet-permission-user-list.service';
-import { UNIVER_SHEET_PERMISSION_USER_DIALOG_ID } from '../../../basics/const/permission';
-import styles from './index.module.less';
 import { UserEmptyBase64 } from './constant';
+import styles from './index.module.less';
 
 export const SheetPermissionUserDialog = () => {
     const [inputValue, setInputValue] = React.useState('');
@@ -52,7 +53,7 @@ export const SheetPermissionUserDialog = () => {
         <div className={styles.sheetPermissionUserDialogWrapper}>
             <div className={styles.sheetPermissionUserDialogSearch}>
                 <Input
-                    placeholder="search"
+                    placeholder={localeService.t('permission.dialog.search')}
                     className={styles.sheetPermissionUserDialogSearchInput}
                     value={inputValue}
                     onChange={(v) => setInputValue(v)}
@@ -80,7 +81,7 @@ export const SheetPermissionUserDialog = () => {
                         </div>
                     )}
             </div>
-            <div className={styles.sheetPermissionSplit}></div>
+            <div className={styles.sheetPermissionSplit} />
             <div className={styles.sheetPermissionUserDialogFooter}>
 
                 <Button className={styles.sheetPermissionUserDialogButton} onClick={() => dialogService.close(UNIVER_SHEET_PERMISSION_USER_DIALOG_ID)}>

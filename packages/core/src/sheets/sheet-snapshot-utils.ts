@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
+import type { IWorksheetData } from './typedef';
 import { BooleanNumber } from '../types/enum/text-style';
-import type { IWorksheetData } from '../types/interfaces/i-worksheet-data';
 
 // TODO@wzhudev: default value should not be exposed, but the keys.
 
@@ -76,7 +76,6 @@ export function mergeWorksheetSnapshotWithDefault(snapshot: Partial<IWorksheetDa
             height: DEFAULT_WORKSHEET_COLUMN_TITLE_HEIGHT,
             hidden: BooleanNumber.FALSE,
         },
-        selections: ['A1'],
         rightToLeft: BooleanNumber.FALSE,
     };
 

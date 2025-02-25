@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,19 @@
  * limitations under the License.
  */
 
-import type { IDisposable, ITextRange } from '@univerjs/core';
-import { Disposable, DisposableCollection, ICommandService, Inject, IUniverInstanceService, UniverInstanceType } from '@univerjs/core';
-import { getLineBounding, IRenderManagerService, NodePositionConvertToCursor, pxToNum } from '@univerjs/engine-render';
+import type { IDisposable, INeedCheckDisposable, ITextRangeParam } from '@univerjs/core';
+import type { IRichTextEditingMutationParams } from '@univerjs/docs';
 import type { BaseObject, Documents, IBoundRectNoAngle, IRender, Scene } from '@univerjs/engine-render';
 import type { IPopup } from '@univerjs/ui';
+import { Disposable, DisposableCollection, ICommandService, Inject, IUniverInstanceService } from '@univerjs/core';
+import { DocSkeletonManagerService, RichTextEditingMutation } from '@univerjs/docs';
+import { IRenderManagerService, pxToNum } from '@univerjs/engine-render';
 import { ICanvasPopupService } from '@univerjs/ui';
 import { BehaviorSubject, map } from 'rxjs';
-import { DocSkeletonManagerService, SetDocZoomRatioOperation, VIEWPORT_KEY } from '@univerjs/docs';
+import { VIEWPORT_KEY } from '../basics/docs-view-key';
+import { SetDocZoomRatioOperation } from '../commands/operations/set-doc-zoom-ratio.operation';
+import { NodePositionConvertToCursor } from './selection/convert-text-range';
+import { getLineBounding } from './selection/text-range';
 
 export function transformBound2OffsetBound(originBound: IBoundRectNoAngle, scene: Scene): IBoundRectNoAngle {
     const topLeft = transformPosition2Offset(originBound.left, originBound.top, scene);
@@ -57,12 +62,66 @@ export function transformPosition2Offset(x: number, y: number, scene: Scene) {
     };
 }
 
-export interface IDocCanvasPopup extends Pick<IPopup,
-    'direction' | 'excludeOutside' | 'closeOnSelfTarget' | 'componentKey' | 'offset' | 'onClickOutside'
-> {
+export function transformOffset2Bound(offsetX: number, offsetY: number, scene: Scene) {
+    const { scaleX, scaleY } = scene.getAncestorScale();
+    const viewMain = scene.getViewport(VIEWPORT_KEY.VIEW_MAIN);
+    if (!viewMain) {
+        return {
+            x: offsetX,
+            y: offsetY,
+        };
+    }
+
+    const { viewportScrollX: actualScrollX, viewportScrollY: actualScrollY } = viewMain;
+
+    const x = offsetX / scaleX + actualScrollX;
+
+    const y = offsetY / scaleY + actualScrollY;
+
+    return {
+        x,
+        y,
+    };
+}
+
+export interface IDocCanvasPopup extends Pick<IPopup, 'direction' | 'excludeOutside' | 'componentKey' | 'offset' | 'onClickOutside' | 'hideOnInvisible'> {
     mask?: boolean;
     extraProps?: Record<string, any>;
+    multipleDirection?: IPopup['direction'];
 }
+
+export const calcDocRangePositions = (range: ITextRangeParam, currentRender: IRender): IBoundRectNoAngle[] | undefined => {
+    const { scene, mainComponent, engine } = currentRender;
+    const skeleton = currentRender.with(DocSkeletonManagerService).getSkeleton();
+    const startPosition = skeleton.findNodePositionByCharIndex(range.startOffset, true, range.segmentId, range.segmentPage);
+    const endPosition = skeleton.findNodePositionByCharIndex(range.endOffset, true, range.segmentId, range.segmentPage);
+    const document = mainComponent as Documents;
+
+    if (!endPosition || !startPosition) {
+        return;
+    }
+
+    const documentOffsetConfig = document.getOffsetConfig();
+    const { docsLeft, docsTop } = documentOffsetConfig;
+    const canvasElement = engine.getCanvasElement();
+    const canvasClientRect = canvasElement.getBoundingClientRect();
+    const widthOfCanvas = pxToNum(canvasElement.style.width); // declared width
+    const { top, left, width } = canvasClientRect; // real width affected by scale
+    const scaleAdjust = width / widthOfCanvas;
+
+    const { scaleX, scaleY } = scene.getAncestorScale();
+    const convertor = new NodePositionConvertToCursor(documentOffsetConfig, skeleton);
+    const { borderBoxPointGroup } = convertor.getRangePointData(startPosition, endPosition);
+    const bounds = getLineBounding(borderBoxPointGroup);
+    const res = bounds.map((bound) => transformBound2OffsetBound(bound, scene)).map((i) => ({
+        left: (i.left + docsLeft * scaleX) * scaleAdjust + left,
+        right: (i.right + docsLeft * scaleX) * scaleAdjust + left,
+        top: (i.top + docsTop * scaleY) * scaleAdjust + top,
+        bottom: (i.bottom + docsTop * scaleY) * scaleAdjust + top,
+    }));
+
+    return res;
+};
 
 export class DocCanvasPopManagerService extends Disposable {
     constructor(
@@ -73,8 +132,6 @@ export class DocCanvasPopManagerService extends Disposable {
     ) {
         super();
     }
-
-    // #region attach to object
 
     private _createObjectPositionObserver(
         targetObject: BaseObject,
@@ -112,8 +169,11 @@ export class DocCanvasPopManagerService extends Disposable {
         const disposable = new DisposableCollection();
 
         disposable.add(this._commandService.onCommandExecuted((commandInfo) => {
-            if (commandInfo.id === SetDocZoomRatioOperation.id) {
-                position$.next(calc());
+            if (commandInfo.id === SetDocZoomRatioOperation.id || commandInfo.id === RichTextEditingMutation.id) {
+                const newPosition = calc();
+                if (newPosition) {
+                    position$.next(newPosition);
+                }
             }
         }));
 
@@ -131,49 +191,19 @@ export class DocCanvasPopManagerService extends Disposable {
         };
     }
 
-    private _createRangePositionObserver(range: ITextRange, currentRender: IRender) {
-        const calc = (): IBoundRectNoAngle[] | undefined => {
-            const { scene, mainComponent, engine } = currentRender;
-            const skeleton = currentRender.with(DocSkeletonManagerService).getSkeleton();
-            const startPosition = skeleton.findNodePositionByCharIndex(range.startOffset);
-            const endPosition = skeleton.findNodePositionByCharIndex(range.endOffset);
-            const document = mainComponent as Documents;
-
-            if (!endPosition || !startPosition) {
-                return;
-            }
-
-            const documentOffsetConfig = document.getOffsetConfig();
-            const { docsLeft, docsTop } = documentOffsetConfig;
-            const canvasElement = engine.getCanvasElement();
-            const canvasClientRect = canvasElement.getBoundingClientRect();
-            const widthOfCanvas = pxToNum(canvasElement.style.width); // declared width
-            const { top, left, width } = canvasClientRect; // real width affected by scale
-            const scaleAdjust = width / widthOfCanvas;
-
-            const { scaleX, scaleY } = scene.getAncestorScale();
-            const convertor = new NodePositionConvertToCursor(documentOffsetConfig, skeleton);
-            const { contentBoxPointGroup } = convertor.getRangePointData(startPosition, endPosition);
-            const bounds = getLineBounding(contentBoxPointGroup);
-            const res = bounds.map((bound) => transformBound2OffsetBound(bound, scene)).map((i) => ({
-                left: (i.left + docsLeft * scaleX) * scaleAdjust + left,
-                right: (i.right + docsLeft * scaleX) * scaleAdjust + left,
-                top: (i.top + docsTop * scaleY) * scaleAdjust + top,
-                bottom: (i.bottom + docsTop * scaleY) * scaleAdjust + top,
-            }));
-
-            return res;
-        };
-
-        const positions = calc() ?? [];
+    private _createRangePositionObserver(range: ITextRangeParam, currentRender: IRender) {
+        const positions = calcDocRangePositions(range, currentRender) ?? [];
         const positions$ = new BehaviorSubject(positions);
         const disposable = new DisposableCollection();
 
         disposable.add(this._commandService.onCommandExecuted((commandInfo) => {
-            if (commandInfo.id === SetDocZoomRatioOperation.id) {
-                const position = calc();
-                if (position) {
-                    positions$.next(position);
+            if (commandInfo.id === SetDocZoomRatioOperation.id || commandInfo.id === RichTextEditingMutation.id) {
+                const params = commandInfo.params as IRichTextEditingMutationParams;
+                if (params.unitId === currentRender.unitId) {
+                    const position = calcDocRangePositions(range, currentRender);
+                    if (position) {
+                        positions$.next(position);
+                    }
                 }
             }
         }));
@@ -181,7 +211,7 @@ export class DocCanvasPopManagerService extends Disposable {
         const viewMain = currentRender.scene.getViewport(VIEWPORT_KEY.VIEW_MAIN);
         if (viewMain) {
             disposable.add(viewMain.onScrollAfter$.subscribeEvent(() => {
-                const position = calc();
+                const position = calcDocRangePositions(range, currentRender);
                 if (position) {
                     positions$.next(position);
                 }
@@ -195,34 +225,27 @@ export class DocCanvasPopManagerService extends Disposable {
         };
     }
 
+    // #region attach to object
     /**
      * attach a popup to canvas object
      * @param targetObject target canvas object
      * @param popup popup item
      * @returns disposable
      */
-    attachPopupToObject(targetObject: BaseObject, popup: IDocCanvasPopup): IDisposable {
-        const workbook = this._univerInstanceService.getCurrentUnitForType(UniverInstanceType.UNIVER_DOC)!;
-        const unitId = workbook.getUnitId();
-        // const subUnitId =
-
+    attachPopupToObject(targetObject: BaseObject, popup: IDocCanvasPopup, unitId: string): IDisposable {
         const currentRender = this._renderManagerService.getRenderById(unitId);
         if (!currentRender) {
-            return {
-                dispose: () => {
-                    // empty
-                },
-            };
+            throw new Error(`Current render not found, unitId: ${unitId}`);
         }
 
         const { position, position$, disposable } = this._createObjectPositionObserver(targetObject, currentRender);
-
         const id = this._globalPopupManagerService.addPopup({
             ...popup,
             unitId,
             subUnitId: 'default',
             anchorRect: position,
             anchorRect$: position$,
+            canvasElement: currentRender.engine.getCanvasElement(),
         });
 
         return {
@@ -234,31 +257,41 @@ export class DocCanvasPopManagerService extends Disposable {
         };
     }
 
-    attachPopupToRange(range: ITextRange, popup: IDocCanvasPopup): IDisposable {
-        const workbook = this._univerInstanceService.getCurrentUnitForType(UniverInstanceType.UNIVER_DOC)!;
-        const unitId = workbook.getUnitId();
-        const { direction = 'top' } = popup;
-
+    // #endregion
+    // #region attach to range
+    /**
+     * attach a popup to doc range
+     * @param range doc range
+     * @param popup popup item
+     * @param unitId unit id
+     * @returns disposable
+     */
+    attachPopupToRange(range: ITextRangeParam, popup: IDocCanvasPopup, unitId: string): INeedCheckDisposable {
+        const doc = this._univerInstanceService.getUnit(unitId);
+        if (!doc) {
+            throw new Error(`Document not found, unitId: ${unitId}`);
+        }
+        const { direction = 'top', multipleDirection } = popup;
         const currentRender = this._renderManagerService.getRenderById(unitId);
         if (!currentRender) {
-            return {
-                dispose: () => {
-                    // empty
-                },
-            };
+            throw new Error(`Current render not found, unitId: ${unitId}`);
         }
 
         const { positions: bounds, positions$: bounds$, disposable } = this._createRangePositionObserver(range, currentRender);
-        const position$ = bounds$.pipe(map((bounds) => direction === 'top' ? bounds[0] : bounds[bounds.length - 1]));
+        const position$ = bounds$.pipe(map((bounds) => direction.includes('top') ? bounds[0] : bounds[bounds.length - 1]));
         const id = this._globalPopupManagerService.addPopup({
             ...popup,
             unitId,
             subUnitId: 'default',
-            anchorRect: direction === 'top' ? bounds[0] : bounds[bounds.length - 1],
+            anchorRect: direction.includes('top') ? bounds[0] : bounds[bounds.length - 1],
             anchorRect$: position$,
             excludeRects: bounds,
             excludeRects$: bounds$,
-            direction: direction === 'top' ? 'top' : 'bottom',
+            direction:
+                (direction.includes('top') || direction.includes('bottom')) ?
+                    bounds.length > 1 ? multipleDirection : direction
+                    : 'bottom',
+            canvasElement: currentRender.engine.getCanvasElement(),
         });
 
         return {
@@ -267,6 +300,8 @@ export class DocCanvasPopManagerService extends Disposable {
                 bounds$.complete();
                 disposable.dispose();
             },
+            canDispose: () => this._globalPopupManagerService.activePopupId !== id,
         };
     }
+    // #endregion
 }

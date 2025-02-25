@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,10 +14,11 @@
  * limitations under the License.
  */
 
-import { customAlphabet, nanoid } from 'nanoid';
+import type { IStyleData } from '../types/interfaces';
+import type { IKeyValue, Nullable } from './types';
 
-import { isLegalUrl, normalizeUrl } from '../common/url';
-import type { Class, IKeyValue } from './types';
+import { customAlphabet, nanoid } from 'nanoid';
+import { isLegalUrl, normalizeUrl, topLevelDomainSet } from '../common/url';
 
 const rmsPrefix = /^-ms-/;
 const rDashAlpha = /-([a-z])/g;
@@ -50,6 +51,66 @@ const alphabets = [
     'Y',
     'Z',
 ];
+
+/**
+ * Deep diff between two object
+ * @param oneValue The first test value
+ * @param twoValue The second test value
+ * @returns {boolean} If objects are different, return false, otherwise return true
+ */
+function isValueEqual(oneValue: any, twoValue: any) {
+    const oneType = Tools.getValueType(oneValue);
+    const twoType = Tools.getValueType(twoValue);
+    if (oneType !== twoType) {
+        return false;
+    }
+    if (Tools.isArray(oneValue)) {
+        return diffArrays(oneValue, twoValue);
+    }
+    if (Tools.isObject(oneValue)) {
+        return diffObject(oneValue as object, twoValue);
+    }
+    if (Tools.isDate(oneValue)) {
+        return (oneValue as Date).getTime() === twoValue.getTime();
+    }
+    if (Tools.isRegExp(oneValue)) {
+        return (oneValue as unknown as string).toString() === twoValue.toString();
+    }
+    return oneValue === twoValue;
+}
+
+function diffArrays(oneArray: any[], twoArray: any[]) {
+    if (oneArray.length !== twoArray.length) {
+        return false;
+    }
+    for (let i = 0, len = oneArray.length; i < len; i++) {
+        const oneValue = oneArray[i];
+        const twoValue = twoArray[i];
+        if (!isValueEqual(oneValue, twoValue)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function diffObject(oneObject: IKeyValue, twoObject: IKeyValue) {
+    const oneKeys = Object.keys(oneObject);
+    const twoKeys = Object.keys(twoObject);
+    if (oneKeys.length !== twoKeys.length) {
+        return false;
+    }
+    for (const key of oneKeys) {
+        if (!twoKeys.includes(key)) {
+            return false;
+        }
+        const oneValue = oneObject[key];
+        const twoValue = twoObject[key];
+        if (!isValueEqual(oneValue, twoValue)) {
+            return false;
+        }
+    }
+    return true;
+}
 
 /**
  * Universal tool library
@@ -180,6 +241,7 @@ export class Tools {
         return instance.constructor.name;
     }
 
+    /** @deprecated This method is deprecated, please use `import { merge } from '@univerjs/core` instead */
     static deepMerge(target: any, ...sources: any[]): any {
         sources.forEach((item) => item && deepItem(item));
 
@@ -246,62 +308,8 @@ export class Tools {
         return Number(Number(value).toFixed(digit));
     }
 
-    static diffValue(one: any, tow: any) {
-        function diffValue(oneValue: any, towValue: any) {
-            const oneType = Tools.getValueType(oneValue);
-            const towType = Tools.getValueType(towValue);
-            if (oneType !== towType) {
-                return false;
-            }
-            if (Tools.isArray(oneValue)) {
-                return diffArrays(oneValue, towValue);
-            }
-            if (Tools.isObject(oneValue)) {
-                return diffObject(oneValue as Object, towValue);
-            }
-            if (Tools.isDate(oneValue)) {
-                return (oneValue as Date).getTime() === towValue.getTime();
-            }
-            if (Tools.isRegExp(oneValue)) {
-                return (oneValue as unknown as string).toString() === towValue.toString();
-            }
-            return oneValue === towValue;
-        }
-
-        function diffArrays(oneArray: any[], towArray: any[]) {
-            if (one.length !== tow.length) {
-                return false;
-            }
-            for (let i = 0, len = oneArray.length; i < len; i++) {
-                const oneValue = oneArray[i];
-                const towValue = towArray[i];
-                if (!diffValue(oneValue, towValue)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        function diffObject(oneObject: IKeyValue, towObject: IKeyValue) {
-            const oneKeys = Object.keys(oneObject);
-            const towKeys = Object.keys(towObject);
-            if (oneKeys.length !== towKeys.length) {
-                return false;
-            }
-            for (const key of oneKeys) {
-                if (!towKeys.includes(key)) {
-                    return false;
-                }
-                const oneValue = oneObject[key];
-                const towValue = towObject[key];
-                if (!diffValue(oneValue, towValue)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        return diffValue(one, tow);
+    static diffValue(one: any, two: any) {
+        return isValueEqual(one, two);
     }
 
     static deepClone<T = unknown>(value: T): T {
@@ -358,10 +366,6 @@ export class Tools {
             return value.trim() === '';
         }
         return false;
-    }
-
-    static isAssignableFrom<T>(object: any, clazz: Class<T>): object is T {
-        return object instanceof clazz;
     }
 
     static isBoolean(value?: any): value is boolean {
@@ -451,6 +455,10 @@ export class Tools {
 
     static normalizeUrl(url: string) {
         return normalizeUrl(url);
+    }
+
+    static topLevelDomainCombiningString() {
+        return [...topLevelDomainSet].join('|');
     }
 
     static itCount(count: number): Function {
@@ -672,11 +680,11 @@ export class Tools {
     }
 
     static isValidParameter(name: string): boolean {
-       /**
-        *Validates that the name does not contain spaces or disallowed characters
-        *Assuming the set of disallowed characters includes some special characters,
-        *you can modify the regex below according to the actual requirements
-        */
+        /**
+         *Validates that the name does not contain spaces or disallowed characters
+         *Assuming the set of disallowed characters includes some special characters,
+         *you can modify the regex below according to the actual requirements
+         */
         const containsInvalidChars = /[~!@#$%^&*()+=\-{}\[\]\|:;"'<>,?\/ ]+/.test(name);
 
         const isValidLength = name.length <= 255;
@@ -684,31 +692,15 @@ export class Tools {
         return !containsInvalidChars && isValidLength;
     }
 
-    /**
-     * As lodash set, via a path string to set value to deep property
-     * set(obj, 'xx.yy', val)
-     * @param data
-     * @param propertyPath
-     * @param value
-     */
-    static set(data: Record<string, any>, propertyPath: string, value: any) {
-        const paths = propertyPath.split('.');
-        const key = paths.pop();
-
-        paths.forEach((prop) => {
-            if (!data[prop]) {
-                data[prop] = {};
-            }
-            data = data[prop];
-        });
-
-        if (key) {
-            data[key] = value;
-        }
-    }
-
     static clamp(value: number, min: number, max: number) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    static now(): number {
+        if (performance && performance.now) {
+            return performance.now();
+        }
+        return Date.now();
     }
 }
 
@@ -719,3 +711,34 @@ export function generateRandomId(n: number = 21, alphabet?: string): string {
 
     return nanoid(n);
 }
+
+interface IStyleDataObject {
+    [key: string]: unknown;
+}
+
+/**
+ * compose styles by priority, the latter will overwrite the former
+ * @param { Nullable<IStyleData>[]} styles the styles to be composed
+ * @returns  { Nullable<IStyleData>[]} Returns the composed style
+ */
+export function composeStyles(...styles: Nullable<IStyleData>[]): IStyleData {
+    const result: IStyleData = {};
+    const length = styles.length;
+    for (let i = length - 1; i >= 0; i--) {
+        const style = styles[i];
+        if (style) {
+            const keys = Object.keys(style);
+            for (const key of keys) {
+                if ((result as IStyleDataObject)[key] === undefined) {
+                    (result as IStyleDataObject)[key] = (style as IStyleDataObject)[key];
+                }
+            }
+        }
+    }
+    return result;
+}
+
+export const isNodeEnv = () => {
+    // eslint-disable-next-line node/prefer-global/process
+    return typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
+};

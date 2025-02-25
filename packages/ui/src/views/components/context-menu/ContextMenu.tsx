@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,15 @@
  * limitations under the License.
  */
 
-import { ICommandService, useDependency, useInjector } from '@univerjs/core';
-import { Popup } from '@univerjs/design';
 import type { IMouseEvent } from '@univerjs/engine-render';
-import { ITextSelectionRenderManager } from '@univerjs/engine-render';
+import { ICommandService } from '@univerjs/core';
+import { Popup } from '@univerjs/design';
 import React, { useEffect, useRef, useState } from 'react';
-
 import { Menu } from '../../../components/menu/desktop/Menu';
+
 import { IContextMenuService } from '../../../services/contextmenu/contextmenu.service';
+import { ILayoutService } from '../../../services/layout/layout.service';
+import { useDependency, useInjector } from '../../../utils/di';
 
 export function DesktopContextMenu() {
     const contentRef = useRef<HTMLDivElement>(null);
@@ -62,9 +63,12 @@ export function DesktopContextMenu() {
     }, [contextMenuService]);
 
     function handleContextMenu(event: IMouseEvent, menuType: string) {
-        setMenuType(menuType);
-        setOffset([event.clientX, event.clientY]);
-        setVisible(true);
+        setVisible(false);
+        requestAnimationFrame(() => {
+            setMenuType(menuType);
+            setOffset([event.clientX, event.clientY]);
+            setVisible(true);
+        });
     }
 
     function handleClose() {
@@ -76,12 +80,17 @@ export function DesktopContextMenu() {
             <section ref={contentRef}>
                 {menuType && (
                     <Menu
-                        menuType={[menuType]}
+                        menuType={menuType}
                         onOptionSelect={(params) => {
-                            const { label: commandId, value } = params;
-                            commandService && commandService.executeCommand(commandId as string, { value });
-                            const textSelectionRenderManager = injector.get(ITextSelectionRenderManager);
-                            textSelectionRenderManager.focus();
+                            const { label: id, commandId, value } = params;
+
+                            if (commandService) {
+                                commandService.executeCommand(commandId ?? id as string, { value });
+                            }
+
+                            const layoutService = injector.get(ILayoutService);
+                            layoutService.focus();
+
                             setVisible(false);
                         }}
                     />

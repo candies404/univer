@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +14,17 @@
  * limitations under the License.
  */
 
-import type { Nullable } from '@univerjs/core';
-import { debounce, LocaleService, useDependency } from '@univerjs/core';
-import React, { useEffect, useState } from 'react';
-import { Checkbox, InputNumber } from '@univerjs/design';
-import clsx from 'clsx';
+import type { IDrawingParam, Nullable } from '@univerjs/core';
 import type { IChangeObserverConfig, Scene } from '@univerjs/engine-render';
-import { IRenderManagerService } from '@univerjs/engine-render';
-import type { IDrawingParam } from '@univerjs/drawing';
+import { debounce, LocaleService } from '@univerjs/core';
+import { Checkbox, InputNumber } from '@univerjs/design';
 import { IDrawingManagerService } from '@univerjs/drawing';
-import { getUpdateParams } from '../../utils/get-update-params';
+import { IRenderManagerService } from '@univerjs/engine-render';
+import { useDependency } from '@univerjs/ui';
+import clsx from 'clsx';
+import React, { useEffect, useState } from 'react';
 import { MIN_DRAWING_HEIGHT_LIMIT, MIN_DRAWING_WIDTH_LIMIT, RANGE_DRAWING_ROTATION_LIMIT } from '../../utils/config';
+import { getUpdateParams } from '../../utils/get-update-params';
 import styles from './index.module.less';
 
 export interface IDrawingTransformProps {
@@ -177,64 +177,65 @@ export const DrawingTransform = (props: IDrawingTransformProps) => {
     };
 
     useEffect(() => {
-        const changeStartSub = transformer.changeStart$.subscribe((state) => {
-            changeObs(state);
-        });
+        const subscriptions = [
+            transformer.changeStart$.subscribe((state) => {
+                changeObs(state);
+            }),
+            transformer.changing$.subscribe((state) => {
+                changeObs(state);
+            }),
+            transformer.changeEnd$.subscribe((state) => {
+                changeObs(state);
+            }),
+            drawingManagerService.focus$.subscribe((drawings) => {
+                if (drawings.length !== 1) {
+                    return;
+                }
 
-        const changingSub = transformer.changing$.subscribe((state) => {
-            changeObs(state);
-        });
+                const drawingParam = drawingManagerService.getDrawingByParam(drawings[0]);
 
-        const focusSub = drawingManagerService.focus$.subscribe((drawings) => {
-            if (drawings.length !== 1) {
-                return;
-            }
+                if (drawingParam == null) {
+                    return;
+                }
 
-            const drawingParam = drawingManagerService.getDrawingByParam(drawings[0]);
+                const transform = drawingParam.transform;
 
-            if (drawingParam == null) {
-                return;
-            }
+                if (transform == null) {
+                    return;
+                }
 
-            const transform = drawingParam.transform;
+                const {
+                    width: originWidth,
+                    height: originHeight,
+                    left: originX,
+                    top: originY,
+                    angle: originRotation,
+                } = transform;
 
-            if (transform == null) {
-                return;
-            }
+                if (originWidth != null) {
+                    setWidth(originWidth);
+                }
 
-            const {
-                width: originWidth,
-                height: originHeight,
-                left: originX,
-                top: originY,
-                angle: originRotation,
-            } = transform;
+                if (originHeight != null) {
+                    setHeight(originHeight);
+                }
 
-            if (originWidth != null) {
-                setWidth(originWidth);
-            }
+                if (originX != null) {
+                    setXPosition(originX);
+                }
 
-            if (originHeight != null) {
-                setHeight(originHeight);
-            }
+                if (originY != null) {
+                    setYPosition(originY);
+                }
 
-            if (originX != null) {
-                setXPosition(originX);
-            }
-
-            if (originY != null) {
-                setYPosition(originY);
-            }
-
-            if (originRotation != null) {
-                setRotation(originRotation);
-            }
-        });
+                if (originRotation != null) {
+                    setRotation(originRotation);
+                }
+            }),
+        ];
 
         return () => {
-            changingSub.unsubscribe();
-            changeStartSub.unsubscribe();
-            focusSub.unsubscribe();
+            subscriptions.forEach((sub) => sub.unsubscribe());
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -412,7 +413,7 @@ export const DrawingTransform = (props: IDrawingTransformProps) => {
                         </div>
                         <div className={clsx(styles.imageCommonPanelRow, styles.imageCommonPanelRowVertical)}>
                             <div className={styles.imageCommonPanelColumn}>
-                                <Checkbox checked={lockRatio} onChange={handleLockRatioChange}></Checkbox>
+                                <Checkbox checked={lockRatio} onChange={handleLockRatioChange} />
                             </div>
                         </div>
                     </label>

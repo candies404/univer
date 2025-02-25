@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,53 +17,50 @@
 import type {
     BorderStyleTypes,
     HorizontalAlign,
-    ISelectionCellWithMergeInfo,
+    ICellDataForSheetInterceptor,
+    ICellWithCoord,
+    ImageCacheMap,
+    Nullable,
     ObjectMatrix,
     VerticalAlign,
     WrapStrategy,
 } from '@univerjs/core';
 
-import type { BORDER_TYPE } from '../../basics/const';
-import type { DocumentSkeleton } from '../docs/layout/doc-skeleton';
+import type { BORDER_TYPE as BORDER_LTRB } from '../../basics/const';
 import type { Canvas } from '../../canvas';
 import type { UniverRenderingContext } from '../../context';
+import type { DocumentSkeleton } from '../docs/layout/doc-skeleton';
 
 export interface BorderCache {
     [key: string]: BorderCacheItem | {};
 }
 
 export interface BorderCacheItem {
-    type: BORDER_TYPE;
+    type: BORDER_LTRB;
     style: BorderStyleTypes;
     color: string;
 }
 
 export interface IFontCacheItem {
     documentSkeleton: DocumentSkeleton;
-    // marginTop?: number;
-    // marginBottom?: number;
-    // marginRight?: number;
-    // marginLeft?: number;
     vertexAngle?: number; // Text rotation offset based on the top-left corner.
     centerAngle?: number; // Text rotation based on the center point.
     verticalAlign: VerticalAlign;
     horizontalAlign: HorizontalAlign;
     wrapStrategy: WrapStrategy;
-    // content?: string;
+    imageCacheMap: ImageCacheMap;
+    cellData: Nullable<ICellDataForSheetInterceptor>;
 }
 
-interface backgroundCache {
-    [key: string]: ObjectMatrix<string>;
-}
-
-interface fontCache {
-    [key: string]: ObjectMatrix<IFontCacheItem>;
-}
-
+type colorString = string;
 export interface IStylesCache {
-    background?: backgroundCache;
-    backgroundPositions?: ObjectMatrix<ISelectionCellWithMergeInfo>;
-    font?: fontCache;
+    background?: Record<colorString, ObjectMatrix<string>>;
+    backgroundPositions?: ObjectMatrix<ICellWithCoord>;
+    font?: Record<string, ObjectMatrix<IFontCacheItem>>;
+    /**
+     * Get value from getCell in skeleton and this value is used in font extension
+     */
+    fontMatrix: ObjectMatrix<IFontCacheItem>;
     border?: ObjectMatrix<BorderCache>;
 }
 
@@ -107,7 +104,7 @@ export interface IPaintForScrolling {
     scaleX: number;
     scaleY: number;
 }
-export interface IColumnStyleCfg {
+export interface IHeaderStyleCfg {
     fontFamily: string;
     fontColor: string;
     fontSize: number;
@@ -115,10 +112,14 @@ export interface IColumnStyleCfg {
     textAlign: CanvasTextAlign;
     textBaseline: CanvasTextBaseline;
     backgroundColor: string;
+    /**
+     * column header height
+     */
+    size?: number;
 }
 
-export type IAColumnCfgObj = IColumnStyleCfg & { text: string };
-export type IAColumnCfg = undefined | null | string | Partial<IAColumnCfgObj>;
+export type IAColumnCfgObj = IHeaderStyleCfg & { text: string };
+export type IAColumnCfg = undefined | null | string | Partial<Omit<IAColumnCfgObj, 'size'>>;
 
 export interface IRowStyleCfg {
     fontFamily: string;
@@ -128,7 +129,11 @@ export interface IRowStyleCfg {
     textAlign: CanvasTextAlign;
     textBaseline: CanvasTextBaseline;
     backgroundColor: string;
+    /**
+     * row header width
+     */
+    size?: number;
 }
 
-export type IARowCfgObj = IColumnStyleCfg & { text: string };
+export type IARowCfgObj = IHeaderStyleCfg & { text: string };
 export type IARowCfg = undefined | null | string | Partial<IARowCfgObj>;

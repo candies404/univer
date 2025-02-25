@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,27 +15,31 @@
  */
 
 import type { DocumentDataModel } from '@univerjs/core';
-import { ICommandService, IUniverInstanceService, UniverInstanceType, useDependency, useObservable } from '@univerjs/core';
-import { ThreadCommentPanel } from '@univerjs/thread-comment-ui';
-import React, { useEffect, useMemo, useState } from 'react';
-import { debounceTime, Observable } from 'rxjs';
-import { RichTextEditingMutation, TextSelectionManagerService } from '@univerjs/docs';
-import { DEFAULT_DOC_SUBUNIT_ID } from '../../common/const';
-import { StartAddCommentOperation } from '../../commands/operations/show-comment-panel.operation';
-import { DocThreadCommentService } from '../../services/doc-thread-comment.service';
 import type { IAddDocCommentComment } from '../../commands/commands/add-doc-comment.command';
+import type { IDeleteDocCommentComment } from '../../commands/commands/delete-doc-comment.command';
+import { ICommandService, Injector, isInternalEditorID, IUniverInstanceService, UniverInstanceType } from '@univerjs/core';
+import { DocSelectionManagerService, RichTextEditingMutation } from '@univerjs/docs';
+import { ThreadCommentPanel } from '@univerjs/thread-comment-ui';
+import { useDependency, useObservable } from '@univerjs/ui';
+import React, { useEffect, useMemo, useState } from 'react';
+import { debounceTime, filter, Observable } from 'rxjs';
 import { AddDocCommentComment } from '../../commands/commands/add-doc-comment.command';
-import { DeleteDocCommentComment, type IDeleteDocCommentComment } from '../../commands/commands/delete-doc-comment.command';
+import { DeleteDocCommentComment } from '../../commands/commands/delete-doc-comment.command';
+import { StartAddCommentOperation } from '../../commands/operations/show-comment-panel.operation';
+import { DEFAULT_DOC_SUBUNIT_ID } from '../../common/const';
+import { shouldDisableAddComment } from '../../controllers/menu';
+import { DocThreadCommentService } from '../../services/doc-thread-comment.service';
 
 export const DocThreadCommentPanel = () => {
     const univerInstanceService = useDependency(IUniverInstanceService);
-    const doc$ = useMemo(() => univerInstanceService.getCurrentTypeOfUnit$<DocumentDataModel>(UniverInstanceType.UNIVER_DOC), [univerInstanceService]);
+    const injector = useDependency(Injector);
+    const doc$ = useMemo(() => univerInstanceService.getCurrentTypeOfUnit$<DocumentDataModel>(UniverInstanceType.UNIVER_DOC).pipe(filter((doc) => !!doc && !isInternalEditorID(doc.getUnitId()))), [univerInstanceService]);
     const doc = useObservable(doc$);
     const subUnitId$ = useMemo(() => new Observable<string>((sub) => sub.next(DEFAULT_DOC_SUBUNIT_ID)), []);
-    const textSelectionManagerService = useDependency(TextSelectionManagerService);
+    const docSelectionManagerService = useDependency(DocSelectionManagerService);
     const selectionChange$ = useMemo(
-        () => textSelectionManagerService.textSelection$.pipe(debounceTime(16)),
-        [textSelectionManagerService.textSelection$]
+        () => docSelectionManagerService.textSelection$.pipe(debounceTime(16)),
+        [docSelectionManagerService.textSelection$]
     );
     useObservable(selectionChange$);
     const commandService = useDependency(ICommandService);
@@ -72,11 +76,7 @@ export const DocThreadCommentPanel = () => {
         return null;
     }
 
-    const activeRange = textSelectionManagerService.getActiveRange();
-    const isInValidSelection = Boolean(
-        activeRange &&
-        (activeRange.endOffset === activeRange.startOffset || activeRange.segmentId)
-    );
+    const isInValidSelection = shouldDisableAddComment(injector);
 
     const unitId = doc.getUnitId();
 

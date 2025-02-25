@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -89,7 +89,7 @@ describe('Test csch function', () => {
             const result = testFunction.calculate(valueArray);
             expect(transformToValue(result.getArrayValue())).toStrictEqual([
                 [0.8509181282393216, ErrorType.VALUE, 0.6391947253834218, 0.8509181282393216, ErrorType.DIV_BY_ZERO, ErrorType.DIV_BY_ZERO],
-                [ErrorType.DIV_BY_ZERO, 7.440151952041671e-44, 0.1944596704435054, ErrorType.VALUE, -0.09982156966882273, ErrorType.NAME],
+                [ErrorType.DIV_BY_ZERO, 7.440151952041671e-44, 0.1944596704435054, ErrorType.VALUE, -0.09982156966882272, ErrorType.NAME],
             ]);
         });
     });

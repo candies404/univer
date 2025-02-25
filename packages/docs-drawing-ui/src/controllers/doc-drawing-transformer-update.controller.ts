@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,18 @@
  */
 
 import type { IDocDrawingBase, IDocDrawingPosition, Nullable } from '@univerjs/core';
+import type { BaseObject, Documents, IDocumentSkeletonGlyph, IDocumentSkeletonPage, Image, INodeSearch, IPoint, Viewport } from '@univerjs/engine-render';
+import type { IDrawingDocTransform } from '../commands/commands/update-doc-drawing.command';
 import {
     BooleanNumber,
     COLORS,
-    Disposable, ICommandService, IUniverInstanceService, LifecycleStages, ObjectRelativeFromH, ObjectRelativeFromV,
-    OnLifecycle, PositionedObjectLayoutType, throttle, toDisposable, Tools,
+    Disposable, ICommandService, IUniverInstanceService, ObjectRelativeFromH, ObjectRelativeFromV,
+    PositionedObjectLayoutType, throttle, toDisposable, Tools,
 } from '@univerjs/core';
-import { DocSkeletonManagerService, getDocObject } from '@univerjs/docs';
+import { DocSkeletonManagerService } from '@univerjs/docs';
+import { DocSelectionRenderService, getAnchorBounding, getDocObject, getOneTextSelectionRange, NodePositionConvertToCursor, TEXT_RANGE_LAYER_INDEX } from '@univerjs/docs-ui';
 import { IDrawingManagerService } from '@univerjs/drawing';
-import type { BaseObject, Documents, IDocumentSkeletonGlyph, IDocumentSkeletonPage, Image, IPoint, Viewport } from '@univerjs/engine-render';
-import { DocumentSkeletonPageType, getAnchorBounding, getColor, getOneTextSelectionRange, IRenderManagerService, ITextSelectionRenderManager, Liquid, NodePositionConvertToCursor, PageLayoutType, Rect, TEXT_RANGE_LAYER_INDEX, Vector2 } from '@univerjs/engine-render';
-import type { IDrawingDocTransform } from '../commands/commands/update-doc-drawing.command';
+import { DocumentSkeletonPageType, getColor, IRenderManagerService, Liquid, PageLayoutType, Rect, Vector2 } from '@univerjs/engine-render';
 import { IMoveInlineDrawingCommand, ITransformNonInlineDrawingCommand, UpdateDrawingDocTransformCommand } from '../commands/commands/update-doc-drawing.command';
 
 const INLINE_DRAWING_ANCHOR_KEY_PREFIX = '__InlineDrawingAnchor__';
@@ -47,9 +48,13 @@ interface IDrawingAnchor {
     contentBoxPointGroup?: IPoint[][];
 }
 
-// Listen doc drawing transformer change, and update drawing data.
+function isInTableCell(nodePosition: INodeSearch) {
+    const { path } = nodePosition;
 
-@OnLifecycle(LifecycleStages.Rendered, DocDrawingTransformerController)
+    return path.some((p) => p === 'cells');
+}
+
+// Listen doc drawing transformer change, and update drawing data.
 export class DocDrawingTransformerController extends Disposable {
     private _liquid = new Liquid();
     private _listenerOnImageMap = new Set();
@@ -61,8 +66,7 @@ export class DocDrawingTransformerController extends Disposable {
         @ICommandService private readonly _commandService: ICommandService,
         @IUniverInstanceService private readonly _univerInstanceService: IUniverInstanceService,
         @IDrawingManagerService private readonly _drawingManagerService: IDrawingManagerService,
-        @IRenderManagerService private readonly _renderManagerService: IRenderManagerService,
-        @ITextSelectionRenderManager private readonly _textSelectionRenderManager: ITextSelectionRenderManager
+        @IRenderManagerService private readonly _renderManagerService: IRenderManagerService
     ) {
         super();
 
@@ -148,11 +152,12 @@ export class DocDrawingTransformerController extends Disposable {
                     if (objects.size > 1) {
                         throttleMultipleDrawingUpdate(objects);
                     } else if (objects.size === 1) {
-                        const drawingCache: IDrawingCache = this._transformerCache.values().next().value;
-                        const object: BaseObject = objects.values().next().value;
+                        const drawingCache: Nullable<IDrawingCache> = this._transformerCache.values().next().value;
+                        const object: BaseObject = objects.values().next().value!;
                         const { width, height, top, left, angle } = object;
 
                         if (
+                            drawingCache &&
                             width === drawingCache.width &&
                             height === drawingCache.height &&
                             top === drawingCache.top &&
@@ -177,6 +182,7 @@ export class DocDrawingTransformerController extends Disposable {
         // Handle transformer mouseup.
         this.disposeWithMe(
             toDisposable(
+                // eslint-disable-next-line complexity
                 transformer.changeEnd$.subscribe((state) => {
                     const { objects, offsetX, offsetY } = state;
 
@@ -200,11 +206,12 @@ export class DocDrawingTransformerController extends Disposable {
                     if (objects.size > 1) {
                         this._updateMultipleDrawingDocTransform(objects);
                     } else if (objects.size === 1) {
-                        const drawingCache: IDrawingCache = this._transformerCache.values().next().value;
-                        const object: BaseObject = objects.values().next().value;
+                        const drawingCache: Nullable<IDrawingCache> = this._transformerCache.values().next().value;
+                        const object: BaseObject = objects.values().next().value!;
                         const { width, height, top, left, angle } = object;
 
                         if (
+                            drawingCache &&
                             width === drawingCache.width &&
                             height === drawingCache.height &&
                             top === drawingCache.top &&
@@ -336,8 +343,8 @@ export class DocDrawingTransformerController extends Disposable {
             return;
         }
 
-        const drawingCache: IDrawingCache = this._transformerCache.values().next().value;
-        const object = objects.values().next().value;
+        const drawingCache: IDrawingCache = this._transformerCache.values().next().value!;
+        const object = objects.values().next().value!;
 
         const anchor = this._getDrawingAnchor(drawingCache.drawing, object);
     }
@@ -381,12 +388,19 @@ export class DocDrawingTransformerController extends Disposable {
         if (coord == null) {
             return;
         }
+
+        const docSelectionRenderService = this._renderManagerService.getRenderById(drawing.unitId)?.with(DocSelectionRenderService);
+
+        if (docSelectionRenderService == null) {
+            return;
+        }
+
         const nodeInfo = skeleton?.findNodeByCoord(
             coord, pageLayoutType, pageMarginLeft, pageMarginTop,
             {
                 strict: false,
-                segmentId: this._textSelectionRenderManager.getSegment(),
-                segmentPage: this._textSelectionRenderManager.getSegmentPage(),
+                segmentId: docSelectionRenderService.getSegment(),
+                segmentPage: docSelectionRenderService.getSegmentPage(),
             }
         );
         if (nodeInfo) {
@@ -405,6 +419,11 @@ export class DocDrawingTransformerController extends Disposable {
         const docObject = this._getDocObject();
 
         if (nodePosition == null || skeleton == null || docObject == null) {
+            return;
+        }
+
+        // TODO: @JOCS, table cell do not support drawings now. so need to disable it.
+        if (isInTableCell(nodePosition)) {
             return;
         }
 
@@ -470,10 +489,16 @@ export class DocDrawingTransformerController extends Disposable {
             return;
         }
 
+        const docSelectionRenderService = this._renderManagerService.getRenderById(drawing.unitId)?.with(DocSelectionRenderService);
+
+        if (docSelectionRenderService == null) {
+            return;
+        }
+
         const nodeInfo = skeleton?.findNodeByCoord(coord, pageLayoutType, pageMarginLeft, pageMarginTop, {
             strict: false,
-            segmentId: this._textSelectionRenderManager.getSegment(),
-            segmentPage: this._textSelectionRenderManager.getSegmentPage(),
+            segmentId: docSelectionRenderService.getSegment(),
+            segmentPage: docSelectionRenderService.getSegmentPage(),
         });
         if (nodeInfo) {
             const { node, segmentPage: segmentPageIndex, segmentId: nodeSegmentId } = nodeInfo;
@@ -600,6 +625,11 @@ export class DocDrawingTransformerController extends Disposable {
             return;
         }
 
+        // TODO: @JOCS, table cell do not support drawings now. so need to disable it.
+        if (isInTableCell(nodePosition)) {
+            return;
+        }
+
         const positionWithIsBack = {
             ...nodePosition,
             isBack,
@@ -663,10 +693,6 @@ export class DocDrawingTransformerController extends Disposable {
         const anchor = this._getInlineDrawingAnchor(drawing, offsetX, offsetY);
         const { offset, segmentId, segmentPage } = anchor ?? {};
 
-        if (offset == null) {
-            return;
-        }
-
         return this._commandService.executeCommand(IMoveInlineDrawingCommand.id, {
             unitId: drawing.unitId,
             subUnitId: drawing.unitId,
@@ -674,6 +700,7 @@ export class DocDrawingTransformerController extends Disposable {
             offset,
             segmentId,
             segmentPage,
+            needRefreshDrawings: offset == null,
         });
     }
 

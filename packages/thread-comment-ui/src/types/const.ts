@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,4 +18,4 @@ export const THREAD_COMMENT_POPUP = 'thread-comment-popup';
 
 export const THREAD_COMMENT_PANEL = 'thread-comment-panel';
 
-export const PLUGIN_NAME = 'THREAD_COMMENT_UI_PLUGIN';
+export const PLUGIN_NAME = 'UNIVER_THREAD_COMMENT_UI_PLUGIN';

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-const topLevelDomainSet = new Set([
+export const topLevelDomainSet = new Set([
     'ac',
     'ad',
     'ae',
@@ -294,11 +294,6 @@ const re_weburl = new RegExp(
       // user:pass BasicAuth (optional)
       '(?:\\S+(?::\\S*)?@)?' +
       '(?:' +
-        // IP address exclusion
-        // private & local networks
-        '(?!(?:10|127)(?:\\.\\d{1,3}){3})' +
-        '(?!(?:169\\.254|192\\.168)(?:\\.\\d{1,3}){2})' +
-        '(?!172\\.(?:1[6-9]|2\\d|3[0-1])(?:\\.\\d{1,3}){2})' +
         // IP address dotted notation octets
         // excludes loopback network 0.0.0.0
         // excludes reserved space >= 224.0.0.0

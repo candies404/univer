@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,19 +14,18 @@
  * limitations under the License.
  */
 
+import type { IDefinedNameMapItem } from '@univerjs/engine-formula';
 import {
     Disposable,
     IResourceManagerService,
-    LifecycleStages,
-    OnLifecycle,
     UniverInstanceType,
 } from '@univerjs/core';
-import type { IDefinedNameMapItem } from '@univerjs/engine-formula';
 import { IDefinedNamesService } from '@univerjs/engine-formula';
 
 const SHEET_DEFINED_NAME_PLUGIN = 'SHEET_DEFINED_NAME_PLUGIN';
 
-@OnLifecycle(LifecycleStages.Ready, DefinedNameDataController)
+export const SCOPE_WORKBOOK_VALUE_DEFINED_NAME = 'AllDefaultWorkbook';
+
 export class DefinedNameDataController extends Disposable {
     constructor(
         @IDefinedNamesService private readonly _definedNamesService: IDefinedNamesService,

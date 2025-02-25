@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,14 +34,33 @@ const locale = {
             main: '文本背景色',
             right: '背景色选择',
         },
+        table: {
+            main: '表格',
+            insert: '插入表格',
+            colCount: '列数',
+            rowCount: '行数',
+        },
         resetColor: '重置颜色',
         order: '有序列表',
         unorder: '无序列表',
+        checklist: '任务列表',
+        documentFlavor: '现代模式',
         alignLeft: '左对齐',
         alignCenter: '居中对齐',
         alignRight: '右对齐',
         alignJustify: '两端对齐',
         headerFooter: '页眉页脚',
+    },
+    table: {
+        insert: '插入',
+        insertRowAbove: '上方插入行',
+        insertRowBelow: '下方插入行',
+        insertColumnLeft: '左方插入列',
+        insertColumnRight: '右方插入列',
+        delete: '表格删除',
+        deleteRows: '删除行',
+        deleteColumns: '删除列',
+        deleteTable: '删除表格',
     },
     headerFooter: {
         header: '页眉',
@@ -72,6 +91,8 @@ const locale = {
             before: '段落前',
             after: '段落后',
             lineSpace: '行距',
+            multiSpace: '多倍行距',
+            fixedValue: '固定值(px)',
         },
     },
 };

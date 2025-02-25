@@ -1,7 +1,7 @@
 {
     "name": "@univerjs/facade",
-    "version": "0.2.6",
-    "private": false,
+    "version": "0.6.1",
+    "private": true,
     "description": "",
     "author": "DreamNum <developer@univer.ai>",
     "license": "Apache-2.0",
@@ -24,12 +24,11 @@
         ".": "./src/index.ts",
         "./*": "./src/*"
     },
-    "main": "./lib/cjs/index.js",
-    "module": "./lib/es/index.js",
+    "main": "./src/index.ts",
     "types": "./lib/types/index.d.ts",
     "publishConfig": {
         "access": "public",
-        "main": "./lib/cjs/index.js",
+        "main": "./lib/es/index.js",
         "module": "./lib/es/index.js",
         "exports": {
             ".": {
@@ -56,53 +55,42 @@
         "test:watch": "vitest",
         "coverage": "vitest run --coverage",
         "lint:types": "tsc --noEmit",
-        "build": "tsc && vite build",
-        "sync:cnpm": "cnpm sync"
+        "build": "univer-cli build"
     },
     "peerDependencies": {
-        "@univerjs/core": "workspace:*",
-        "@univerjs/docs": "workspace:*",
-        "@univerjs/engine-formula": "workspace:*",
-        "@univerjs/engine-render": "workspace:*",
-        "@univerjs/network": "workspace:*",
-        "@univerjs/sheets": "workspace:*",
-        "@univerjs/sheets-formula": "workspace:*",
-        "@univerjs/sheets-numfmt": "workspace:*",
-        "@univerjs/sheets-ui": "workspace:*",
         "rxjs": ">=7.0.0"
     },
-    "devDependencies": {
+    "dependencies": {
         "@univerjs/core": "workspace:*",
-        "@univerjs/docs": "workspace:*",
         "@univerjs/docs-ui": "workspace:*",
         "@univerjs/engine-formula": "workspace:*",
-        "@univerjs/engine-render": "workspace:*",
         "@univerjs/network": "workspace:*",
-        "@univerjs/shared": "workspace:*",
         "@univerjs/sheets": "workspace:*",
         "@univerjs/sheets-conditional-formatting": "workspace:*",
+        "@univerjs/sheets-data-validation": "workspace:*",
+        "@univerjs/sheets-filter": "workspace:*",
         "@univerjs/sheets-formula": "workspace:*",
+        "@univerjs/sheets-hyper-link": "workspace:*",
+        "@univerjs/sheets-hyper-link-ui": "workspace:*",
         "@univerjs/sheets-numfmt": "workspace:*",
+        "@univerjs/sheets-thread-comment": "workspace:*",
         "@univerjs/sheets-ui": "workspace:*",
-        "@univerjs/ui": "workspace:*",
-        "jest-canvas-mock": "^2.5.2",
-        "jsdom": "^24.1.0",
-        "rxjs": "^7.8.1",
-        "typescript": "^5.5.4",
-        "vite": "^5.3.5",
-        "vitest": "^2.0.5"
+        "@univerjs/sheets-zen-editor": "workspace:*",
+        "@univerjs/ui": "workspace:*"
     },
-    "univerSpace": {
-        ".": {
-            "import": "./lib/es/index.js",
-            "require": "./lib/cjs/index.js",
-            "types": "./lib/types/index.d.ts"
-        },
-        "./*": {
-            "import": "./lib/es/*",
-            "require": "./lib/cjs/*",
-            "types": "./lib/types/index.d.ts"
-        },
-        "./lib/*": "./lib/*"
+    "devDependencies": {
+        "@univerjs-infra/shared": "workspace:*",
+        "@univerjs/data-validation": "workspace:*",
+        "@univerjs/docs": "workspace:*",
+        "@univerjs/engine-render": "workspace:*",
+        "@univerjs/sheets-conditional-formatting": "workspace:*",
+        "@univerjs/sheets-formula-ui": "workspace:*",
+        "@univerjs/thread-comment": "workspace:*",
+        "jest-canvas-mock": "^2.5.2",
+        "jsdom": "^24.1.1",
+        "rxjs": "^7.8.1",
+        "typescript": "^5.7.3",
+        "vite": "^6.1.1",
+        "vitest": "^3.0.6"
     }
 }

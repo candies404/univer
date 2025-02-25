@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,20 +15,32 @@
  */
 
 import type { IDisposable } from '@univerjs/core';
+import type { BehaviorSubject, Observable, ReplaySubject } from 'rxjs';
+import type { ComponentType } from '../../common/component-manager';
 import { createIdentifier } from '@univerjs/core';
-import type { Subject } from 'rxjs';
 
 export const IZenZoneService = createIdentifier<IZenZoneService>('univer.zen-zone-service');
 
 export interface IZenZoneService {
-    readonly visible$: Subject<boolean>;
-    readonly componentKey$: Subject<string>;
+    readonly visible$: BehaviorSubject<boolean>;
+    readonly componentKey$: ReplaySubject<string>;
+    readonly temporaryHidden$: Observable<boolean>;
 
     readonly visible: boolean;
+    readonly temporaryHidden: boolean;
 
-    set(key: string, component: any): IDisposable;
+    set(key: string, component: ComponentType): IDisposable;
 
     open(): void;
 
     close(): void;
+
+    /**
+     * temporarily hide the zen zone, often
+     */
+    hide(): void;
+    /**
+     * show the zen zone
+     */
+    show(): void;
 }

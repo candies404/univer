@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,10 @@
  */
 
 import type { Observable } from 'rxjs';
+import type { IPermissionPoint, IPermissionService } from './type';
 import { BehaviorSubject, combineLatest, Subject } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { Disposable } from '../../shared';
-import type { IPermissionPoint, IPermissionService } from './type';
 import { PermissionStatus } from './type';
 
 export class PermissionService extends Disposable implements IPermissionService {
@@ -26,6 +26,16 @@ export class PermissionService extends Disposable implements IPermissionService 
 
     private _permissionPointUpdate$ = new Subject<IPermissionPoint<unknown>>();
     public permissionPointUpdate$ = this._permissionPointUpdate$.asObservable();
+
+    private _showComponents = true;
+
+    setShowComponents(showComponents: boolean) {
+        this._showComponents = showComponents;
+    }
+
+    getShowComponents() {
+        return this._showComponents;
+    }
 
     deletePermissionPoint(permissionId: string) {
         const permissionPoint = this._permissionPointMap.get(permissionId);
@@ -58,7 +68,7 @@ export class PermissionService extends Disposable implements IPermissionService 
         const subject = permissionPoint.getValue() as IPermissionPoint<T>;
         subject.value = value;
         subject.status = PermissionStatus.DONE;
-        permissionPoint.next({ ...subject });
+        permissionPoint.next(subject);
         this._permissionPointUpdate$.next(subject);
     };
 

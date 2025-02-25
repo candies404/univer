@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,29 +14,27 @@
  * limitations under the License.
  */
 
-import type { IRange, ISelectionCellWithMergeInfo, Nullable, ObjectMatrix } from '@univerjs/core';
-import { BooleanNumber, sortRules } from '@univerjs/core';
-
-import { FIX_ONE_PIXEL_BLUR_OFFSET, RENDER_CLASS_TYPE } from '../../basics/const';
-
-// import { clearLineByBorderType } from '../../basics/draw';
-import { getCellPositionByIndex, getColor } from '../../basics/tools';
+import type { IPosition, IRange, Nullable } from '@univerjs/core';
 import type { IBoundRectNoAngle, IViewportInfo, Vector2 } from '../../basics/vector2';
 import type { Canvas } from '../../canvas';
-import type { UniverRenderingContext } from '../../context';
+import type { UniverRenderingContext2D } from '../../context';
 import type { Engine } from '../../engine';
 import type { Scene } from '../../scene';
 import type { SceneViewer } from '../../scene-viewer';
-import { Documents } from '../docs/document';
-import { SpreadsheetExtensionRegistry } from '../extension';
+import type { IDrawInfo } from '../extension';
 import type { Background } from './extensions/background';
 import type { Border } from './extensions/border';
 import type { Font } from './extensions/font';
-
-// import type { BorderCacheItem } from './interfaces';
+import type { IPaintForRefresh, IPaintForScrolling, SHEET_VIEWPORT_KEY } from './interfaces';
+import type { SpreadsheetSkeleton } from './sheet.render-skeleton';
+import { BooleanNumber, sortRules, Tools } from '@univerjs/core';
+import { FIX_ONE_PIXEL_BLUR_OFFSET, RENDER_CLASS_TYPE } from '../../basics/const';
+import { getColor } from '../../basics/tools';
+import { Documents } from '../docs/document';
+import { SpreadsheetExtensionRegistry } from '../extension';
+import { sheetContentViewportKeys, sheetHeaderViewportKeys } from './constants';
+import { SHEET_EXTENSION_PREFIX } from './extensions/sheet-extension';
 import { SheetComponent } from './sheet-component';
-import type { SpreadsheetSkeleton } from './sheet-skeleton';
-import { type IPaintForRefresh, type IPaintForScrolling, SHEET_VIEWPORT_KEY } from './interfaces';
 
 const OBJECT_KEY = '__SHEET_EXTENSION_FONT_DOCUMENT_INSTANCE__';
 
@@ -94,12 +92,11 @@ export class Spreadsheet extends SheetComponent {
         return this._forceDisableGridlines;
     }
 
-    /**
-     * TODO: DR-Univer, fix as unknown as
-     */
     override dispose() {
         super.dispose();
         this._documents?.dispose();
+
+        // TODO: fix memory leak without reassigning these properties
         this._documents = null as unknown as Documents;
         this._backgroundExtension = null as unknown as Background;
         this._borderExtension = null as unknown as Border;
@@ -108,15 +105,10 @@ export class Spreadsheet extends SheetComponent {
 
     /**
      * draw by viewport
-     * cacheBound ---> viewBound
-     * diffCacheBounds ---> diffRange
      * @param ctx
      * @param viewportInfo
      */
-    override draw(ctx: UniverRenderingContext, viewportInfo: IViewportInfo) {
-        // const { parent = { scaleX: 1, scaleY: 1 } } = this;
-        // const mergeData = this.getMergeData();
-        // const showGridlines = this.getShowGridlines() || 1;
+    override draw(ctx: UniverRenderingContext2D, viewportInfo: IViewportInfo) {
         const spreadsheetSkeleton = this.getSkeleton();
         if (!spreadsheetSkeleton) {
             return;
@@ -124,20 +116,48 @@ export class Spreadsheet extends SheetComponent {
         this._drawAuxiliary(ctx);
         const parentScale = this.getParentScale();
 
-        const diffRanges = this._refreshIncrementalState && viewportInfo?.diffBounds
-            ? viewportInfo?.diffBounds?.map((bound) => spreadsheetSkeleton.getRowColumnSegmentByViewBound(bound))
-            : undefined;
-        const viewRanges = [spreadsheetSkeleton.getRowColumnSegmentByViewBound(viewportInfo?.cacheBound)];
+        const diffRanges = this._refreshIncrementalState && viewportInfo.diffBounds
+            ? viewportInfo.diffBounds?.map((bound) => spreadsheetSkeleton.getRangeByViewBound(bound))
+            : [];
+
+        const viewRanges = [spreadsheetSkeleton.getCacheRangeByViewport(viewportInfo)];
         const extensions = this.getExtensionsByOrder();
         // At this moment, ctx.transform is at topLeft of sheet content, cell(0, 0)
+
+        const scene = this.getScene();
         for (const extension of extensions) {
-            const _timeKey = `extension ${viewportInfo.viewportKey}:${extension.constructor.name}`;
+            const timeKey = `${SHEET_EXTENSION_PREFIX}${extension.uKey}`;
+            const st = Tools.now();
             extension.draw(ctx, parentScale, spreadsheetSkeleton, diffRanges, {
                 viewRanges,
                 checkOutOfViewBound: true,
                 viewportKey: viewportInfo.viewportKey,
-            });
+                viewBound: viewportInfo.cacheBound,
+            } as IDrawInfo);
+            this.addRenderFrameTimeMetricToScene(timeKey, Tools.now() - st, scene);
         }
+    }
+
+    addRenderFrameTimeMetricToScene(timeKey: string, val: number, scene: Scene) {
+        scene = scene ?? this.getScene();
+        // scene?.addRenderFrameTimeMetric(timeKey, val);
+        const engine = scene.getEngine() as Engine;
+        engine.renderFrameTimeMetric$.next([timeKey, val]);
+    }
+
+    addRenderTagToScene(renderKey: string, val: any, scene?: Scene) {
+        scene = scene ?? this.getScene();
+        const engine = scene.getEngine() as Engine;
+        engine.renderFrameTags$.next([renderKey, val]);
+        // scene?.addRenderFrameTags(timeKey, val);
+    }
+
+    /**
+     * override for return type as Scene.
+     * @returns Scene
+     */
+    override getScene() {
+        return super.getScene() as Scene;
     }
 
     override isHit(coord: Vector2) {
@@ -153,39 +173,40 @@ export class Spreadsheet extends SheetComponent {
         return false;
     }
 
-    override getNoMergeCellPositionByIndex(rowIndex: number, columnIndex: number) {
-        const spreadsheetSkeleton = this.getSkeleton();
-        if (!spreadsheetSkeleton) {
-            return;
+    override getNoMergeCellPositionByIndex(rowIndex: number, columnIndex: number): IPosition {
+        const skeleton = this.getSkeleton();
+        if (!skeleton) {
+            return { startX: 0, startY: 0, endX: 0, endY: 0 };
         }
-        const { rowHeightAccumulation, columnWidthAccumulation, rowHeaderWidth, columnHeaderHeight } =
-            spreadsheetSkeleton;
+        return skeleton.getNoMergeCellWithCoordByIndex(rowIndex, columnIndex);
+        // const { rowHeightAccumulation, columnWidthAccumulation, rowHeaderWidth, columnHeaderHeight } =
+        //     spreadsheetSkeleton;
 
-        let { startY, endY, startX, endX } = getCellPositionByIndex(
-            rowIndex,
-            columnIndex,
-            rowHeightAccumulation,
-            columnWidthAccumulation
-        );
+        // let { startY, endY, startX, endX } = getCellWithCoordByIndexCore(
+        //     rowIndex,
+        //     columnIndex,
+        //     rowHeightAccumulation,
+        //     columnWidthAccumulation
+        // );
 
-        startY += columnHeaderHeight;
-        endY += columnHeaderHeight;
-        startX += rowHeaderWidth;
-        endX += rowHeaderWidth;
+        // startY += columnHeaderHeight;
+        // endY += columnHeaderHeight;
+        // startX += rowHeaderWidth;
+        // endX += rowHeaderWidth;
 
-        return {
-            startY,
-            endY,
-            startX,
-            endX,
-        };
+        // return {
+        //     startY,
+        //     endY,
+        //     startX,
+        //     endX,
+        // };
     }
 
     override getScrollXYByRelativeCoords(coord: Vector2) {
         const scene = this.getParent() as Scene;
         let x = 0;
         let y = 0;
-        const viewPort = scene.findViewportByPosToViewport(coord);
+        const viewPort = scene.findViewportByPosToScene(coord);
         if (viewPort) {
             const actualX = viewPort.viewportScrollX || 0;
             const actualY = viewPort.viewportScrollY || 0;
@@ -216,7 +237,7 @@ export class Spreadsheet extends SheetComponent {
     }
 
     override getSelectionBounding(startRow: number, startColumn: number, endRow: number, endColumn: number) {
-        return this.getSkeleton()?.getMergeBounding(startRow, startColumn, endRow, endColumn);
+        return this.getSkeleton()?.expandRangeByMerge({ startRow, startColumn, endRow, endColumn });
     }
 
     /**
@@ -236,7 +257,7 @@ export class Spreadsheet extends SheetComponent {
         this._dirtyBounds = dirtyBounds;
     }
 
-    renderByViewport(mainCtx: UniverRenderingContext, viewportInfo: IViewportInfo, spreadsheetSkeleton: SpreadsheetSkeleton) {
+    renderByViewports(mainCtx: UniverRenderingContext2D, viewportInfo: IViewportInfo, spreadsheetSkeleton: SpreadsheetSkeleton) {
         const { diffBounds, diffX, diffY, viewPortPosition, cacheCanvas, leftOrigin, topOrigin, bufferEdgeX, bufferEdgeY, isDirty: isViewportDirty, isForceDirty: isViewportForceDirty } = viewportInfo as Required<IViewportInfo>;
         const { rowHeaderWidth, columnHeaderHeight } = spreadsheetSkeleton;
         const { a: scaleX = 1, d: scaleY = 1 } = mainCtx.getTransform();
@@ -245,17 +266,17 @@ export class Spreadsheet extends SheetComponent {
 
         const cacheCtx = cacheCanvas.getContext();
         cacheCtx.save();
-        const { left, top, right, bottom } = viewPortPosition;
-        const dw = right - left + rowHeaderWidth;
-        const dh = bottom - top + columnHeaderHeight;
+
         const isForceDirty = isViewportForceDirty || this.isForceDirty();
         const isDirty = isViewportDirty || this.isDirty();
         if (diffBounds.length === 0 || (diffX === 0 && diffY === 0) || isForceDirty || isDirty) {
             if (isDirty || isForceDirty) {
+                this.addRenderTagToScene('scrolling', false);
                 this.refreshCacheCanvas(viewportInfo, { cacheCanvas, cacheCtx, mainCtx, topOrigin, leftOrigin, bufferEdgeX, bufferEdgeY });
             }
         } else if (diffBounds.length !== 0 || diffX !== 0 || diffY !== 0) {
             // scrolling && no dirty
+            this.addRenderTagToScene('scrolling', true);
             this.paintNewAreaForScrolling(viewportInfo, {
                 cacheCanvas, cacheCtx, mainCtx, topOrigin, leftOrigin, bufferEdgeX, bufferEdgeY, scaleX, scaleY, columnHeaderHeight, rowHeaderWidth,
             });
@@ -263,6 +284,9 @@ export class Spreadsheet extends SheetComponent {
         // support for browser native zoom (only windows has this problem)
         const sourceLeft = bufferEdgeSizeX * Math.min(1, window.devicePixelRatio);
         const sourceTop = bufferEdgeSizeY * Math.min(1, window.devicePixelRatio);
+        const { left, top, right, bottom } = viewPortPosition;
+        const dw = right - left + rowHeaderWidth;
+        const dh = bottom - top + columnHeaderHeight;
         this._applyCache(cacheCanvas, mainCtx, sourceLeft, sourceTop, dw, dh, left, top, dw, dh);
         cacheCtx.restore();
     }
@@ -330,7 +354,7 @@ export class Spreadsheet extends SheetComponent {
         cacheCtx.restore();
 
         cacheCtx.save();
-        // 所以 cacheCtx.setTransform 已经包含了 rowHeaderWidth + viewport + scroll 距离
+        // cacheCtx.setTransform is rowHeaderWidth + viewport + scroll
         const m = mainCtx.getTransform();
         // cacheCtx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
         cacheCtx.setTransform(m.a, m.b, m.c, m.d, 0, 0);
@@ -338,13 +362,12 @@ export class Spreadsheet extends SheetComponent {
         // The 'leftOrigin' is the offset of the viewport relative to the sheet corner, which is the position of cell(0, 0), and it does not consider scaling.
         // - (leftOrigin - bufferEdgeX)  ----> - leftOrigin + bufferEdgeX
         cacheCtx.translateWithPrecision(m.e / m.a - leftOrigin + bufferEdgeX, m.f / m.d - topOrigin + bufferEdgeY);
-        // extension 绘制时按照内容的左上角计算, 不考虑 rowHeaderWidth
+        // when extension drawing, sheet content coordinate was used by sheet extension, not viewport coordinate, that means ext does not take rowheader into consideration
         this.draw(cacheCtx, viewportInfo);
-        // this.testShowRuler(cacheCtx, viewportInfo);
         cacheCtx.restore();
     }
 
-    override render(mainCtx: UniverRenderingContext, viewportInfo: IViewportInfo) {
+    override render(mainCtx: UniverRenderingContext2D, viewportInfo: IViewportInfo) {
         if (!this.visible) {
             this.makeDirty(false);
             return this;
@@ -355,7 +378,7 @@ export class Spreadsheet extends SheetComponent {
         if (!spreadsheetSkeleton) {
             return;
         }
-        spreadsheetSkeleton.calculateWithoutClearingCache(viewportInfo);
+        spreadsheetSkeleton.setStylesCache(viewportInfo);
 
         const segment = spreadsheetSkeleton.rowColumnSegment;
 
@@ -365,45 +388,47 @@ export class Spreadsheet extends SheetComponent {
 
         if (
             (segment.startRow === -1 && segment.endRow === -1) ||
-                (segment.startColumn === -1 && segment.endColumn === -1)
+            (segment.startColumn === -1 && segment.endColumn === -1)
         ) {
             return;
         }
+
         mainCtx.save();
 
         const { rowHeaderWidth, columnHeaderHeight } = spreadsheetSkeleton;
         mainCtx.translateWithPrecision(rowHeaderWidth, columnHeaderHeight);
 
-        const { viewportKey } = viewportInfo;
-            // scene --> layer, getObjects --> viewport.render(object) --> spreadsheet
-            // SHEET_COMPONENT_MAIN_LAYER_INDEX = 0;
-            // SHEET_COMPONENT_SELECTION_LAYER_INDEX = 1;
-            // SHEET_COMPONENT_HEADER_LAYER_INDEX = 10;
-            // SHEET_COMPONENT_HEADER_SELECTION_LAYER_INDEX = 11;
-            // ......
-            // SHEET_COMPONENT_MAIN_LAYER_INDEX spreadsheet  this.getObjectsByOrder() ---> [spreadsheet]
-            // SHEET_COMPONENT_HEADER_LAYER_INDEX rowHeader & colHeader & freezeBorder this.getObjectsByOrder() ---> [SpreadsheetRowHeader, SpreadsheetColumnHeader, _Rect..., HeaderMenuResizeShape]
-            // SHEET_COMPONENT_HEADER_SELECTION_LAYER_INDEX selection  this.getObjectsByOrder() ---> [_Rect, Group]
+        this.getScene()?.updateTransformerZero(spreadsheetSkeleton.rowHeaderWidth, spreadsheetSkeleton.columnHeaderHeight);
 
-            // SpreadsheetRowHeader SpreadsheetColumnHeader is not render by spreadsheet
-        if (this.sheetContentViewport().includes(viewportKey as SHEET_VIEWPORT_KEY)) {
+        const { viewportKey } = viewportInfo;
+        // scene --> layer, getObjects --> viewport.render(object) --> spreadsheet
+        // SHEET_COMPONENT_MAIN_LAYER_INDEX = 0;
+        // SHEET_COMPONENT_SELECTION_LAYER_INDEX = 1;
+        // SHEET_COMPONENT_HEADER_LAYER_INDEX = 10;
+        // SHEET_COMPONENT_HEADER_SELECTION_LAYER_INDEX = 11;
+        // ......
+        // SHEET_COMPONENT_MAIN_LAYER_INDEX spreadsheet  this.getObjectsByOrder() ---> [spreadsheet]
+        // SHEET_COMPONENT_HEADER_LAYER_INDEX rowHeader & colHeader & freezeBorder this.getObjectsByOrder() ---> [SpreadsheetRowHeader, SpreadsheetColumnHeader, _Rect..., HeaderMenuResizeShape]
+        // SHEET_COMPONENT_HEADER_SELECTION_LAYER_INDEX selection  this.getObjectsByOrder() ---> [_Rect, Group]
+
+        // SpreadsheetRowHeader SpreadsheetColumnHeader is not render by spreadsheet
+        if (sheetContentViewportKeys.includes(viewportKey as SHEET_VIEWPORT_KEY)) {
             if (viewportInfo && viewportInfo.cacheCanvas) {
-                this.renderByViewport(mainCtx, viewportInfo, spreadsheetSkeleton);
+                this.renderByViewports(mainCtx, viewportInfo, spreadsheetSkeleton);
             } else {
                 this._draw(mainCtx, viewportInfo);
             }
-        } else if (this.sheetHeaderViewport().includes(viewportKey as SHEET_VIEWPORT_KEY)) {
+        } else if (sheetHeaderViewportKeys.includes(viewportKey as SHEET_VIEWPORT_KEY)) {
             // doing nothing, other components(SpreadsheetRowHeader...) will render
         } else {
             // embed in doc & slide
-            // 现阶段 embed 开启贴图有问题, 3f12ad80188a83283bcd95c65e6c5dcc2d23ad72
+            // now there are bugs in embed mode with cache on, 3f12ad80188a83283bcd95c65e6c5dcc2d23ad72
             if (viewportInfo && viewportInfo.cacheCanvas) {
-                this.renderByViewport(mainCtx, viewportInfo, spreadsheetSkeleton);
+                this.renderByViewports(mainCtx, viewportInfo, spreadsheetSkeleton);
             } else {
                 this._draw(mainCtx, viewportInfo);
             }
         }
-
         mainCtx.restore();
         return this;
     }
@@ -423,7 +448,7 @@ export class Spreadsheet extends SheetComponent {
      */
     protected _applyCache(
         cacheCanvas: Canvas,
-        ctx: UniverRenderingContext,
+        ctx: UniverRenderingContext2D,
         sx: number = 0,
         sy: number = 0,
         sw: number = 0,
@@ -443,20 +468,16 @@ export class Spreadsheet extends SheetComponent {
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         cacheCtx.setTransform(1, 0, 0, 1, 0, 0);
-        const fn = (num: number, scale: number) => {
-            return Math.round(num * scale);
-        };
+
         ctx.imageSmoothingEnabled = false;
-        // ctx.imageSmoothingEnabled = true;
-        // ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(
             cacheCanvas.getCanvasEle(),
-            fn(sx, pixelRatio),
-            fn(sy, pixelRatio),
+            sx * pixelRatio,
+            sy * pixelRatio,
             sw * pixelRatio,
             sh * pixelRatio,
-            fn(dx, pixelRatio),
-            fn(dy, pixelRatio),
+            dx * pixelRatio,
+            dy * pixelRatio,
             dw * pixelRatio,
             dh * pixelRatio
         );
@@ -464,7 +485,7 @@ export class Spreadsheet extends SheetComponent {
         cacheCtx.restore();
     }
 
-    protected override _draw(ctx: UniverRenderingContext, bounds?: IViewportInfo) {
+    protected override _draw(ctx: UniverRenderingContext2D, bounds?: IViewportInfo) {
         this.draw(ctx, bounds!);
     }
 
@@ -505,7 +526,6 @@ export class Spreadsheet extends SheetComponent {
             .forEach((Extension) => {
                 this.register(new Extension());
             });
-        // this._borderAuxiliaryExtension = this.getExtensionByKey('DefaultBorderAuxiliaryExtension') as BorderAuxiliary;
         this._backgroundExtension = this.getExtensionByKey('DefaultBackgroundExtension') as Background;
         this._borderExtension = this.getExtensionByKey('DefaultBorderExtension') as Border;
         this._fontExtension = this.getExtensionByKey('DefaultFontExtension') as Font;
@@ -516,13 +536,14 @@ export class Spreadsheet extends SheetComponent {
      * @param ctx
      */
     // eslint-disable-next-line max-lines-per-function
-    private _drawAuxiliary(ctx: UniverRenderingContext) {
+    private _drawAuxiliary(ctx: UniverRenderingContext2D) {
         const spreadsheetSkeleton = this.getSkeleton();
         if (spreadsheetSkeleton == null) {
             return;
         }
 
-        const { rowColumnSegment, dataMergeCache, overflowCache, showGridlines } = spreadsheetSkeleton;
+        const { rowColumnSegment, overflowCache, showGridlines, gridlinesColor } = spreadsheetSkeleton;
+        const mergeCellRanges = spreadsheetSkeleton.getCurrentRowColumnSegmentMergeData(rowColumnSegment);
         const { startRow, endRow, startColumn, endColumn } = rowColumnSegment;
         if (!spreadsheetSkeleton || showGridlines === BooleanNumber.FALSE || this._forceDisableGridlines) {
             return;
@@ -542,8 +563,7 @@ export class Spreadsheet extends SheetComponent {
 
         ctx.setLineWidthByPrecision(1);
 
-        // TODO@jikkai: these should be configurable
-        ctx.strokeStyle = getColor([214, 216, 219]);
+        ctx.strokeStyle = gridlinesColor ?? ctx.renderConfig.gridlinesColor ?? getColor([214, 216, 219]);
 
         const columnWidthAccumulationLength = columnWidthAccumulation.length;
         const rowHeightAccumulationLength = rowHeightAccumulation.length;
@@ -574,6 +594,7 @@ export class Spreadsheet extends SheetComponent {
         ctx.closePathByEnv();
         ctx.stroke();
 
+        //#region draw horizontal lines
         for (let r = rowStart; r <= rowEnd; r++) {
             if (r < 0 || r > rowHeightAccumulationLength - 1) {
                 continue;
@@ -585,6 +606,7 @@ export class Spreadsheet extends SheetComponent {
             ctx.closePathByEnv();
             ctx.stroke();
         }
+        //#endregion
 
         for (let c = columnStart; c <= columnEnd; c++) {
             if (c < 0 || c > columnWidthAccumulationLength - 1) {
@@ -597,48 +619,13 @@ export class Spreadsheet extends SheetComponent {
             ctx.closePathByEnv();
             ctx.stroke();
         }
-        // console.log('xx2', scaleX, scaleY, columnTotalWidth, rowTotalHeight, rowHeightAccumulation, columnWidthAccumulation);
+        //#endregion
 
-        // border?.forValue((rowIndex, columnIndex, borderCaches) => {
-        //     if (!borderCaches) {
-        //         return true;
-        //     }
+        // clear line of merge cell
+        this._clearRectangle(ctx, rowHeightAccumulation, columnWidthAccumulation, mergeCellRanges);
 
-        //     const cellInfo = spreadsheetSkeleton.getCellByIndexWithNoHeader(rowIndex, columnIndex);
-
-        //     let { startY, endY, startX, endX } = cellInfo;
-        //     const { isMerged, isMergedMainCell, mergeInfo } = cellInfo;
-
-        //     if (isMerged) {
-        //         return true;
-        //     }
-
-        //     if (isMergedMainCell) {
-        //         startY = mergeInfo.startY;
-        //         endY = mergeInfo.endY;
-        //         startX = mergeInfo.startX;
-        //         endX = mergeInfo.endX;
-        //     }
-
-        //     if (!(mergeInfo.startRow >= rowStart && mergeInfo.endRow <= rowEnd)) {
-        //         return true;
-        //     }
-
-        //     for (const key in borderCaches) {
-        //         const { type } = borderCaches[key] as BorderCacheItem;
-
-        //         clearLineByBorderType(ctx, type, { startX, startY, endX, endY });
-        //     }
-        // });
-
-        // Clearing the dashed line issue caused by overlaid auxiliary lines and strokes
-        // merge cell
-        this._clearRectangle(ctx, rowHeightAccumulation, columnWidthAccumulation, dataMergeCache);
-
-        // overflow cell
+        // clear line of overflow cell
         this._clearRectangle(ctx, rowHeightAccumulation, columnWidthAccumulation, overflowCache.toNativeArray());
-
-        // this._clearBackground(ctx, backgroundPositions);
 
         ctx.restore();
     }
@@ -647,23 +634,23 @@ export class Spreadsheet extends SheetComponent {
      * Clear the guide lines within a range in the table, to make room for merged cells and overflow.
      */
     private _clearRectangle(
-        ctx: UniverRenderingContext,
+        ctx: UniverRenderingContext2D,
         rowHeightAccumulation: number[],
         columnWidthAccumulation: number[],
-        dataMergeCache?: IRange[]
+        cellRanges?: IRange[]
     ) {
-        if (dataMergeCache == null) {
+        if (cellRanges == null) {
             return;
         }
-        for (const dataCache of dataMergeCache) {
-            const { startRow, endRow, startColumn, endColumn } = dataCache;
+        for (const range of cellRanges) {
+            const { startRow, endRow, startColumn, endColumn } = range;
 
-            const startY = rowHeightAccumulation[startRow - 1] || 0;
-            const endY = rowHeightAccumulation[endRow] || rowHeightAccumulation[rowHeightAccumulation.length - 1];
+            const startY = rowHeightAccumulation[startRow - 1] ?? 0;
+            const endY = rowHeightAccumulation[endRow] ?? rowHeightAccumulation[rowHeightAccumulation.length - 1];
 
-            const startX = columnWidthAccumulation[startColumn - 1] || 0;
+            const startX = columnWidthAccumulation[startColumn - 1] ?? 0;
             const endX =
-                columnWidthAccumulation[endColumn] || columnWidthAccumulation[columnWidthAccumulation.length - 1];
+                columnWidthAccumulation[endColumn] ?? columnWidthAccumulation[columnWidthAccumulation.length - 1];
 
             ctx.clearRectByPrecision(startX, startY, endX - startX, endY - startY);
 
@@ -679,34 +666,7 @@ export class Spreadsheet extends SheetComponent {
         }
     }
 
-    private _clearBackground(ctx: UniverRenderingContext, backgroundPositions?: ObjectMatrix<ISelectionCellWithMergeInfo>) {
-        backgroundPositions?.forValue((row, column, cellInfo) => {
-            let { startY, endY, startX, endX } = cellInfo;
-            const { isMerged, isMergedMainCell, mergeInfo } = cellInfo;
-            if (isMerged) {
-                return true;
-            }
-
-            if (isMergedMainCell) {
-                startY = mergeInfo.startY;
-                endY = mergeInfo.endY;
-                startX = mergeInfo.startX;
-                endX = mergeInfo.endX;
-            }
-
-            ctx.clearRectForTexture(startX, startY, endX - startX + 0.5, endY - startY + 0.5);
-        });
-    }
-
-    sheetContentViewport() {
-        return [SHEET_VIEWPORT_KEY.VIEW_MAIN, SHEET_VIEWPORT_KEY.VIEW_MAIN_LEFT_TOP, SHEET_VIEWPORT_KEY.VIEW_MAIN_TOP, SHEET_VIEWPORT_KEY.VIEW_MAIN_LEFT];
-    }
-
-    sheetHeaderViewport() {
-        return [SHEET_VIEWPORT_KEY.VIEW_ROW_TOP, SHEET_VIEWPORT_KEY.VIEW_ROW_BOTTOM, SHEET_VIEWPORT_KEY.VIEW_COLUMN_LEFT, SHEET_VIEWPORT_KEY.VIEW_COLUMN_RIGHT, SHEET_VIEWPORT_KEY.VIEW_LEFT_TOP];
-    }
-
-    testShowRuler(cacheCtx: UniverRenderingContext, viewportInfo: IViewportInfo): void {
+    testShowRuler(cacheCtx: UniverRenderingContext2D, viewportInfo: IViewportInfo): void {
         const { cacheBound } = viewportInfo;
         const spreadsheetSkeleton = this.getSkeleton()!;
         const { rowHeaderWidth, columnHeaderHeight } = spreadsheetSkeleton;
@@ -771,7 +731,7 @@ export class Spreadsheet extends SheetComponent {
         const g = Number.parseInt(color.substring(3, 5), 16);
         const b = Number.parseInt(color.substring(5, 7), 16);
         if (r + g + b < 610) {
-            return this.testGetRandomLightColor(); // 递归调用直到生成足够亮的颜色
+            return this.testGetRandomLightColor();
         }
 
         return color;

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,15 +14,14 @@
  * limitations under the License.
  */
 
-import { Disposable, ICommandService, LifecycleStages, OnLifecycle } from '@univerjs/core';
+import { Disposable, ICommandService } from '@univerjs/core';
+import { AddHyperLinkCommand, AddRichHyperLinkCommand } from '../commands/commands/add-hyper-link.command';
+import { CancelHyperLinkCommand, CancelRichHyperLinkCommand } from '../commands/commands/remove-hyper-link.command';
+import { UpdateHyperLinkCommand, UpdateRichHyperLinkCommand } from '../commands/commands/update-hyper-link.command';
 import { AddHyperLinkMutation } from '../commands/mutations/add-hyper-link.mutation';
-import { UpdateHyperLinkMutation, UpdateHyperLinkRefMutation } from '../commands/mutations/update-hyper-link.mutation';
 import { RemoveHyperLinkMutation } from '../commands/mutations/remove-hyper-link.mutation';
-import { AddHyperLinkCommand } from '../commands/commands/add-hyper-link.command';
-import { UpdateHyperLinkCommand } from '../commands/commands/update-hyper-link.command';
-import { CancelHyperLinkCommand, RemoveHyperLinkCommand } from '../commands/commands/remove-hyper-link.command';
+import { UpdateHyperLinkMutation, UpdateHyperLinkRefMutation, UpdateRichHyperLinkMutation } from '../commands/mutations/update-hyper-link.mutation';
 
-@OnLifecycle(LifecycleStages.Starting, SheetsHyperLinkController)
 export class SheetsHyperLinkController extends Disposable {
     constructor(
         @ICommandService private readonly _commandService: ICommandService
@@ -34,15 +33,17 @@ export class SheetsHyperLinkController extends Disposable {
 
     private _registerCommands() {
         [
+            AddHyperLinkCommand,
+            UpdateHyperLinkCommand,
+            CancelHyperLinkCommand,
+            UpdateRichHyperLinkCommand,
+            CancelRichHyperLinkCommand,
+            AddRichHyperLinkCommand,
             AddHyperLinkMutation,
             UpdateHyperLinkMutation,
             RemoveHyperLinkMutation,
             UpdateHyperLinkRefMutation,
-
-            AddHyperLinkCommand,
-            UpdateHyperLinkCommand,
-            RemoveHyperLinkCommand,
-            CancelHyperLinkCommand,
+            UpdateRichHyperLinkMutation,
         ].forEach((command) => {
             this._commandService.registerCommand(command);
         });

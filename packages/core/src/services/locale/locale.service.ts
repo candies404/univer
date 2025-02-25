@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-import { BehaviorSubject, Subject } from 'rxjs';
-
-import { Disposable, toDisposable } from '../../shared/lifecycle';
 import type { ILanguagePack, ILocales, LanguageValue } from '../../shared/locale';
-import { Tools } from '../../shared/tools';
+
+import { merge } from 'lodash-es';
+import { BehaviorSubject, Subject } from 'rxjs';
+import { Disposable, toDisposable } from '../../shared/lifecycle';
 import { LocaleType } from '../../types/enum/locale-type';
 
 /**
@@ -45,7 +45,7 @@ export class LocaleService extends Disposable {
      * @param locales - Locale object
      */
     load(locales: ILocales) {
-        this._locales = Tools.deepMerge(this._locales ?? {}, locales);
+        this._locales = merge(this._locales ?? {}, locales);
     }
 
     /**

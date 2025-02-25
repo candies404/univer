@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,30 +14,28 @@
  * limitations under the License.
  */
 
-import { Disposable, ICommandService, Inject, Injector, LifecycleStages, OnLifecycle } from '@univerjs/core';
 import type { MenuConfig } from '@univerjs/ui';
-import { ComponentManager, IMenuService, IShortcutService } from '@univerjs/ui';
+import { Disposable, ICommandService, Inject } from '@univerjs/core';
 import { LinkSingle } from '@univerjs/icons';
-import { DocHyperLinkEdit } from '../views/hyper-link-edit';
+import { ComponentManager, IMenuManagerService, IShortcutService } from '@univerjs/ui';
 import { AddDocHyperLinkCommand } from '../commands/commands/add-link.command';
-import { UpdateDocHyperLinkCommand } from '../commands/commands/update-link.command';
 import { DeleteDocHyperLinkCommand } from '../commands/commands/delete-link.command';
-import { ShowDocHyperLinkEditPopupOperation } from '../commands/operations/popup.operation';
+import { UpdateDocHyperLinkCommand } from '../commands/commands/update-link.command';
+import { ClickDocHyperLinkOperation, ShowDocHyperLinkEditPopupOperation, ToggleDocHyperLinkInfoPopupOperation } from '../commands/operations/popup.operation';
+import { DocHyperLinkEdit } from '../views/hyper-link-edit';
 import { DocLinkPopup } from '../views/hyper-link-popup';
-import { AddHyperLinkMenuItemFactory, addLinkShortcut, DOC_LINK_ICON } from './menu';
+import { addLinkShortcut, DOC_LINK_ICON } from './menu';
+import { menuSchema } from './menu.schema';
 
 export interface IDocHyperLinkUIConfig {
     menu: MenuConfig;
 }
 
-@OnLifecycle(LifecycleStages.Starting, DocHyperLinkUIController)
 export class DocHyperLinkUIController extends Disposable {
     constructor(
-        protected _config: IDocHyperLinkUIConfig,
         @Inject(ComponentManager) private readonly _componentManager: ComponentManager,
         @ICommandService private readonly _commandService: ICommandService,
-        @IMenuService private readonly _menuService: IMenuService,
-        @Inject(Injector) private readonly _injector: Injector,
+        @IMenuManagerService private readonly _menuManagerService: IMenuManagerService,
         @IShortcutService private readonly _shortcutService: IShortcutService
     ) {
         super();
@@ -64,6 +62,8 @@ export class DocHyperLinkUIController extends Disposable {
             UpdateDocHyperLinkCommand,
             DeleteDocHyperLinkCommand,
             ShowDocHyperLinkEditPopupOperation,
+            ToggleDocHyperLinkInfoPopupOperation,
+            ClickDocHyperLinkOperation,
         ].forEach((command) => {
             this._commandService.registerCommand(command);
         });
@@ -76,8 +76,6 @@ export class DocHyperLinkUIController extends Disposable {
     }
 
     private _initMenus() {
-        [AddHyperLinkMenuItemFactory].forEach((menuFactory) => {
-            this.disposeWithMe(this._menuService.addMenuItem(menuFactory(this._injector), {}));
-        });
+        this._menuManagerService.mergeMenu(menuSchema);
     }
 }

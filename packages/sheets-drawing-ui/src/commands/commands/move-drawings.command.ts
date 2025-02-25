@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,18 +15,18 @@
  */
 
 import type { IAccessor, ICommand } from '@univerjs/core';
-import { CommandType, Direction, ICommandService } from '@univerjs/core';
 import type { ISheetDrawing } from '@univerjs/sheets-drawing';
+import type { ISetDrawingCommandParams } from './interfaces';
+import { CommandType, Direction, ICommandService } from '@univerjs/core';
 import { ISheetDrawingService } from '@univerjs/sheets-drawing';
-import { ISheetSelectionRenderService } from '@univerjs/sheets-ui';
 
+import { ISheetSelectionRenderService } from '@univerjs/sheets-ui';
 import { transformToDrawingPosition } from '../../basics/transform-position';
 import { ClearSheetDrawingTransformerOperation } from '../operations/clear-drawing-transformer.operation';
-import type { ISetDrawingCommandParams } from './interfaces';
 import { SetSheetDrawingCommand } from './set-sheet-drawing.command';
 
 export interface IMoveDrawingsCommandParams {
-    direction: Direction ;
+    direction: Direction;
 }
 
 export const MoveDrawingsCommand: ICommand = {

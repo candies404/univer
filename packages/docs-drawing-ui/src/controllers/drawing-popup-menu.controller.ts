@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,16 @@
  */
 
 import type { DocumentDataModel, IDisposable, Nullable } from '@univerjs/core';
-import { FOCUSING_COMMON_DRAWINGS, IContextService, Inject, IUniverInstanceService, LifecycleStages, OnLifecycle, RxDisposable, toDisposable, UniverInstanceType } from '@univerjs/core';
 import type { BaseObject, Scene } from '@univerjs/engine-render';
-import { IRenderManagerService } from '@univerjs/engine-render';
-import { COMPONENT_IMAGE_POPUP_MENU, ImageCropperObject, ImageResetSizeOperation, OpenImageCropOperation } from '@univerjs/drawing-ui';
-import { takeUntil } from 'rxjs';
+import { FOCUSING_COMMON_DRAWINGS, IContextService, Inject, IUniverInstanceService, RxDisposable, SHEET_EDITOR_UNITS, toDisposable, UniverInstanceType } from '@univerjs/core';
 import { DocCanvasPopManagerService } from '@univerjs/docs-ui';
 import { IDrawingManagerService } from '@univerjs/drawing';
+import { COMPONENT_IMAGE_POPUP_MENU, ImageCropperObject, ImageResetSizeOperation, OpenImageCropOperation } from '@univerjs/drawing-ui';
+import { IRenderManagerService } from '@univerjs/engine-render';
+import { takeUntil } from 'rxjs';
 import { RemoveDocDrawingCommand } from '../commands/commands/remove-doc-drawing.command';
 import { EditDocDrawingOperation } from '../commands/operations/edit-doc-drawing.operation';
 
-@OnLifecycle(LifecycleStages.Rendered, DocDrawingPopupMenuController)
 export class DocDrawingPopupMenuController extends RxDisposable {
     private _initImagePopupMenu = new Set<string>();
 
@@ -116,15 +115,20 @@ export class DocDrawingPopupMenuController extends RxDisposable {
                     }
 
                     const { unitId, subUnitId, drawingId } = drawingParam;
-
-                    disposePopups.push(this.disposeWithMe(this._canvasPopManagerService.attachPopupToObject(object, {
-                        componentKey: COMPONENT_IMAGE_POPUP_MENU,
-                        direction: 'horizontal',
-                        offset: [2, 0],
-                        extraProps: {
-                            menuItems: this._getImageMenuItems(unitId, subUnitId, drawingId),
+                    const popup = this._canvasPopManagerService.attachPopupToObject(
+                        object,
+                        {
+                            componentKey: COMPONENT_IMAGE_POPUP_MENU,
+                            direction: 'horizontal',
+                            offset: [2, 0],
+                            extraProps: {
+                                menuItems: this._getImageMenuItems(unitId, subUnitId, drawingId),
+                            },
                         },
-                    })));
+                        unitId
+                    );
+
+                    disposePopups.push(this.disposeWithMe(popup));
 
                     const focusDrawings = this._drawingManagerService.getFocusDrawings();
 
@@ -179,7 +183,7 @@ export class DocDrawingPopupMenuController extends RxDisposable {
                 index: 0,
                 commandId: EditDocDrawingOperation.id,
                 commandParams: { unitId, subUnitId, drawingId },
-                disable: false,
+                disable: !!SHEET_EDITOR_UNITS.includes(unitId),
             },
             {
                 label: 'image-popup.delete',

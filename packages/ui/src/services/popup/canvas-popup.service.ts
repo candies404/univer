@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,23 +14,29 @@
  * limitations under the License.
  */
 
-import { createIdentifier, Disposable, Tools } from '@univerjs/core';
-import type { IRectPopupProps } from '@univerjs/design';
+import type { Nullable } from '@univerjs/core';
 import type { IBoundRectNoAngle } from '@univerjs/engine-render';
 import type { Observable } from 'rxjs';
+import type { IRectPopupProps } from '../../views/components/popup/RectPopup';
+import { createIdentifier, Disposable, Tools } from '@univerjs/core';
 import { BehaviorSubject } from 'rxjs';
 
-export interface IPopup extends Pick<IRectPopupProps, 'closeOnSelfTarget' | 'direction' | 'excludeOutside' | 'onClickOutside' > {
-    anchorRect: IBoundRectNoAngle;
+export interface IPopup extends Omit<IRectPopupProps, 'children' | 'hidden' | 'excludeRects' | 'anchorRect$'> {
     anchorRect$: Observable<IBoundRectNoAngle>;
-    excludeRects?: IBoundRectNoAngle[];
+    anchorRect?: IBoundRectNoAngle;
     excludeRects$?: Observable<IBoundRectNoAngle[]>;
+    excludeRects?: Nullable<IBoundRectNoAngle[]>;
     componentKey: string;
 
     unitId: string;
     subUnitId: string;
 
     offset?: [number, number];
+    canvasElement: HTMLCanvasElement;
+    hideOnInvisible?: boolean;
+    hiddenType?: 'hide' | 'destroy';
+    hiddenRects$?: Observable<IBoundRectNoAngle[]>;
+
 }
 
 export interface ICanvasPopupService {
@@ -40,6 +46,11 @@ export interface ICanvasPopupService {
     popups$: Observable<[string, IPopup][]>;
 
     get popups(): [string, IPopup][];
+
+    /**
+     * which popup is under hovering now
+     */
+    get activePopupId(): Nullable<string>;
 }
 
 export const ICanvasPopupService = createIdentifier<ICanvasPopupService>('ui.popup.service');
@@ -49,6 +60,12 @@ export class CanvasPopupService extends Disposable implements ICanvasPopupServic
     private readonly _popups$ = new BehaviorSubject<[string, IPopup][]>([]);
     readonly popups$ = this._popups$.asObservable();
     get popups() { return Array.from(this._popupMap.entries()); }
+
+    private _activePopupId: Nullable<string> = null;
+
+    get activePopupId() {
+        return this._activePopupId;
+    }
 
     private _update() {
         this._popups$.next(Array.from(this._popupMap.entries()));
@@ -64,7 +81,17 @@ export class CanvasPopupService extends Disposable implements ICanvasPopupServic
 
     addPopup(item: IPopup): string {
         const id = Tools.generateRandomId();
-        this._popupMap.set(id, item);
+        this._popupMap.set(id, {
+            ...item,
+            onPointerEnter: () => {
+                this._activePopupId = id;
+            },
+            onPointerLeave: () => {
+                if (this._activePopupId === id) {
+                    this._activePopupId = null;
+                }
+            },
+        });
         this._update();
         return id;
     }

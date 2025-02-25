@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,20 +14,17 @@
  * limitations under the License.
  */
 
-import { Inject, IPermissionService, LifecycleStages, LRUMap, OnLifecycle, Range } from '@univerjs/core';
-import { filter, map } from 'rxjs/operators';
-import type { UnitAction } from '@univerjs/protocol';
-import { UnitObject } from '@univerjs/protocol';
-
 import type { IRange } from '@univerjs/core';
+import type { UnitAction } from '@univerjs/protocol';
 import type { getDefaultRangePermission, IRangePermissionPoint } from '../services/permission/range-permission/util';
+import { Inject, IPermissionService, LRUMap, Range } from '@univerjs/core';
+import { UnitObject } from '@univerjs/protocol';
+import { filter, map } from 'rxjs/operators';
 import { getAllRangePermissionPoint } from '../services/permission/range-permission/util';
-
 import { RangeProtectionRuleModel } from './range-protection-rule.model';
 
 export type ICellPermission = Record<UnitAction, boolean> & { ruleId?: string; ranges?: IRange[] };
 
-@OnLifecycle(LifecycleStages.Ready, RangeProtectionRenderModel)
 export class RangeProtectionRenderModel {
     private _cache = new LRUMap<string, ICellPermission[]>(10000);
     constructor(
@@ -80,15 +77,15 @@ export class RangeProtectionRenderModel {
     }
 
     public getCellInfo(unitId: string, subUnitId: string, row: number, col: number) {
-        const key = this._createKey(unitId, subUnitId, row, col);
-        const cacheValue = this._cache.get(key);
-        if (cacheValue) {
-            return cacheValue;
-        }
         const ruleMap = this._selectionProtectionRuleModel.getSubunitRuleList(unitId, subUnitId);
         const defaultV: ICellPermission[] = [];
         if (!ruleMap || !ruleMap.length) {
             return defaultV;
+        }
+        const key = this._createKey(unitId, subUnitId, row, col);
+        const cacheValue = this._cache.get(key);
+        if (cacheValue) {
+            return cacheValue;
         }
         const result: ICellPermission[] = [];
         for (const rule of ruleMap) {

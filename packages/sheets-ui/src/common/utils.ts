@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,13 @@
  */
 
 import type { IAccessor, ICellData, IMutationInfo, IPosition, IRange, Nullable, Workbook, Worksheet } from '@univerjs/core';
-import { ObjectMatrix } from '@univerjs/core';
-import { SHEET_VIEWPORT_KEY, Vector2 } from '@univerjs/engine-render';
-import type { ISetRangeValuesMutationParams, ISheetLocation } from '@univerjs/sheets';
-import { SetRangeValuesMutation, SetRangeValuesUndoMutationFactory } from '@univerjs/sheets';
 import type { IBoundRectNoAngle, IRender, Scene, SpreadsheetSkeleton } from '@univerjs/engine-render';
 import type { ICollaborator } from '@univerjs/protocol';
+import type { ISetRangeValuesMutationParams, ISheetLocation } from '@univerjs/sheets';
 import type { ISheetSkeletonManagerParam } from '../services/sheet-skeleton-manager.service';
+import { CellModeEnum, ObjectMatrix } from '@univerjs/core';
+import { SHEET_VIEWPORT_KEY, Vector2 } from '@univerjs/engine-render';
+import { SetRangeValuesMutation, SetRangeValuesUndoMutationFactory } from '@univerjs/sheets';
 
 export function getUserListEqual(userList1: ICollaborator[], userList2: ICollaborator[]) {
     if (userList1.length !== userList2.length) return false;
@@ -88,20 +88,19 @@ export function getClearContentMutationParamsForRanges(
     };
 }
 
-function getClearContentMutationParamForRange(worksheet: Worksheet, range: IRange): ObjectMatrix<Nullable<ICellData>> {
+export function getClearContentMutationParamForRange(worksheet: Worksheet, range: IRange): ObjectMatrix<Nullable<ICellData>> {
     const { startRow, startColumn, endColumn, endRow } = range;
-    const cellMatrix = worksheet.getMatrixWithMergedCells(startRow, startColumn, endRow, endColumn, true);
+    const cellMatrix = worksheet.getMatrixWithMergedCells(startRow, startColumn, endRow, endColumn, CellModeEnum.Intercepted);
     const redoMatrix = new ObjectMatrix<Nullable<ICellData>>();
     let leftTopCellValue: Nullable<ICellData> = null;
     cellMatrix.forValue((row, col, cellData) => {
-        if (cellData) {
-            if (!leftTopCellValue && cellData.v !== undefined) {
+        if (cellData && row >= startRow && col >= startColumn) {
+            if (!leftTopCellValue && worksheet.cellHasValue(cellData) && (cellData.v !== '' || (cellData.p?.body?.dataStream?.length ?? 0) > 2)) {
                 leftTopCellValue = cellData;
             }
             redoMatrix.setValue(row, col, null);
         }
     });
-
     redoMatrix.setValue(startRow, startColumn, leftTopCellValue);
 
     return redoMatrix;
@@ -123,19 +122,20 @@ export function getCellIndexByOffsetWithMerge(offsetX: number, offsetY: number, 
         y: activeViewport.viewportScrollY,
     };
 
-    const cellPos = skeleton.getCellPositionByOffset(offsetX, offsetY, scaleX, scaleY, scrollXY);
+    const cellIndex = skeleton.getCellIndexByOffset(offsetX, offsetY, scaleX, scaleY, scrollXY);
 
-    const mergeCell = skeleton.mergeData.find((range) => {
-        const { startColumn, startRow, endColumn, endRow } = range;
-        return cellPos.row >= startRow && cellPos.column >= startColumn && cellPos.row <= endRow && cellPos.column <= endColumn;
-    });
+    // const mergeCell = skeleton.mergeData.find((range) => {
+    //     const { startColumn, startRow, endColumn, endRow } = range;
+    //     return cellPos.row >= startRow && cellPos.column >= startColumn && cellPos.row <= endRow && cellPos.column <= endColumn;
+    // });
+    const mergeCell = skeleton.worksheet.getMergedCell(cellIndex.row, cellIndex.column);
 
     const params = {
-        actualRow: mergeCell ? mergeCell.startRow : cellPos.row,
-        actualCol: mergeCell ? mergeCell.startColumn : cellPos.column,
+        actualRow: mergeCell ? mergeCell.startRow : cellIndex.row,
+        actualCol: mergeCell ? mergeCell.startColumn : cellIndex.column,
         mergeCell,
-        row: cellPos.row,
-        col: cellPos.column,
+        row: cellIndex.row,
+        col: cellIndex.column,
     };
 
     return params;
@@ -147,19 +147,19 @@ export function getViewportByCell(row: number, column: number, scene: Scene, wor
         return scene.getViewport(SHEET_VIEWPORT_KEY.VIEW_MAIN);
     }
 
-    if (row > freeze.startRow && column > freeze.startColumn) {
+    if (row >= freeze.startRow && column >= freeze.startColumn) {
         return scene.getViewport(SHEET_VIEWPORT_KEY.VIEW_MAIN);
     }
 
-    if (row <= freeze.startRow && column <= freeze.startColumn) {
+    if (row < freeze.startRow && column < freeze.startColumn) {
         return scene.getViewport(SHEET_VIEWPORT_KEY.VIEW_MAIN_LEFT_TOP);
     }
 
-    if (row <= freeze.startRow && column > freeze.startColumn) {
+    if (row < freeze.startRow && column >= freeze.startColumn) {
         return scene.getViewport(SHEET_VIEWPORT_KEY.VIEW_MAIN_TOP);
     }
 
-    if (row > freeze.startRow && column <= freeze.startColumn) {
+    if (row >= freeze.startRow && column < freeze.startColumn) {
         return scene.getViewport(SHEET_VIEWPORT_KEY.VIEW_MAIN_LEFT);
     }
 }
@@ -188,9 +188,9 @@ export function transformPosition2Offset(x: number, y: number, scene: Scene, ske
     const freeze = worksheet.getFreeze();
     const { startColumn, startRow, xSplit, ySplit } = freeze;
     // freeze start
-    const startSheetView = skeleton.getNoMergeCellPositionByIndexWithNoHeader(startRow - ySplit, startColumn - xSplit);
+    const startSheetView = skeleton.getNoMergeCellWithCoordByIndex(startRow - ySplit, startColumn - xSplit, false);
     // freeze end
-    const endSheetView = skeleton.getNoMergeCellPositionByIndexWithNoHeader(startRow, startColumn);
+    const endSheetView = skeleton.getNoMergeCellWithCoordByIndex(startRow, startColumn, false);
     const { rowHeaderWidth, columnHeaderHeight } = skeleton;
     const freezeWidth = endSheetView.startX - startSheetView.startX;
     const freezeHeight = endSheetView.startY - startSheetView.startY;
@@ -217,6 +217,31 @@ export function transformPosition2Offset(x: number, y: number, scene: Scene, ske
     };
 }
 
+export function getCellRealRange(workbook: Workbook, worksheet: Worksheet, skeleton: SpreadsheetSkeleton, row: number, col: number) {
+    let actualRow = row;
+    let actualCol = col;
+
+    skeleton.overflowCache.forValue((r, c, range) => {
+        if (range.startRow <= actualRow && range.endRow >= actualRow && range.startColumn <= actualCol && range.endColumn >= actualCol) {
+            actualCol = c;
+            actualRow = r;
+        }
+    });
+
+    const actualCell = skeleton.getCellWithCoordByIndex(actualRow, actualCol);
+
+    const location: ISheetLocation = {
+        unitId: workbook.getUnitId(),
+        subUnitId: worksheet.getSheetId(),
+        workbook,
+        worksheet,
+        row: actualCell.actualRow,
+        col: actualCell.actualColumn,
+    };
+
+    return location;
+}
+
 export function getHoverCellPosition(currentRender: IRender, workbook: Workbook, worksheet: Worksheet, skeletonParam: ISheetSkeletonManagerParam, offsetX: number, offsetY: number) {
     const { scene } = currentRender;
 
@@ -229,9 +254,8 @@ export function getHoverCellPosition(currentRender: IRender, workbook: Workbook,
         return null;
     }
 
-    const { row, col, mergeCell, actualCol, actualRow } = cellIndex;
-
-    const location: ISheetLocation = {
+    let { actualCol, actualRow } = cellIndex;
+    const originLocation = {
         unitId,
         subUnitId: sheetId,
         workbook,
@@ -240,16 +264,24 @@ export function getHoverCellPosition(currentRender: IRender, workbook: Workbook,
         col: actualCol,
     };
 
-    let anchorCell: IRange;
+    skeleton.overflowCache.forValue((r, c, range) => {
+        if (range.startRow <= actualRow && range.endRow >= actualRow && range.startColumn <= actualCol && range.endColumn >= actualCol) {
+            actualCol = c;
+            actualRow = r;
+        }
+    });
 
-    if (mergeCell) {
-        anchorCell = mergeCell;
+    const actualCell = skeleton.getCellWithCoordByIndex(actualRow, actualCol);
+    const location: ISheetLocation = getCellRealRange(workbook, worksheet, skeleton, actualRow, actualCol);
+    let anchorCell: IRange;
+    if (actualCell.mergeInfo) {
+        anchorCell = actualCell.mergeInfo;
     } else {
         anchorCell = {
-            startRow: row,
-            endRow: row,
-            startColumn: col,
-            endColumn: col,
+            startRow: location.row,
+            endRow: location.row,
+            startColumn: location.col,
+            endColumn: location.col,
         };
     }
 
@@ -269,14 +301,15 @@ export function getHoverCellPosition(currentRender: IRender, workbook: Workbook,
     };
 
     const position: IPosition = {
-        startX: (skeleton.getOffsetByPositionX(anchorCell.startColumn - 1) - scrollXY.x) * scaleX,
-        endX: (skeleton.getOffsetByPositionX(anchorCell.endColumn) - scrollXY.x) * scaleX,
-        startY: (skeleton.getOffsetByPositionY(anchorCell.startRow - 1) - scrollXY.y) * scaleY,
-        endY: (skeleton.getOffsetByPositionY(anchorCell.endRow) - scrollXY.y) * scaleY,
+        startX: (skeleton.getOffsetByColumn(anchorCell.startColumn - 1) - scrollXY.x) * scaleX,
+        endX: (skeleton.getOffsetByColumn(anchorCell.endColumn) - scrollXY.x) * scaleX,
+        startY: (skeleton.getOffsetByRow(anchorCell.startRow - 1) - scrollXY.y) * scaleY,
+        endY: (skeleton.getOffsetByRow(anchorCell.endRow) - scrollXY.y) * scaleY,
     };
 
     return {
         position,
-        location,
+        location: originLocation,
+        overflowLocation: location,
     };
 }

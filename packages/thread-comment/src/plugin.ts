@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,31 +14,36 @@
  * limitations under the License.
  */
 
-import type { Dependency, DependencyOverride } from '@univerjs/core';
-import { ICommandService, Inject, Injector, mergeOverrideWithDependencies, Plugin, UniverInstanceType } from '@univerjs/core';
-import { ThreadCommentModel } from './models/thread-comment.model';
-import { ThreadCommentResourceController } from './controllers/tc-resource.controller';
-import { TC_PLUGIN_NAME } from './types/const';
-import { AddCommentMutation, DeleteCommentMutation, ResolveCommentMutation, UpdateCommentMutation, UpdateCommentRefMutation } from './commands/mutations/comment.mutation';
+import type { Dependency } from '@univerjs/core';
+import type { IUniverThreadCommentConfig } from './controllers/config.schema';
+import { ICommandService, IConfigService, Inject, Injector, merge, mergeOverrideWithDependencies, Plugin, UniverInstanceType } from '@univerjs/core';
 import { AddCommentCommand, DeleteCommentCommand, DeleteCommentTreeCommand, ResolveCommentCommand, UpdateCommentCommand } from './commands/commands/comment.command';
+import { AddCommentMutation, DeleteCommentMutation, ResolveCommentMutation, UpdateCommentMutation, UpdateCommentRefMutation } from './commands/mutations/comment.mutation';
+import { defaultPluginConfig, THREAD_COMMENT_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
+import { ThreadCommentResourceController } from './controllers/tc-resource.controller';
+import { ThreadCommentModel } from './models/thread-comment.model';
 import { IThreadCommentDataSourceService, ThreadCommentDataSourceService } from './services/tc-datasource.service';
-
-export interface IUniverThreadCommentConfig {
-    overrides?: DependencyOverride;
-}
+import { TC_PLUGIN_NAME } from './types/const';
 
 export class UniverThreadCommentPlugin extends Plugin {
     static override pluginName = TC_PLUGIN_NAME;
     static override type = UniverInstanceType.UNIVER_UNKNOWN;
-    private _config: IUniverThreadCommentConfig;
 
     constructor(
-        config: IUniverThreadCommentConfig,
+        private readonly _config: Partial<IUniverThreadCommentConfig> = defaultPluginConfig,
         @Inject(Injector) protected _injector: Injector,
-        @ICommandService protected _commandService: ICommandService
+        @ICommandService protected _commandService: ICommandService,
+        @IConfigService private readonly _configService: IConfigService
     ) {
         super();
-        this._config = config;
+
+        // Manage the plugin configuration.
+        const { ...rest } = merge(
+            {},
+            defaultPluginConfig,
+            this._config
+        );
+        this._configService.setConfig(THREAD_COMMENT_PLUGIN_CONFIG_KEY, rest);
     }
 
     override onStarting(): void {
@@ -67,5 +72,7 @@ export class UniverThreadCommentPlugin extends Plugin {
         ].forEach((command) => {
             this._commandService.registerCommand(command);
         });
+
+        this._injector.get(ThreadCommentResourceController);
     }
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,22 +14,25 @@
  * limitations under the License.
  */
 
-import { BehaviorSubject } from 'rxjs';
 import type { Nullable } from '../../shared';
-import { Tools } from '../../shared/tools';
 import type {
     IDocumentBody,
     IDocumentData,
     IDocumentRenderConfig,
     IDocumentStyle,
     IDrawings,
+    IListData,
 } from '../../types/interfaces/i-document-data';
 import type { IPaddingData } from '../../types/interfaces/i-style-data';
-import { UnitModel, UniverInstanceType } from '../../common/unit';
-import { getBodySlice, SliceBodyType } from './text-x/utils';
-import { getEmptySnapshot } from './empty-snapshot';
 import type { JSONXActions } from './json-x/json-x';
+import { BehaviorSubject } from 'rxjs';
+import { UnitModel, UniverInstanceType } from '../../common/unit';
+import { Tools } from '../../shared/tools';
+import { getEmptySnapshot } from './empty-snapshot';
 import { JSONX } from './json-x/json-x';
+import { PRESET_LIST_TYPE } from './preset-list-type';
+import { getPlainText } from './text-x/build-utils/parse';
+import { getBodySlice, SliceBodyType } from './text-x/utils';
 
 export const DEFAULT_DOC = {
     id: 'default_doc',
@@ -50,12 +53,33 @@ class DocumentDataModelSimple extends UnitModel<IDocumentData, UniverInstanceTyp
         throw new Error('Method not implemented.');
     }
 
+    protected readonly _name$ = new BehaviorSubject<string>('');
+    override name$ = this._name$.asObservable();
+
     protected snapshot: IDocumentData;
 
     constructor(snapshot: Partial<IDocumentData>) {
         super();
 
         this.snapshot = { ...DEFAULT_DOC, ...snapshot };
+        this._name$.next(this.snapshot.title ?? 'No Title');
+    }
+
+    override getRev(): number {
+        return this.snapshot.rev ?? 1;
+    }
+
+    override incrementRev(): void {
+        this.snapshot.rev = this.getRev() + 1;
+    }
+
+    override setRev(rev: number): void {
+        this.snapshot.rev = rev;
+    }
+
+    setName(name: string) {
+        this.snapshot.title = name;
+        this._name$.next(name);
     }
 
     get drawings() {
@@ -83,18 +107,18 @@ class DocumentDataModelSimple extends UnitModel<IDocumentData, UniverInstanceTyp
         return this.snapshot.body;
     }
 
-    getShouldRenderLoopImmediately() {
-        const should = this.snapshot.shouldStartRenderingImmediately;
-
-        return should !== false;
-    }
-
-    getContainer() {
-        return this.snapshot.container;
-    }
-
     getSnapshot() {
         return this.snapshot;
+    }
+
+    getBulletPresetList() {
+        const customLists = this.snapshot.lists ?? {};
+        const lists: Record<string, IListData> = {
+            ...PRESET_LIST_TYPE,
+            ...customLists,
+        };
+
+        return lists;
     }
 
     updateDocumentId(unitId: string) {
@@ -205,9 +229,7 @@ export class DocumentDataModel extends DocumentDataModelSimple {
     headerModelMap: Map<string, DocumentDataModel> = new Map();
 
     footerModelMap: Map<string, DocumentDataModel> = new Map();
-
-    private _name$ = new BehaviorSubject('');
-    readonly name$ = this._name$.asObservable();
+    change$ = new BehaviorSubject<number>(0);
 
     constructor(snapshot: Partial<IDocumentData>) {
         super(Tools.isEmptyObject(snapshot) ? getEmptySnapshot() : snapshot);
@@ -218,11 +240,6 @@ export class DocumentDataModel extends DocumentDataModelSimple {
 
         this._initializeHeaderFooterModel();
         this._name$.next(this.snapshot.title ?? '');
-    }
-
-    setName(name: string) {
-        this.snapshot.title = name;
-        this._name$.next(name);
     }
 
     override dispose() {
@@ -254,14 +271,6 @@ export class DocumentDataModel extends DocumentDataModelSimple {
         return this.snapshot.body?.customDecorations;
     }
 
-    getRev(): number {
-        return this.snapshot.rev ?? 1;
-    }
-
-    incrementRev(): void {
-        this.snapshot.rev = this.getRev() + 1;
-    }
-
     getSettings() {
         return this.snapshot.settings;
     }
@@ -274,6 +283,7 @@ export class DocumentDataModel extends DocumentDataModelSimple {
 
         this.snapshot = { ...DEFAULT_DOC, ...snapshot };
         this._initializeHeaderFooterModel();
+        this.change$.next(this.change$.value + 1);
     }
 
     getSelfOrHeaderFooterModel(segmentId?: string) {
@@ -308,6 +318,7 @@ export class DocumentDataModel extends DocumentDataModelSimple {
             this._initializeHeaderFooterModel();
         }
 
+        this.change$.next(this.change$.value + 1);
         return this.snapshot;
     }
 
@@ -328,6 +339,7 @@ export class DocumentDataModel extends DocumentDataModelSimple {
             for (const headerId in headers) {
                 const header = headers[headerId];
                 this.headerModelMap.set(headerId, new DocumentDataModel(header));
+                this.headerModelMap.get(headerId)!.updateDocumentId(this.getUnitId());
             }
         }
 
@@ -335,6 +347,7 @@ export class DocumentDataModel extends DocumentDataModelSimple {
             for (const footerId in footers) {
                 const footer = footers[footerId];
                 this.footerModelMap.set(footerId, new DocumentDataModel(footer));
+                this.footerModelMap.get(footerId)!.updateDocumentId(this.getUnitId());
             }
         }
     }
@@ -343,5 +356,9 @@ export class DocumentDataModel extends DocumentDataModelSimple {
         super.updateDocumentId(unitId);
 
         this._unitId = unitId;
+    }
+
+    getPlainText() {
+        return getPlainText(this.getBody()?.dataStream ?? '');
     }
 }

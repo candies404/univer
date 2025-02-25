@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,15 +14,4 @@
  * limitations under the License.
  */
 
-export { DOC_HYPER_LINK_PLUGIN } from './types/const';
-export { DocHyperLinkModel } from './models/hyper-link.model';
-export type { IDocHyperLink } from './types/interfaces/i-doc-hyper-link';
-export { DocHyperLinkType } from './types/enums/doc-hyper-link-type';
 export { UniverDocsHyperLinkPlugin } from './plugin';
-// #region - all commands
-
-export { AddDocHyperLinkMutation, type IAddDocHyperLinkMutationParams } from './commands/mutations/add-link.mutation';
-export { UpdateDocHyperLinkMutation, type IUpdateDocHyperLinkMutationParams } from './commands/mutations/update-link.mutation';
-export { DeleteDocHyperLinkMutation, type IDeleteDocHyperLinkMutationParams } from './commands/mutations/delete-link.mutation';
-
-// #endregion

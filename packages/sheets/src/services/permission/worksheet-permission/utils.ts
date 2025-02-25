@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,13 @@
  */
 
 import { UnitAction } from '@univerjs/protocol';
-import { WorksheetCopyPermission, WorksheetDeleteColumnPermission, WorksheetDeleteRowPermission, WorksheetEditExtraObjectPermission, WorksheetEditPermission, WorksheetFilterPermission, WorksheetInsertColumnPermission, WorksheetInsertHyperlinkPermission, WorksheetInsertRowPermission, WorksheetPivotTablePermission, WorksheetSetCellStylePermission, WorksheetSetCellValuePermission, WorksheetSetColumnStylePermission, WorksheetSetRowStylePermission, WorksheetSortPermission, WorksheetViewPermission } from '../permission-point';
+import { WorksheetCopyPermission, WorksheetDeleteColumnPermission, WorksheetDeleteProtectionPermission, WorksheetDeleteRowPermission, WorksheetEditExtraObjectPermission, WorksheetEditPermission, WorksheetFilterPermission, WorksheetInsertColumnPermission, WorksheetInsertHyperlinkPermission, WorksheetInsertRowPermission, WorksheetManageCollaboratorPermission, WorksheetPivotTablePermission, WorksheetSetCellStylePermission, WorksheetSetCellValuePermission, WorksheetSetColumnStylePermission, WorksheetSetRowStylePermission, WorksheetSortPermission, WorksheetViewPermission } from '../permission-point';
 
 export const getAllWorksheetPermissionPoint = () => [
     WorksheetEditPermission,
     WorksheetViewPermission,
+    WorksheetManageCollaboratorPermission,
+    WorksheetDeleteProtectionPermission,
 ];
 
 // Changes require synchronization of the following arrays
@@ -56,4 +58,3 @@ export const defaultWorksheetPermissionPoint = [
     UnitAction.SetRowStyle,
     UnitAction.Sort,
 ];
-

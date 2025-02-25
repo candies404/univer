@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,23 +15,22 @@
  */
 
 import type { ICellData, IDisposable, IObjectMatrixPrimitiveType, IRange, Nullable, Workbook, Worksheet } from '@univerjs/core';
-import { ColorKit, CommandType, Disposable, EDITOR_ACTIVATED, fromCallback, groupBy, ICommandService, IContextService, Inject, Injector, IUniverInstanceService, LifecycleStages, ObjectMatrix, OnLifecycle, replaceInDocumentBody, rotate, ThemeService, Tools, UniverInstanceType } from '@univerjs/core';
-import { IRenderManagerService, RENDER_RAW_FORMULA_KEY } from '@univerjs/engine-render';
 import type { IFindComplete, IFindMatch, IFindMoveParams, IFindQuery, IFindReplaceProvider, IReplaceAllResult } from '@univerjs/find-replace';
-import { FindBy, FindDirection, FindModel, FindReplaceController, FindScope, IFindReplaceService } from '@univerjs/find-replace';
-import type { ISelectionWithStyle, ISetRangeValuesCommandParams, ISetSelectionsOperationParams, ISetWorksheetActivateCommandParams, ISheetCommandSharedParams, WorkbookSelections } from '@univerjs/sheets';
-import { SetRangeValuesCommand, SetSelectionsOperation, SetWorksheetActivateCommand, SetWorksheetActiveOperation, SheetsSelectionsService } from '@univerjs/sheets';
+import type { ISelectionWithStyle, ISetRangeValuesCommandParams, ISetSelectionsOperationParams, ISetWorksheetActivateCommandParams, ISheetCommandSharedParams, WorkbookSelectionModel } from '@univerjs/sheets';
 import type { IScrollToCellCommandParams } from '@univerjs/sheets-ui';
+import type { ISheetReplaceCommandParams, ISheetReplacement } from '../commands/commands/sheet-replace.command';
+import type { ISheetFindReplaceHighlightShapeProps } from '../views/shapes/find-replace-highlight.shape';
+import { ColorKit, CommandType, Disposable, EDITOR_ACTIVATED, fromCallback, groupBy, ICommandService, IContextService, Inject, Injector, IUniverInstanceService, ObjectMatrix, replaceInDocumentBody, rotate, ThemeService, Tools, UniverInstanceType } from '@univerjs/core';
+import { IRenderManagerService, RENDER_RAW_FORMULA_KEY } from '@univerjs/engine-render';
+import { FindBy, FindDirection, FindModel, FindReplaceController, FindScope, IFindReplaceService } from '@univerjs/find-replace';
+import { SetRangeValuesCommand, SetSelectionsOperation, SetWorksheetActivateCommand, SetWorksheetActiveOperation, SheetsSelectionsService } from '@univerjs/sheets';
+
 import { getCoordByCell, getSheetObject, ScrollToCellCommand, SheetSkeletonManagerService } from '@univerjs/sheets-ui';
 import { debounceTime, filter, merge, skip, Subject, throttleTime } from 'rxjs';
-
-import type { ISheetFindReplaceHighlightShapeProps } from '../views/shapes/find-replace-highlight.shape';
-import { SheetFindReplaceHighlightShape } from '../views/shapes/find-replace-highlight.shape';
-import type { ISheetReplaceCommandParams, ISheetReplacement } from '../commands/commands/sheet-replace.command';
 import { SheetReplaceCommand } from '../commands/commands/sheet-replace.command';
+import { SheetFindReplaceHighlightShape } from '../views/shapes/find-replace-highlight.shape';
 import { isBeforePositionWithColumnPriority, isBeforePositionWithRowPriority, isBehindPositionWithColumnPriority, isBehindPositionWithRowPriority, isSamePosition, isSelectionSingleCell } from './utils';
 
-@OnLifecycle(LifecycleStages.Steady, SheetsFindReplaceController)
 export class SheetsFindReplaceController extends Disposable implements IDisposable {
     private _provider!: SheetsFindReplaceProvider;
 
@@ -62,9 +61,9 @@ export class SheetsFindReplaceController extends Disposable implements IDisposab
         this.disposeWithMe(this._findReplaceService.registerFindReplaceProvider(provider));
 
         // The find replace panel should be closed when sheet cell editor is activated, or the formula editor is focused.
-        this.disposeWithMe(
-            this._contextService.subscribeContextValue$(EDITOR_ACTIVATED).pipe(filter((v) => !!v)).subscribe(() => this._findReplaceController.closePanel())
-        );
+        this.disposeWithMe(this._contextService.subscribeContextValue$(EDITOR_ACTIVATED)
+            .pipe(filter((v) => !!v))
+            .subscribe(() => this._findReplaceController.closePanel()));
     }
 
     private _initCommands(): void {
@@ -117,7 +116,7 @@ export class SheetFindModel extends FindModel {
     get matchesPosition(): number { return this._matchesPosition; }
     get currentMatch(): Nullable<ISheetCellMatch> { return this._matchesPosition > 0 ? this._matches[this._matchesPosition - 1] : null; }
 
-    private _workbookSelections: WorkbookSelections;
+    private _workbookSelections: WorkbookSelectionModel;
 
     constructor(
         private readonly _workbook: Workbook,
@@ -214,10 +213,8 @@ export class SheetFindModel extends FindModel {
         }));
 
         this.disposeWithMe(
-            fromCallback(this._commandService.onCommandExecuted.bind(this._commandService.onCommandExecuted))
-                .pipe(
-                    filter(([command, options]) => command.id === SetWorksheetActiveOperation.id && !options?.fromFindReplace)
-                )
+            fromCallback(this._commandService.onCommandExecuted.bind(this._commandService))
+                .pipe(filter(([command, options]) => command.id === SetWorksheetActiveOperation.id && !options?.fromFindReplace))
                 .subscribe(() => {
                     const activeSheet = this._workbook.getActiveSheet();
                     if (!activeSheet) {
@@ -446,7 +443,7 @@ export class SheetFindModel extends FindModel {
 
     private _disposeHighlights(): void {
         this._highlightShapes.forEach((shape) => {
-            shape.getScene().makeDirty();
+            shape.getScene()?.makeDirty();
             shape.dispose();
         });
 
@@ -888,7 +885,7 @@ export class SheetFindModel extends FindModel {
         const isRichText = !!currentContent.p?.body;
         if (isRichText) {
             const clonedRichText = Tools.deepClone(currentContent.p!);
-            replaceInDocumentBody(clonedRichText.body!, findString, replaceString);
+            replaceInDocumentBody(clonedRichText.body!, findString, replaceString, this._query!.caseSensitive);
             return { p: clonedRichText };
         }
 

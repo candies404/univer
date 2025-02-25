@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,9 @@
  */
 
 import type { ICommand, ITextRange } from '@univerjs/core';
-import { CommandType, CustomDecorationType, ICommandService, sequenceExecuteAsync } from '@univerjs/core';
-import { addCustomDecorationBySelectionFactory } from '@univerjs/docs';
 import type { IThreadComment } from '@univerjs/thread-comment';
+import { CommandType, CustomDecorationType, ICommandService, sequenceExecute } from '@univerjs/core';
+import { addCustomDecorationBySelectionFactory } from '@univerjs/docs-ui';
 import { AddCommentMutation, IThreadCommentDataSourceService } from '@univerjs/thread-comment';
 import { SetActiveCommentOperation } from '@univerjs/thread-comment-ui';
 import { DEFAULT_DOC_SUBUNIT_ID } from '../../common/const';
@@ -43,8 +43,9 @@ export const AddDocCommentComment: ICommand<IAddDocCommentComment> = {
         const doMutation = addCustomDecorationBySelectionFactory(
             accessor,
             {
-                id: comment.id,
+                id: comment.threadId,
                 type: CustomDecorationType.COMMENT,
+                unitId,
             }
         );
         if (doMutation) {
@@ -66,10 +67,9 @@ export const AddDocCommentComment: ICommand<IAddDocCommentComment> = {
                 },
             };
 
-            return (await sequenceExecuteAsync([addComment, doMutation, activeOperation], commandService)).result;
+            return (await sequenceExecute([addComment, doMutation, activeOperation], commandService)).result;
         }
 
         return false;
     },
 };
-

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,18 +14,22 @@
  * limitations under the License.
  */
 
-export { getDT } from './common/utils';
+import './global.css';
+
 export { UniverThreadCommentUIPlugin } from './plugin';
-export { ThreadCommentPanelService, type ActiveCommentInfo } from './services/thread-comment-panel.service';
+export { type ActiveCommentInfo, ThreadCommentPanelService } from './services/thread-comment-panel.service';
 export { ThreadCommentPanel } from './views/thread-comment-panel';
 export type { IThreadCommentPanelProps } from './views/thread-comment-panel';
 export { ThreadCommentTree } from './views/thread-comment-tree';
 export type { IThreadCommentTreeProps } from './views/thread-comment-tree';
 export { THREAD_COMMENT_PANEL } from './types/const';
-export { IThreadCommentMentionDataService, type IThreadCommentMentionDataSource } from './services/thread-comment-mention-data.service';
 
 // #region - all commands
 
-export { ToggleSheetCommentPanelOperation, SetActiveCommentOperation, type ISetActiveCommentOperationParams } from './commands/operations/comment.operations';
+export {
+    type ISetActiveCommentOperationParams,
+    SetActiveCommentOperation,
+    ToggleSheetCommentPanelOperation,
+} from './commands/operations/comment.operations';
 
 // #endregion

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,12 @@
  */
 
 import type { IAccessor } from '@univerjs/core';
-import { UniverInstanceType } from '@univerjs/core';
 import type { IMenuButtonItem, IShortcutItem } from '@univerjs/ui';
-import { getMenuHiddenObservable, KeyCode, MenuGroup, MenuItemType, MenuPosition, MetaKeys } from '@univerjs/ui';
-import { debounceTime, Observable } from 'rxjs';
-import { TextSelectionManagerService } from '@univerjs/docs';
+import { UniverInstanceType } from '@univerjs/core';
+import { DocSelectionManagerService } from '@univerjs/docs';
 import { whenDocAndEditorFocused } from '@univerjs/docs-ui';
+import { getMenuHiddenObservable, KeyCode, MenuItemType, MetaKeys } from '@univerjs/ui';
+import { debounceTime, Observable } from 'rxjs';
 import { shouldDisableAddLink, ShowDocHyperLinkEditPopupOperation } from '../commands/operations/popup.operation';
 
 export const DOC_LINK_ICON = 'doc-hyper-link-icon';
@@ -28,15 +28,13 @@ export const DOC_LINK_ICON = 'doc-hyper-link-icon';
 export function AddHyperLinkMenuItemFactory(accessor: IAccessor): IMenuButtonItem {
     return {
         id: ShowDocHyperLinkEditPopupOperation.id,
-        group: MenuGroup.CONTEXT_MENU_DATA,
         type: MenuItemType.BUTTON,
         icon: DOC_LINK_ICON,
         title: 'docLink.menu.tooltip',
         tooltip: 'docLink.menu.tooltip',
-        positions: [MenuPosition.TOOLBAR_START, MenuPosition.CONTEXT_MENU],
         hidden$: getMenuHiddenObservable(accessor, UniverInstanceType.UNIVER_DOC),
         disabled$: new Observable(function (subscribe) {
-            const textSelectionService = accessor.get(TextSelectionManagerService);
+            const textSelectionService = accessor.get(DocSelectionManagerService);
             const observer = textSelectionService.textSelection$.pipe(debounceTime(16)).subscribe(() => {
                 subscribe.next(shouldDisableAddLink(accessor));
             });

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,11 +14,12 @@
  * limitations under the License.
  */
 
-export { UniverSheetsZenEditorPlugin } from './plugin';
+import './global.css';
+
+export { CancelZenEditCommand, ConfirmZenEditCommand, OpenZenEditorCommand } from './commands/commands/zen-editor.command';
 
 // #region - all commands
 
-export { OpenZenEditorOperation } from './commands/operations/zen-editor.operation';
-export { CancelZenEditCommand, ConfirmZenEditCommand } from './commands/commands/zen-editor.command';
+export { UniverSheetsZenEditorPlugin } from './plugin';
 
 // #endregion

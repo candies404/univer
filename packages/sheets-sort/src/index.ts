@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 export { UniverSheetsSortPlugin } from './plugin';
 
 export { SheetsSortService } from './services/sheets-sort.service';
-export { type ISortOption, SortType, type IOrderRule } from './services/interface';
+export { type IOrderRule, type ISortOption, SortType } from './services/interface';
 
 // #region - all commands
 

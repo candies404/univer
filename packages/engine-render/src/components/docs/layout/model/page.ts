@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,18 +14,19 @@
  * limitations under the License.
  */
 
-import type { Nullable } from '@univerjs/core';
-import { BooleanNumber, PageOrientType } from '@univerjs/core';
+import type { ITable, Nullable } from '@univerjs/core';
 import type {
     IDocumentSkeletonHeaderFooter,
     IDocumentSkeletonPage,
     ISkeletonResourceReference,
 } from '../../../../basics/i-document-skeleton-cached';
-import { BreakType, DocumentSkeletonPageType } from '../../../../basics/i-document-skeleton-cached';
 import type { ISectionBreakConfig } from '../../../../basics/interfaces';
-import { dealWithSection } from '../block/section';
+import type { DataStreamTreeNode } from '../../view-model/data-stream-tree-node';
 import type { DocumentViewModel } from '../../view-model/document-view-model';
 import type { ILayoutContext } from '../tools';
+import { BooleanNumber, PageOrientType } from '@univerjs/core';
+import { BreakType, DocumentSkeletonPageType } from '../../../../basics/i-document-skeleton-cached';
+import { dealWithSection } from '../block/section';
 import { resetContext, updateBlockIndex } from '../tools';
 import { createSkeletonSection } from './section';
 
@@ -179,6 +180,8 @@ function _getNullPage(
         angle: 0,
         width: 0,
         height: 0,
+        // Only use in cell.
+        left: 0,
         marginLeft: 0,
         marginRight: 0,
         originMarginTop: 0,
@@ -189,6 +192,7 @@ function _getNullPage(
         st: 0,
         ed: 0,
         skeDrawings: new Map(),
+        skeTables: new Map(),
         type,
         segmentId,
     };
@@ -235,7 +239,7 @@ function _createSkeletonHeaderFooter(
     const page = dealWithSection(
         ctx,
         headerOrFooterViewModel,
-        headerOrFooterViewModel.children[0],
+        headerOrFooterViewModel.getChildren()[0],
         areaPage,
         headerFooterConfig,
         layoutAnchor
@@ -244,7 +248,6 @@ function _createSkeletonHeaderFooter(
     if (ctx.isDirty && count < 10) {
         count++;
         resetContext(ctx);
-        headerOrFooterViewModel.resetCache();
 
         return _createSkeletonHeaderFooter(
             ctx,
@@ -275,6 +278,107 @@ function _createSkeletonHeaderFooter(
     return page;
 }
 
+export function createNullCellPage(
+    ctx: ILayoutContext,
+    sectionBreakConfig: ISectionBreakConfig,
+    tableConfig: ITable,
+    row: number,
+    col: number,
+    availableHeight: number = Number.POSITIVE_INFINITY,
+    maxCellPageHeight: number = Number.POSITIVE_INFINITY
+) {
+    const { lists, footerTreeMap, headerTreeMap, localeService, drawings } = sectionBreakConfig;
+    const { skeletonResourceReference } = ctx;
+    const { cellMargin, tableRows, tableColumns, tableId } = tableConfig;
+    const cellConfig = tableRows[row].tableCells[col];
+
+    const {
+        start = { v: 10 },
+        end = { v: 10 },
+        top = { v: 5 },
+        bottom = { v: 5 },
+    } = cellConfig.margin ?? cellMargin ?? {};
+    const pageWidth = tableColumns[col].size.width.v;
+    const pageHeight = maxCellPageHeight;
+
+    const cellSectionBreakConfig: ISectionBreakConfig = {
+        lists,
+        footerTreeMap,
+        headerTreeMap,
+        pageSize: {
+            width: pageWidth,
+            height: pageHeight,
+        },
+        marginTop: top.v,
+        marginBottom: bottom.v,
+        marginLeft: start.v,
+        marginRight: end.v,
+        localeService,
+        drawings,
+    };
+
+    const areaPage = createSkeletonPage(
+        ctx,
+        // Set first page height to availableHeight.
+        Object.assign({}, cellSectionBreakConfig, {
+            pageSize: {
+                width: pageWidth,
+                height: Number.isFinite(availableHeight) ? availableHeight : pageHeight,
+            },
+        }),
+        skeletonResourceReference
+    );
+    areaPage.type = DocumentSkeletonPageType.CELL;
+    areaPage.segmentId = tableId;
+
+    return {
+        page: areaPage,
+        sectionBreakConfig: cellSectionBreakConfig,
+    };
+}
+
+export function createSkeletonCellPages(
+    ctx: ILayoutContext,
+    viewModel: DocumentViewModel,
+    cellNode: DataStreamTreeNode,
+    sectionBreakConfig: ISectionBreakConfig,
+    tableConfig: ITable,
+    row: number,
+    col: number,
+    availableHeight: number = Number.POSITIVE_INFINITY,
+    maxCellPageHeight: number = Number.POSITIVE_INFINITY
+) {
+    // Table cell only has one section.
+    const sectionNode = cellNode.children[0];
+
+    const { page: areaPage, sectionBreakConfig: cellSectionBreakConfig } = createNullCellPage(
+        ctx,
+        sectionBreakConfig,
+        tableConfig,
+        row,
+        col,
+        availableHeight,
+        maxCellPageHeight
+    );
+
+    const { pages } = dealWithSection(
+        ctx,
+        viewModel,
+        sectionNode,
+        areaPage,
+        cellSectionBreakConfig
+    );
+
+    for (const p of pages) {
+        p.type = DocumentSkeletonPageType.CELL;
+        p.segmentId = tableConfig.tableId;
+    }
+
+    updateBlockIndex(pages, cellNode.startIndex);
+
+    return pages;
+}
+
 function _getVerticalMargin(
     marginTB: number,
     headerOrFooter: Nullable<IDocumentSkeletonHeaderFooter>,
@@ -289,22 +393,4 @@ function _getVerticalMargin(
     const maxMargin = getHeaderFooterMaxHeight(pageHeight);
 
     return Math.min(maxMargin, Math.max(marginTB, HeaderFooterPageHeight));
-}
-
-function __getHeaderMarginTop(marginTop: number, marginHeader: number, height: number) {
-    const maxMargin = Math.max(marginTop, marginHeader);
-    if (height > maxMargin) {
-        return 0;
-    }
-
-    return maxMargin - height;
-}
-
-function __getHeaderMarginBottom(marginBottom: number, marginFooter: number, height: number) {
-    const maxMargin = Math.max(marginBottom, marginFooter);
-    if (height > maxMargin) {
-        return 0;
-    }
-
-    return maxMargin - height;
 }

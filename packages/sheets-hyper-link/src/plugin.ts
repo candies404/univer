@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,19 @@
  * limitations under the License.
  */
 
-import { DependentOn, Inject, Injector, Plugin, UniverInstanceType } from '@univerjs/core';
-import type { Dependency } from '@univerjs/core';
+import type { IUniverSheetsHyperLinkConfig } from './controllers/config.schema';
+import { DependentOn, IConfigService, Inject, Injector, merge, Plugin, registerDependencies, touchDependencies, UniverInstanceType } from '@univerjs/core';
 import { UniverSheetsPlugin } from '@univerjs/sheets';
+import { defaultPluginConfig, SHEETS_HYPER_LINK_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
+import { SheetsHyperLinkRefRangeController } from './controllers/ref-range.controller';
+import { SheetsHyperLinkRemoveSheetController } from './controllers/remove-sheet.controller';
+import { SheetsHyperLinkRichTextRefRangeController } from './controllers/rich-text-ref-range.controller';
+import { SheetHyperLinkSetRangeController } from './controllers/set-range.controller';
+import { SheetsHyperLinkResourceController } from './controllers/sheet-hyper-link-resource.controller';
 import { SheetsHyperLinkController } from './controllers/sheet-hyper-link.controller';
 import { HyperLinkModel } from './models/hyper-link.model';
+import { SheetsHyperLinkParserService } from './services/parser.service';
 import { SHEET_HYPER_LINK_PLUGIN } from './types/const';
-import { SheetsHyperLinkResourceController } from './controllers/sheet-hyper-link-resource.controller';
-import { SheetsHyperLinkRefRangeController } from './controllers/ref-range.controller';
 
 @DependentOn(UniverSheetsPlugin)
 export class UniverSheetsHyperLinkPlugin extends Plugin {
@@ -29,20 +34,41 @@ export class UniverSheetsHyperLinkPlugin extends Plugin {
     static override type = UniverInstanceType.UNIVER_SHEET;
 
     constructor(
-        config: unknown,
-        @Inject(Injector) protected _injector: Injector
+        private readonly _config: Partial<IUniverSheetsHyperLinkConfig> = defaultPluginConfig,
+        @Inject(Injector) protected _injector: Injector,
+        @IConfigService private readonly _configService: IConfigService
     ) {
         super();
+
+        // Manage the plugin configuration.
+        const { ...rest } = merge(
+            {},
+            defaultPluginConfig,
+            this._config
+        );
+        this._configService.setConfig(SHEETS_HYPER_LINK_PLUGIN_CONFIG_KEY, rest);
     }
 
     override onStarting(): void {
-        ([
+        registerDependencies(this._injector, [
+            [HyperLinkModel],
+            [SheetsHyperLinkParserService],
             [SheetsHyperLinkResourceController],
             [SheetsHyperLinkController],
             [SheetsHyperLinkRefRangeController],
-            [HyperLinkModel],
-        ] as Dependency[]).forEach((dep) => {
-            this._injector.add(dep);
-        });
+            [SheetHyperLinkSetRangeController],
+            [SheetsHyperLinkRemoveSheetController],
+            [SheetsHyperLinkRichTextRefRangeController],
+
+        ]);
+
+        touchDependencies(this._injector, [
+            [SheetsHyperLinkRefRangeController],
+            [SheetsHyperLinkResourceController],
+            [SheetsHyperLinkController],
+            [SheetHyperLinkSetRangeController],
+            [SheetsHyperLinkRemoveSheetController],
+            [SheetsHyperLinkRichTextRefRangeController],
+        ]);
     }
 }

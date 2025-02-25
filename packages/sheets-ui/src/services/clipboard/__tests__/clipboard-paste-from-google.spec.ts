@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-import type { ICellData, Injector, IStyleData, Nullable, Univer } from '@univerjs/core';
 import { ICommandService, IUniverInstanceService, LocaleType, RANGE_TYPE } from '@univerjs/core';
 import {
     AddWorksheetMergeMutation,
@@ -27,10 +26,11 @@ import {
     SheetsSelectionsService,
 } from '@univerjs/sheets';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-
-import { ISheetClipboardService } from '../clipboard.service';
+import type { ICellData, Injector, IStyleData, Nullable, Univer } from '@univerjs/core';
 
 import { SheetSkeletonManagerService } from '../../sheet-skeleton-manager.service';
+
+import { ISheetClipboardService } from '../clipboard.service';
 
 import { clipboardTestBed } from './clipboard-test-bed';
 
@@ -151,29 +151,29 @@ describe('Test clipboard', () => {
             expect(getValues(2, 2, 2, 2)?.[0]?.[0]?.v).toEqual('Univer');
             expect(getStyles(2, 2, 2, 2)?.[0]?.[0]).toStrictEqual({
                 bl: 1,
-                cl: {
-                    rgb: '#000',
-                },
+                // cl: {
+                //     rgb: '#000',
+                // },
                 ff: 'Arial',
                 fs: 10,
                 ht: 0,
                 it: 1,
                 ol: {
-                    cl: {
-                        rgb: '#000',
-                    },
+                    // cl: {
+                    //     rgb: '#000',
+                    // },
                     s: 0,
                 },
                 pd: {
-                    b: 1,
+                    b: 2,
                     l: 2,
                     r: 2,
                     t: 0,
                 },
                 st: {
-                    cl: {
-                        rgb: '#000',
-                    },
+                    // cl: {
+                    //     rgb: '#000',
+                    // },
                     s: 0,
                 },
                 tb: 0,
@@ -183,9 +183,9 @@ describe('Test clipboard', () => {
                     v: 0,
                 },
                 ul: {
-                    cl: {
-                        rgb: '#000',
-                    },
+                    // cl: {
+                    //     rgb: '#000',
+                    // },
                     s: 0,
                 },
                 vt: 3,

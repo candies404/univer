@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,3 +31,11 @@ export interface ISlideRichTextProps {
     fs: number;
   //... align margin...
 };
+
+export enum CursorChange {
+    InitialState,
+    StartEditor,
+    CursorChange,
+}
+
+export type PageID = string;

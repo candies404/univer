@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,11 +14,22 @@
  * limitations under the License.
  */
 
-import { connectInjector, Disposable, Inject, Injector, IUniverInstanceService, LifecycleStages, OnLifecycle, UniverInstanceType } from '@univerjs/core';
-import type { IMenuItemFactory } from '@univerjs/ui';
-import { BuiltInUIPart, ComponentManager, ILayoutService, IMenuService, IShortcutService, IUIPartsService } from '@univerjs/ui';
+import type { IUniverDocsUIConfig } from './config.schema';
+import {
+    Disposable,
+    ICommandService,
+    IConfigService,
+    Inject,
+    Injector,
+    IUniverInstanceService,
+    UniverInstanceType,
+} from '@univerjs/core';
 
-import { ITextSelectionRenderManager } from '@univerjs/engine-render';
+import { IRenderManagerService } from '@univerjs/engine-render';
+import { TodoList } from '@univerjs/icons';
+import { BuiltInUIPart, ComponentManager, connectInjector, ILayoutService, IMenuManagerService, IShortcutService, IUIPartsService } from '@univerjs/ui';
+import { CoreHeaderFooterCommand, OpenHeaderFooterPanelCommand } from '../commands/commands/doc-header-footer.command';
+import { SidebarDocHeaderFooterPanelOperation } from '../commands/operations/doc-header-footer-panel.operation';
 import { COLOR_PICKER_COMPONENT, ColorPicker } from '../components/color-picker';
 import {
     FONT_FAMILY_COMPONENT,
@@ -27,8 +38,9 @@ import {
     FontFamilyItem,
 } from '../components/font-family';
 import { FONT_SIZE_COMPONENT, FontSize } from '../components/font-size';
-import type { IUniverDocsUIConfig } from '../basics';
-import { DocFooter } from '../views/doc-footer';
+import { BULLET_LIST_TYPE_COMPONENT, BulletListTypePicker, ORDER_LIST_TYPE_COMPONENT, OrderListTypePicker } from '../components/list-type-picker';
+import { DocSelectionRenderService } from '../services/selection/doc-selection-render.service';
+import { TabShortCut } from '../shortcuts/format.shortcut';
 import {
     AlignCenterShortCut,
     AlignJustifyShortCut,
@@ -43,42 +55,21 @@ import {
     SuperscriptShortCut,
     UnderlineShortCut,
 } from '../shortcuts/toolbar.shortcut';
-import { TabShortCut } from '../shortcuts/format.shortcut';
-import { BULLET_LIST_TYPE_COMPONENT, BulletListTypePicker, ORDER_LIST_TYPE_COMPONENT, OrderListTypePicker } from '../components/list-type-picker';
-import {
-    AlignCenterMenuItemFactory,
-    AlignJustifyMenuItemFactory,
-    AlignLeftMenuItemFactory,
-    AlignRightMenuItemFactory,
-    BackgroundColorSelectorMenuItemFactory,
-    BoldMenuItemFactory,
-    BulletListMenuItemFactory,
-    FontFamilySelectorMenuItemFactory,
-    FontSizeSelectorMenuItemFactory,
-    HeaderFooterMenuItemFactory,
-    ItalicMenuItemFactory,
-    OrderListMenuItemFactory,
-    ResetBackgroundColorMenuItemFactory,
-    StrikeThroughMenuItemFactory,
-    SubscriptMenuItemFactory,
-    SuperscriptMenuItemFactory,
-    TextColorSelectorMenuItemFactory,
-    UnderlineMenuItemFactory,
-} from './menu/menu';
-import { CopyMenuFactory, CutMenuFactory, DeleteMenuFactory, ParagraphSettingMenuFactory, PasteMenuFactory } from './menu/context-menu';
+import { DocFooter } from '../views/doc-footer';
+import { DOCS_UI_PLUGIN_CONFIG_KEY } from './config.schema';
+import { menuSchema } from './menu.schema';
 
-// FIXME: LifecycleStages.Rendered must be used, otherwise the menu cannot be added to the DOM, but the sheet ui plug-in can be added in LifecycleStages.Ready
-@OnLifecycle(LifecycleStages.Rendered, DocUIController)
 export class DocUIController extends Disposable {
     constructor(
-        private readonly _config: Partial<IUniverDocsUIConfig>,
-        @Inject(Injector) private readonly _injector: Injector,
-        @Inject(ComponentManager) private readonly _componentManager: ComponentManager,
-        @ILayoutService private readonly _layoutService: ILayoutService,
-        @IMenuService private readonly _menuService: IMenuService,
-        @IUIPartsService private readonly _uiPartsService: IUIPartsService,
-        @IUniverInstanceService private readonly _univerInstanceService: IUniverInstanceService,
-        @IShortcutService private readonly _shortcutService: IShortcutService
+        @Inject(Injector) protected readonly _injector: Injector,
+        @Inject(ComponentManager) protected readonly _componentManager: ComponentManager,
+        @ICommandService protected readonly _commandService: ICommandService,
+        @ILayoutService protected readonly _layoutService: ILayoutService,
+        @IMenuManagerService protected readonly _menuManagerService: IMenuManagerService,
+        @IUIPartsService protected readonly _uiPartsService: IUIPartsService,
+        @IUniverInstanceService protected readonly _univerInstanceService: IUniverInstanceService,
+        @IShortcutService protected readonly _shortcutService: IShortcutService,
+        @IConfigService protected readonly _configService: IConfigService
     ) {
         super();
 
@@ -93,57 +84,21 @@ export class DocUIController extends Disposable {
         this.disposeWithMe(componentManager.register(FONT_SIZE_COMPONENT, FontSize));
         this.disposeWithMe(componentManager.register(BULLET_LIST_TYPE_COMPONENT, BulletListTypePicker));
         this.disposeWithMe(componentManager.register(ORDER_LIST_TYPE_COMPONENT, OrderListTypePicker));
+
+        this.disposeWithMe(componentManager.register('TodoList', TodoList));
     }
 
+    // TODO: @zhangwei, why add workbook to docs-ui?
     private _initUiParts() {
         const workbook = this._univerInstanceService.getCurrentUnitForType(UniverInstanceType.UNIVER_SHEET);
-        if (this._config.layout?.docContainerConfig?.footer && !workbook) {
+        const config = this._configService.getConfig<IUniverDocsUIConfig>(DOCS_UI_PLUGIN_CONFIG_KEY);
+        if (config?.layout?.docContainerConfig?.footer && !workbook) {
             this.disposeWithMe(this._uiPartsService.registerComponent(BuiltInUIPart.FOOTER, () => connectInjector(DocFooter, this._injector)));
         }
     }
 
     private _initMenus(): void {
-        const { menu = {} } = this._config;
-
-        // init menus
-        (
-            [
-                BoldMenuItemFactory,
-                ItalicMenuItemFactory,
-                UnderlineMenuItemFactory,
-                StrikeThroughMenuItemFactory,
-                SubscriptMenuItemFactory,
-                SuperscriptMenuItemFactory,
-                FontSizeSelectorMenuItemFactory,
-                FontFamilySelectorMenuItemFactory,
-                TextColorSelectorMenuItemFactory,
-                HeaderFooterMenuItemFactory,
-                AlignLeftMenuItemFactory,
-                AlignCenterMenuItemFactory,
-                AlignRightMenuItemFactory,
-                AlignJustifyMenuItemFactory,
-                OrderListMenuItemFactory,
-                BulletListMenuItemFactory,
-                ResetBackgroundColorMenuItemFactory,
-                BackgroundColorSelectorMenuItemFactory,
-            ] as IMenuItemFactory[]
-        ).forEach((factory) => {
-            this.disposeWithMe(this._menuService.addMenuItem(this._injector.invoke(factory), menu));
-        });
-
-        [
-            CopyMenuFactory,
-            CutMenuFactory,
-            PasteMenuFactory,
-            DeleteMenuFactory,
-            ParagraphSettingMenuFactory,
-        ].forEach((factory) => {
-            try {
-                this.disposeWithMe(this._menuService.addMenuItem(this._injector.invoke(factory), menu));
-            } catch (error) {
-
-            }
-        });
+        this._menuManagerService.mergeMenu(menuSchema);
     }
 
     private _initShortCut() {
@@ -170,15 +125,26 @@ export class DocUIController extends Disposable {
         this._initCustomComponents();
         this._initMenus();
         this._initFocusHandler();
+        this._initCommands();
         this._initUiParts();
         this._initShortCut();
     }
 
+    private _initCommands(): void {
+        [
+            CoreHeaderFooterCommand,
+            OpenHeaderFooterPanelCommand,
+            SidebarDocHeaderFooterPanelOperation,
+        ].forEach((command) => this.disposeWithMe(this._commandService.registerCommand(command)));
+    }
+
     private _initFocusHandler(): void {
         this.disposeWithMe(
-            this._layoutService.registerFocusHandler(UniverInstanceType.UNIVER_DOC, () => {
-                const textSelectionManagerService = this._injector.get(ITextSelectionRenderManager);
-                textSelectionManagerService.focus();
+            this._layoutService.registerFocusHandler(UniverInstanceType.UNIVER_DOC, (unitId: string) => {
+                const renderManagerService = this._injector.get(IRenderManagerService);
+                const docSelectionRenderService = renderManagerService.getRenderById(unitId)!.with(DocSelectionRenderService);
+
+                docSelectionRenderService.focus();
             })
         );
     }

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,31 @@
  */
 
 import type { IMutationInfo, IRange, Nullable } from '@univerjs/core';
-import { Disposable, Inject, Injector, LifecycleStages, ObjectMatrix, OnLifecycle, Range, Rectangle, Tools } from '@univerjs/core';
+import type { IDiscreteRange, IPasteHookValueType, ISheetDiscreteRangeLocation } from '@univerjs/sheets-ui';
+import { Disposable, Inject, Injector, ObjectMatrix, Range, Rectangle, Tools } from '@univerjs/core';
+import { rangeToDiscreteRange } from '@univerjs/sheets';
 import { AddHyperLinkMutation, HyperLinkModel, RemoveHyperLinkMutation } from '@univerjs/sheets-hyper-link';
-import type { IDiscreteRange, ISheetDiscreteRangeLocation } from '@univerjs/sheets-ui';
-import { COPY_TYPE, getRepeatRange, ISheetClipboardService, PREDEFINED_HOOK_NAME, rangeToDiscreteRange, virtualizeDiscreteRanges } from '@univerjs/sheets-ui';
-import { SHEET_HYPER_LINK_UI_PLUGIN } from '../types/const';
-import { isLegalLink, serializeUrl } from '../common/util';
+import { COPY_TYPE, getRepeatRange, ISheetClipboardService, PREDEFINED_HOOK_NAME, virtualizeDiscreteRanges } from '@univerjs/sheets-ui';
+import { isLegalLink } from '../common/util';
 import { SheetsHyperLinkResolverService } from '../services/resolver.service';
+import { SHEET_HYPER_LINK_UI_PLUGIN } from '../types/const';
 
-@OnLifecycle(LifecycleStages.Ready, SheetsHyperLinkCopyPasteController)
 export class SheetsHyperLinkCopyPasteController extends Disposable {
+    private _plainTextFilter = new Set<(text: string) => boolean>();
+
+    registerPlainTextFilter(filter: (text: string) => boolean) {
+        this._plainTextFilter.add(filter);
+    }
+
+    removePlainTextFilter(filter: (text: string) => boolean) {
+        this._plainTextFilter.delete(filter);
+    }
+
+    /* If return false the process of paste text will be stop */
+    private _filterPlainText(text: string) {
+        return Array.from(this._plainTextFilter).every((filter) => filter(text));
+    }
+
     private _copyInfo: Nullable<{
         matrix: ObjectMatrix<string>;
         unitId: string;
@@ -39,6 +54,9 @@ export class SheetsHyperLinkCopyPasteController extends Disposable {
     ) {
         super();
         this._initCopyPaste();
+        this.disposeWithMe(() => {
+            this._plainTextFilter.clear();
+        });
     }
 
     private _initCopyPaste() {
@@ -52,9 +70,9 @@ export class SheetsHyperLinkCopyPasteController extends Disposable {
                 return this._generateMutations(pastedRange, { copyType, pasteType, copyRange, unitId, subUnitId });
             },
             onPastePlainText: (pasteTo: ISheetDiscreteRangeLocation, clipText: string) => {
-                if (isLegalLink(clipText)) {
-                    const text = serializeUrl(clipText);
+                const filterResult = this._filterPlainText(clipText);
 
+                if (isLegalLink(clipText) && filterResult) {
                     const { range, unitId, subUnitId } = pasteTo;
                     const { ranges: [pasteToRange], mapFunc } = virtualizeDiscreteRanges([range]);
                     const redos: IMutationInfo[] = [];
@@ -72,28 +90,6 @@ export class SheetsHyperLinkCopyPasteController extends Disposable {
                                 },
                             });
                         }
-                        const newId = Tools.generateRandomId();
-                        redos.push({
-                            id: AddHyperLinkMutation.id,
-                            params: {
-                                unitId,
-                                subUnitId,
-                                link: {
-                                    id: newId,
-                                    row,
-                                    column,
-                                    payload: text,
-                                },
-                            },
-                        });
-                        undos.push({
-                            id: RemoveHyperLinkMutation.id,
-                            params: {
-                                unitId,
-                                subUnitId,
-                                id: newId,
-                            },
-                        });
                         if (link) {
                             undos.push({
                                 id: AddHyperLinkMutation.id,
@@ -110,6 +106,7 @@ export class SheetsHyperLinkCopyPasteController extends Disposable {
 
                 return { undos: [], redos: [] };
             },
+            priority: 99,
         });
     }
 
@@ -121,10 +118,9 @@ export class SheetsHyperLinkCopyPasteController extends Disposable {
             matrix,
         };
 
-        const accessor = {
-            get: this._injector.get.bind(this._injector),
-        };
-        const discreteRange = rangeToDiscreteRange(range, accessor, unitId, subUnitId);
+        const discreteRange = this._injector.invoke((accessor) => {
+            return rangeToDiscreteRange(range, accessor, unitId, subUnitId);
+        });
         if (!discreteRange) {
             return;
         }
@@ -144,7 +140,7 @@ export class SheetsHyperLinkCopyPasteController extends Disposable {
         copyInfo: {
             copyType: COPY_TYPE;
             copyRange?: IDiscreteRange;
-            pasteType: string;
+            pasteType: IPasteHookValueType;
             unitId: string;
             subUnitId: string;
         }
@@ -157,16 +153,14 @@ export class SheetsHyperLinkCopyPasteController extends Disposable {
             return { redos: [], undos: [] };
         }
 
-        if (
-            [
-                PREDEFINED_HOOK_NAME.SPECIAL_PASTE_COL_WIDTH,
-                PREDEFINED_HOOK_NAME.SPECIAL_PASTE_VALUE,
-                PREDEFINED_HOOK_NAME.SPECIAL_PASTE_FORMAT,
-                PREDEFINED_HOOK_NAME.SPECIAL_PASTE_FORMULA,
-            ].includes(
-                copyInfo.pasteType
-            )
-        ) {
+        const specialPastes: IPasteHookValueType[] = [
+            PREDEFINED_HOOK_NAME.SPECIAL_PASTE_COL_WIDTH,
+            PREDEFINED_HOOK_NAME.SPECIAL_PASTE_VALUE,
+            PREDEFINED_HOOK_NAME.SPECIAL_PASTE_FORMAT,
+            PREDEFINED_HOOK_NAME.SPECIAL_PASTE_FORMULA,
+        ];
+
+        if (specialPastes.includes(copyInfo.pasteType)) {
             return { redos: [], undos: [] };
         }
 

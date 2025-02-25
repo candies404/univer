@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,19 +14,19 @@
  * limitations under the License.
  */
 
-export { ThreadCommentModel, type CommentUpdate } from './models/thread-comment.model';
+export { type CommentUpdate, type IThreadInfo, ThreadCommentModel } from './models/thread-comment.model';
 export { ThreadCommentResourceController } from './controllers/tc-resource.controller';
 export { TC_PLUGIN_NAME } from './types/const';
-export type { IThreadComment, IThreadCommentMention, IBaseComment } from './types/interfaces/i-thread-comment';
+export type { IBaseComment, IThreadComment, IThreadCommentMention } from './types/interfaces/i-thread-comment';
 export { UniverThreadCommentPlugin } from './plugin';
+export { getDT } from './common/utils';
 
 export {
+    type IThreadCommentDataSource,
     IThreadCommentDataSourceService,
     ThreadCommentDataSourceService,
-    type IThreadCommentDataSource,
     type ThreadCommentJSON,
 } from './services/tc-datasource.service';
-
 // #region - all commands
 
 export {
@@ -48,16 +48,16 @@ export type {
 export {
     AddCommentCommand,
     DeleteCommentCommand,
+    DeleteCommentTreeCommand,
     ResolveCommentCommand,
     UpdateCommentCommand,
-    DeleteCommentTreeCommand,
 } from './commands/commands/comment.command';
 export type {
     IAddCommentCommandParams,
     IDeleteCommentCommandParams,
+    IDeleteCommentTreeCommandParams,
     IResolveCommentCommandParams,
     IUpdateCommentCommandParams,
-    IDeleteCommentTreeCommandParams,
 } from './commands/commands/comment.command';
 
 // #endregion

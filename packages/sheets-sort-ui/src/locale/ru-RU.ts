@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,7 +39,7 @@ const locale: typeof zhCN = {
             'sort-reminder-desc': 'Расширить сортировку диапазона или оставить сортировку диапазона?',
             'sort-reminder-ext': 'Расширить сортировку диапазона',
             'sort-reminder-no': 'Оставить сортировку диапазона',
-            'first-row-check': 'Первая строка участвует в сортировке',
+            'first-row-check': 'Первая строка контента не участвует в сортировке',
             'add-condition': 'Добавить условие',
             cancel: 'Отмена',
             confirm: 'Подтвердить',

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,33 +15,18 @@
  */
 
 import type { Nullable, Workbook } from '@univerjs/core';
+import type { IAutoFilter } from '../models/types';
 import {
     CommandType, Disposable,
     fromCallback,
     ICommandService,
     IResourceManagerService,
     IUniverInstanceService,
-    LifecycleStages,
-    OnLifecycle,
     UniverInstanceType,
 } from '@univerjs/core';
 import { BehaviorSubject, filter, merge, of, switchMap } from 'rxjs';
-
+import { FILTER_MUTATIONS } from '../common/const';
 import { FilterModel } from '../models/filter-model';
-import {
-    ReCalcSheetsFilterMutation,
-    RemoveSheetsFilterMutation,
-    SetSheetsFilterCriteriaMutation,
-    SetSheetsFilterRangeMutation,
-} from '../commands/mutations/sheets-filter.mutation';
-import type { IAutoFilter } from '../models/types';
-
-export const FILTER_MUTATIONS = new Set([
-    SetSheetsFilterRangeMutation.id,
-    SetSheetsFilterCriteriaMutation.id,
-    RemoveSheetsFilterMutation.id,
-    ReCalcSheetsFilterMutation.id,
-]);
 
 type WorksheetID = string;
 export interface ISheetsFilterResource {
@@ -53,7 +38,6 @@ export const SHEET_FILTER_SNAPSHOT_ID = 'SHEET_FILTER_PLUGIN';
 /**
  * This service is responsible for managing filter models, especially their lifecycle.
  */
-@OnLifecycle(LifecycleStages.Ready, SheetsFilterService)
 export class SheetsFilterService extends Disposable {
     private readonly _filterModels = new Map<string, Map<string, FilterModel>>();
 
@@ -121,11 +105,11 @@ export class SheetsFilterService extends Disposable {
         return false;
     }
 
-    setFilterErrorMsg(content: string) {
+    setFilterErrorMsg(content: string): void {
         this._errorMsg$.next(content);
     }
 
-    private _updateActiveFilterModel() {
+    private _updateActiveFilterModel(): void {
         let workbook: Nullable<Workbook>;
         try {
             workbook = this._univerInstanceService.getCurrentUnitForType(UniverInstanceType.UNIVER_SHEET);
@@ -134,6 +118,7 @@ export class SheetsFilterService extends Disposable {
                 return;
             }
         } catch (err) {
+            console.error('[SheetsFilterService]: could not get active workbook!', err);
             return;
         }
 
@@ -150,7 +135,7 @@ export class SheetsFilterService extends Disposable {
         this._activeFilterModel$.next(filterModel);
     }
 
-    private _initActiveFilterModel() {
+    private _initActiveFilterModel(): void {
         this.disposeWithMe(
             merge(
                 // source1: executing filter related mutations
@@ -177,7 +162,7 @@ export class SheetsFilterService extends Disposable {
         return JSON.stringify(json);
     }
 
-    private _deserializeAutoFiltersForUnit(unitId: string, json: ISheetsFilterResource) {
+    private _deserializeAutoFiltersForUnit(unitId: string, json: ISheetsFilterResource): void {
         const workbook = this._univerInstanceService.getUniverSheetInstance(unitId)!;
         Object.keys(json).forEach((worksheetId: WorksheetID) => {
             const autoFilter = json[worksheetId]!;
@@ -186,10 +171,10 @@ export class SheetsFilterService extends Disposable {
         });
     }
 
-    private _initModel() {
+    private _initModel(): void {
         this._resourcesManagerService.registerPluginResource<ISheetsFilterResource>({
             pluginName: SHEET_FILTER_SNAPSHOT_ID,
-            businesses: [2],
+            businesses: [UniverInstanceType.UNIVER_SHEET],
             toJson: (id) => this._serializeAutoFiltersForUnit(id),
             parseJson: (json) => JSON.parse(json),
             onLoad: (unitId, value) => {
@@ -207,7 +192,7 @@ export class SheetsFilterService extends Disposable {
         });
     }
 
-    private _cacheFilterModel(unitId: string, subUnitId: string, filterModel: FilterModel) {
+    private _cacheFilterModel(unitId: string, subUnitId: string, filterModel: FilterModel): void {
         if (!this._filterModels.has(unitId)) {
             this._filterModels.set(unitId, new Map());
         }

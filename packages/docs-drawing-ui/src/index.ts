@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,10 @@
  * limitations under the License.
  */
 
+import './global.css';
+
 export { UniverDocsDrawingUIPlugin } from './plugin';
+export { DOCS_IMAGE_MENU_ID } from './views/menu/image.menu';
 
 // #region - all commands
 
@@ -28,7 +31,7 @@ export { UngroupDocDrawingCommand } from './commands/commands/ungroup-doc-drawin
 
 export { ClearDocDrawingTransformerOperation } from './commands/operations/clear-drawing-transformer.operation';
 export { EditDocDrawingOperation } from './commands/operations/edit-doc-drawing.operation';
-export { InsertDocImageOperation } from './commands/operations/insert-image.operation';
+export { InsertDocImageCommand } from './commands/commands/insert-image.command';
 export { SidebarDocDrawingOperation } from './commands/operations/open-drawing-panel.operation';
 
 // #endregion

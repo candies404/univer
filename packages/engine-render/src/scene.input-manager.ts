@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +14,17 @@
  * limitations under the License.
  */
 
-import { Disposable, type Nullable, toDisposable } from '@univerjs/core';
+import type { Nullable } from '@univerjs/core';
 
-import type { Subscription } from 'rxjs';
 import type { PointerEvent } from 'react';
+import type { Subscription } from 'rxjs';
 import type { BaseObject } from './base-object';
-import { RENDER_CLASS_TYPE } from './basics/const';
 import type { IDragEvent, IEvent, IKeyboardEvent, IMouseEvent, IPointerEvent, IWheelEvent } from './basics/i-events';
+import type { ISceneInputControlOptions, Scene } from './scene';
+import { Disposable, toDisposable } from '@univerjs/core';
+import { RENDER_CLASS_TYPE } from './basics/const';
 import { DeviceType, PointerInput } from './basics/i-events';
 import { Vector2 } from './basics/vector2';
-import type { ThinScene } from './thin-scene';
-import type { Viewport } from './viewport';
 
 export class InputManager extends Disposable {
     /** The distance in pixel that you have to move to prevent some events */
@@ -41,62 +41,23 @@ export class InputManager extends Disposable {
     /** If you need to check double click without raising a single click at first click, enable this flag */
     static ExclusiveDoubleClickMode = false;
 
+    private _scene!: Scene;
+
     /** This is a defensive check to not allow control attachment prior to an already active one. If already attached, previous control is unattached before attaching the new one. */
     private _alreadyAttached = false;
-
-    // private _alreadyAttachedTo: HTMLElement;
 
     // WorkBookObserver
     private _onInput$: Nullable<Subscription>;
 
-    // Pointers
-    private _onPointerMove!: (evt: IMouseEvent) => void;
-
-    private _onPointerDown!: (evt: IPointerEvent) => void;
-
-    private _onPointerUp!: (evt: IPointerEvent) => void;
-
-    private _onPointerOut!: (evt: IPointerEvent) => void;
-
-    private _onPointerCancel!: (evt: IPointerEvent) => void;
-
-    private _onPointerEnter!: (evt: IPointerEvent) => void;
-
-    private _onPointerLeave!: (evt: IPointerEvent) => void;
-
-    private _onMouseWheel!: (evt: IWheelEvent) => void;
-
-    // Keyboard
-    private _onKeyDown!: (evt: IKeyboardEvent) => void;
-
-    private _onKeyUp!: (evt: IKeyboardEvent) => void;
-
-    // Drag
-    private _onDragEnter!: (evt: IDragEvent) => void;
-
-    private _onDragLeave!: (evt: IDragEvent) => void;
-
-    private _onDragOver!: (evt: IDragEvent) => void;
-
-    private _onDrop!: (evt: IDragEvent) => void;
-
-    private _scene!: ThinScene;
-
-    private _currentMouseEnterPicked: Nullable<BaseObject | ThinScene>;
-
+    private _currentMouseEnterPicked: Nullable<BaseObject | Scene>;
     private _startingPosition = new Vector2(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY);
-
     private _delayedTimeout: NodeJS.Timeout | number = -1;
-
     private _delayedTripeTimeout: NodeJS.Timeout | number = -1;
-
     private _doubleClickOccurred = 0;
-
     private _tripleClickState = false;
+    private _currentObject: Nullable<BaseObject | Scene>;
 
-    private _currentObject: Nullable<BaseObject | ThinScene>;
-
-    constructor(scene: ThinScene) {
+    constructor(scene: Scene) {
         super();
         this._scene = scene;
     }
@@ -107,14 +68,13 @@ export class InputManager extends Disposable {
     override dispose(): void {
         super.dispose();
         this.detachControl();
-        this._scene = null as unknown as ThinScene;
-        // this._currentMouseEnterPicked?.dispose();
+        this._scene = null as unknown as Scene;
         this._currentMouseEnterPicked = null;
-        // this._currentObject?.dispose();
         this._currentObject = null;
         this._startingPosition = null as unknown as Vector2;
         clearTimeout(this._delayedTimeout);
         clearTimeout(this._delayedTripeTimeout);
+
         this._onPointerMove = null as unknown as (evt: IMouseEvent) => void;
         this._onPointerDown = null as unknown as (evt: IPointerEvent) => void;
         this._onPointerUp = null as unknown as (evt: IPointerEvent) => void;
@@ -131,7 +91,7 @@ export class InputManager extends Disposable {
 
     // Handle events such as triggering mouseleave and mouseenter.
     mouseLeaveEnterHandler(evt: IMouseEvent) {
-        const o = this._currentObject;
+        const o = this._currentObject || this.capturedObject;
         if (o === null || o === undefined) {
             this._currentMouseEnterPicked?.triggerPointerLeave(evt);
             this._currentMouseEnterPicked = null;
@@ -144,7 +104,7 @@ export class InputManager extends Disposable {
     }
 
     // Handle events such as triggering dragleave and dragenter.
-    dragLeaveEnterHandler(evt: IMouseEvent) {
+    dragLeaveEnterHandler(evt: IDragEvent) {
         const o = this._currentObject;
         if (o === null || o === undefined) {
             this._currentMouseEnterPicked?.triggerDragLeave(evt);
@@ -157,263 +117,239 @@ export class InputManager extends Disposable {
         }
     }
 
-    // eslint-disable-next-line max-lines-per-function
-    attachControl(
-        hasDown: boolean = true,
-        hasUp: boolean = true,
-        enableMove: boolean = true,
-        hasWheel: boolean = true,
-        hasEnter: boolean = true,
-        hasLeave: boolean = true
-    ) {
-        const engine = this._scene.getEngine();
-
-        if (!engine) {
-            return;
+    _onPointerEnter(evt: IPointerEvent) {
+        // preserve compatibility with Safari when pointerId is not present
+        if (evt.pointerId === undefined) {
+            evt.pointerId = 0;
         }
 
-        this._onPointerEnter = (evt: IPointerEvent) => {
-            // preserve compatibility with Safari when pointerId is not present
-            if (evt.pointerId === undefined) {
-                evt.pointerId = 0;
-            }
+        this._currentObject = this._getObjectAtPos(evt.offsetX, evt.offsetY);
+        this.mouseLeaveEnterHandler(evt);
+    }
 
-            this._currentObject = this._getCurrentObject(evt.offsetX, evt.offsetY);
-            const _isStop = this._currentObject?.triggerPointerMove(evt);
+    _onPointerLeave(evt: IPointerEvent) {
+        // preserve compatibility with Safari when pointerId is not present
+        if (evt.pointerId === undefined) {
+            evt.pointerId = 0;
+        }
 
-            this.mouseLeaveEnterHandler(evt);
+        this._currentObject = null;
+        this.mouseLeaveEnterHandler(evt);
+    }
 
-            // if (this._checkDirectSceneEventTrigger(!isStop, this._currentObject)) {
-            //     if (this._scene.onPointerMoveObserver.hasObservers()) {
-            //         this._scene.onPointerMoveObserver.notifyObservers(evt);
-            //     }
-            // }
-        };
+    _onPointerMove(evt: IMouseEvent) {
+        // preserve compatibility with Safari when pointerId is not present
+        if ((evt as IPointerEvent).pointerId === undefined) {
+            (evt as unknown as PointerEvent).pointerId = 0;
+        }
+        const currentObject = this._currentObject = this._getObjectAtPos(evt.offsetX, evt.offsetY);
 
-        this._onPointerLeave = (evt: IPointerEvent) => {
-            // preserve compatibility with Safari when pointerId is not present
-            if (evt.pointerId === undefined) {
-                evt.pointerId = 0;
-            }
+        const isStop = (currentObject || this.capturedObject)?.triggerPointerMove(evt);
 
-            // this._currentObject = this._getCurrentObject(evt.offsetX, evt.offsetY);
-            // const isStop = this._currentObject?.triggerPointerMove(evt);
+        this.mouseLeaveEnterHandler(evt);
 
-            this._currentObject = null;
+        if (!isStop && this._shouldDispatchEventToScene(currentObject)) {
+            this._scene.onPointerMove$.emitEvent(evt);
+            this._scene.getEngine()?.setCapture();
+        }
+    }
 
-            this.mouseLeaveEnterHandler(evt);
+    _onPointerDown(evt: IPointerEvent) {
+        // preserve compatibility with Safari when pointerId is not present
+        if (evt.pointerId === undefined) {
+            (evt as unknown as PointerEvent).pointerId = 0;
+        }
 
-            // if (this._checkDirectSceneEventTrigger(!isStop, this._currentObject)) {
-            //     if (this._scene.onPointerMoveObserver.hasObservers()) {
-            //         this._scene.onPointerMoveObserver.notifyObservers(evt);
-            //     }
-            // }
-        };
+        const currentObject = this._getObjectAtPos(evt.offsetX, evt.offsetY);
+        const isStop = currentObject?.triggerPointerDown(evt);
 
-        this._onPointerMove = (evt: IMouseEvent) => {
-            // preserve compatibility with Safari when pointerId is not present
-            if ((evt as IPointerEvent).pointerId === undefined) {
-                (evt as unknown as PointerEvent).pointerId = 0;
-            }
-            const currentObject = this._currentObject = this._getCurrentObject(evt.offsetX, evt.offsetY);
-            // Math.random() < 0.01 && console.log('!!!scene _onPointerMove', currentObject?.oKey);
+        if (!isStop && this._shouldDispatchEventToScene(currentObject)) {
+            this._scene.onPointerDown$.emitEvent(evt);
+        }
+    }
 
-            const isStop = currentObject?.triggerPointerMove(evt);
+    _onPointerUp(evt: IPointerEvent) {
+        // preserve compatibility with Safari when pointerId is not present
+        if (evt.pointerId === undefined) {
+            evt.pointerId = 0;
+        }
 
-            this.mouseLeaveEnterHandler(evt);
+        const currentObject = this._getObjectAtPos(evt.offsetX, evt.offsetY);
+        const isStop = currentObject?.triggerPointerUp(evt);
 
-            if (this._checkDirectSceneEventTrigger(!isStop, this._currentObject)) {
-                this._scene.onPointerMove$.emitEvent(evt);
-                this._scene.getEngine()?.setRemainCapture();
-            }
-        };
-        this._onPointerDown = (evt: IPointerEvent) => {
-            // preserve compatibility with Safari when pointerId is not present
-            if (evt.pointerId === undefined) {
-                (evt as unknown as PointerEvent).pointerId = 0;
-            }
+        if (!isStop && this._shouldDispatchEventToScene(currentObject)) {
+            this._scene.onPointerUp$.emitEvent(evt);
+        }
 
-            const currentObject = this._getCurrentObject(evt.offsetX, evt.offsetY);
+        this._prePointerDoubleOrTripleClick(evt);
+    }
 
-            const isStop = currentObject?.triggerPointerDown(evt);
+    _onPointerCancel(evt: IPointerEvent) {
+        this._scene.onPointerCancel$.emitEvent(evt);
+        const currentObject = this._getObjectAtPos(evt.offsetX, evt.offsetY);
+        currentObject?.triggerPointerCancel(evt);
+    }
 
-            if (this._checkDirectSceneEventTrigger(!isStop, currentObject)) {
-                this._scene.onPointerDown$.emitEvent(evt);
-            }
-        };
+    _onPointerOut(evt: IPointerEvent) {
+        this._scene.onPointerOut$.emitEvent(evt);
+        const currentObject = this._getObjectAtPos(evt.offsetX, evt.offsetY);
+        currentObject?.triggerPointerOut(evt);
+    }
 
-        this._onPointerUp = (evt: IPointerEvent) => {
-            // preserve compatibility with Safari when pointerId is not present
-            if (evt.pointerId === undefined) {
-                evt.pointerId = 0;
-            }
+    _onMouseWheel(evt: IWheelEvent) {
+        const currentObject = this._getObjectAtPos(evt.offsetX, evt.offsetY);
+        const isStop = currentObject?.triggerMouseWheel(evt);
 
-            const currentObject = this._getCurrentObject(evt.offsetX, evt.offsetY);
-            const isStop = currentObject?.triggerPointerUp(evt);
+        // for doc
+        const viewportMain = this._scene.getMainViewport();
+        viewportMain.onMouseWheel$.emitEvent(evt);
 
-            if (this._checkDirectSceneEventTrigger(!isStop, currentObject)) {
-                this._scene.onPointerUp$.emitEvent(evt);
-            }
+        if (!isStop && this._shouldDispatchEventToScene(currentObject)) {
+            this._scene.onMouseWheel$.emitEvent(evt);
+        }
+    }
 
-            this._prePointerDoubleOrTripleClick(evt);
-        };
+    _onKeyDown(evt: IKeyboardEvent) {
+        // currently nobody using this. use `fromGlobalEvent('keydown')` from rx.js instead.
+        this._scene.onKeyDown$.emitEvent(evt);
+    }
 
-        this._onPointerCancel = (evt: IPointerEvent) => {
-            this._scene.onPointerCancel$.emitEvent(evt);
-        };
+    _onKeyUp(evt: IKeyboardEvent) {
+        // currently nobody using this. use `fromGlobalEvent('keyup')` from rx.js instead.
+        this._scene.onKeyUp$.emitEvent(evt);
+    }
 
-        this._onPointerOut = (evt: IPointerEvent) => {
-            this._scene.onPointerOut$.emitEvent(evt);
-        };
+    _onDragEnter(evt: IDragEvent) {
+        this._currentObject = this._getObjectAtPos(evt.offsetX, evt.offsetY);
+        this._currentObject?.triggerDragOver(evt);
 
-        this._onMouseWheel = (evt: IWheelEvent) => {
-            const currentObject = this._getCurrentObject(evt.offsetX, evt.offsetY);
-            const isStop = currentObject?.triggerMouseWheel(evt);
+        this.dragLeaveEnterHandler(evt);
+    }
 
-            this._scene.getViewports().forEach((vp: Viewport) => {
-                vp.onMouseWheel$.emitEvent(evt);
-                // if (vp.onMouseWheel$.hasObservers()) {
-                // }
-            });
+    _onDragLeave(evt: IDragEvent) {
+        this._currentObject = null;
 
-            if (this._checkDirectSceneEventTrigger(!isStop, currentObject)) {
-                this._scene.onMouseWheel$.emitEvent(evt);
-                // if (this._scene.onMouseWheel$.hasObservers()) {
-                // }
-            }
-        };
+        this.dragLeaveEnterHandler(evt);
+    }
 
-        this._onKeyDown = (evt: IKeyboardEvent) => {
-            this._scene.onKeyDown$.emitEvent(evt);
-        };
+    _onDragOver(evt: IDragEvent) {
+        this._currentObject = this._getObjectAtPos(evt.offsetX, evt.offsetY);
+        const isStop = this._currentObject?.triggerDragOver(evt);
 
-        this._onKeyUp = (evt: IKeyboardEvent) => {
-            this._scene.onKeyUp$.emitEvent(evt);
-        };
+        this.dragLeaveEnterHandler(evt);
 
-        this._onDragEnter = (evt: IDragEvent) => {
-            this._currentObject = this._getCurrentObject(evt.offsetX, evt.offsetY);
-            this._currentObject?.triggerDragOver(evt);
+        if (!isStop && this._shouldDispatchEventToScene(this._currentObject)) {
+            this._scene.onDragOver$.emitEvent(evt);
+            this._scene.getEngine()?.setCapture();
+        }
+    }
 
-            this.dragLeaveEnterHandler(evt);
-        };
+    _onDrop(evt: IDragEvent) {
+        const currentObject = this._getObjectAtPos(evt.offsetX, evt.offsetY);
+        const isStop = currentObject?.triggerDrop(evt);
 
-        this._onDragLeave = (evt: IDragEvent) => {
-            this._currentObject = null;
+        if (!isStop && this._shouldDispatchEventToScene(currentObject)) {
+            this._scene.onDrop$.emitEvent(evt);
+        }
+    }
 
-            this.dragLeaveEnterHandler(evt);
-        };
-
-        this._onDragOver = (evt: IDragEvent) => {
-            this._currentObject = this._getCurrentObject(evt.offsetX, evt.offsetY);
-            const isStop = this._currentObject?.triggerDragOver(evt);
-
-            this.dragLeaveEnterHandler(evt);
-
-            if (this._checkDirectSceneEventTrigger(!isStop, this._currentObject)) {
-                this._scene.onDragOver$.emitEvent(evt);
-                this._scene.getEngine()?.setRemainCapture();
-            }
-        };
-
-        this._onDrop = (evt: IDragEvent) => {
-            const currentObject = this._getCurrentObject(evt.offsetX, evt.offsetY);
-            const isStop = currentObject?.triggerDrop(evt);
-
-            if (this._checkDirectSceneEventTrigger(!isStop, currentObject)) {
-                this._scene.onDrop$.emitEvent(evt);
-            }
-        };
+    // eslint-disable-next-line max-lines-per-function
+    attachControl(options?: ISceneInputControlOptions) {
+        const enableDown: boolean = options?.enableDown ?? true;
+        const enableUp: boolean = options?.enableUp ?? true;
+        const enableMove: boolean = options?.enableMove ?? true;
+        const enableWheel: boolean = options?.enableWheel ?? true;
+        const enableEnter: boolean = options?.enableEnter ?? true;
+        const enableLeave: boolean = options?.enableLeave ?? true;
+        const engine = this._scene.getEngine();
+        if (!engine) return;
 
         // eslint-disable-next-line complexity, max-lines-per-function
         this._onInput$ = engine.onInputChanged$.subscribeEvent((eventData: IEvent) => {
             const evt: IEvent = eventData;
-            // Keyboard Events
             if (eventData.deviceType === DeviceType.Keyboard) {
-                if (eventData.currentState === 1) {
-                    this._onKeyDown(evt as IKeyboardEvent);
+                switch (eventData.type) {
+                    case 'keydown':
+                        this._onKeyDown(evt as IKeyboardEvent);
+                        break;
+                    case 'keyup':
+                        this._onKeyUp(evt as IKeyboardEvent);
+                        break;
                 }
-
-                if (eventData.currentState === 0) {
-                    this._onKeyUp(evt as IKeyboardEvent);
-                }
-            }
-
-            // Drag Events
-            if ((eventData as IDragEvent).dataTransfer) {
-                if (enableMove &&
-                    (eventData.inputIndex === PointerInput.Horizontal ||
-                        eventData.inputIndex === PointerInput.Vertical ||
-                        eventData.inputIndex === PointerInput.DeltaHorizontal ||
-                        eventData.inputIndex === PointerInput.DeltaVertical)) {
-                    this._onDragOver(evt as IDragEvent);
-                } else if (hasEnter && eventData.currentState === 4) {
-                    this._onDragEnter(evt as IDragEvent);
-                } else if (hasLeave && eventData.currentState === 5) {
-                    this._onDragLeave(evt as IDragEvent);
-                } else if (hasUp && eventData.currentState === 6) {
-                    this._onDrop(evt as IDragEvent);
-                }
-
-                return;
             }
 
             // Pointer Events
             if (eventData.deviceType === DeviceType.Mouse || eventData.deviceType === DeviceType.Touch) {
-                if (
-                    hasDown &&
-                    eventData.inputIndex >= PointerInput.LeftClick &&
-                    eventData.inputIndex <= PointerInput.RightClick &&
-                    eventData.currentState === 1
-                ) {
-                    this._onPointerDown(evt as IPointerEvent);
-                }
-
-                if (
-                    hasUp &&
-                    eventData.inputIndex >= PointerInput.LeftClick &&
-                    eventData.inputIndex <= PointerInput.RightClick &&
-                    eventData.currentState === 0
-                ) {
-                    this._onPointerUp(evt as IPointerEvent);
-                }
-
-                if (
-                    enableMove && eventData.type === 'pointermove'
-                ) {
-                    this._onPointerMove(evt as IPointerEvent);
-                } else if (
-                    hasWheel &&
-                    (eventData.inputIndex === PointerInput.MouseWheelX ||
-                        eventData.inputIndex === PointerInput.MouseWheelY ||
-                        eventData.inputIndex === PointerInput.MouseWheelZ)
-                ) {
-                    this._onMouseWheel(evt as IWheelEvent);
-                } else if (hasEnter && eventData.currentState === 2) {
-                    // this._onPointerUp(evt as IPointerEvent);
-                    this._onPointerEnter(evt as IPointerEvent);
-                } else if (hasLeave && eventData.currentState === 3) {
-                    // this._onPointerUp(evt as IPointerEvent);
-                    this._onPointerLeave(evt as IPointerEvent);
-                }
-
-                switch (evt.type) {
+                switch (eventData.type) {
+                    case 'wheel':
+                    case 'DOMMouseScroll':
+                    case 'mousewheel':
+                        if (enableWheel) {
+                            this._onMouseWheel(evt as IWheelEvent);
+                        }
+                        break;
                     case 'pointerout':
                         this._onPointerOut(evt as IPointerEvent);
                         break;
                     case 'pointercancel':
                         this._onPointerCancel(evt as IPointerEvent);
                         break;
+                    case 'pointerleave':
+                        this._onPointerLeave(evt as IPointerEvent);
+                        break;
+                    case 'pointermove':
+                        if (enableMove) {
+                            this._onPointerMove(evt as IPointerEvent);
+                        }
+                        break;
+                    case 'pointerup':
+                        if (enableUp &&
+                            eventData.inputIndex >= PointerInput.LeftClick &&
+                            eventData.inputIndex <= PointerInput.RightClick) {
+                            this._onPointerUp(evt as IPointerEvent);
+                        }
+                        break;
+                    case 'pointerdown':
+                        if (enableDown &&
+                            eventData.inputIndex >= PointerInput.LeftClick &&
+                            eventData.inputIndex <= PointerInput.RightClick) {
+                            this._onPointerDown(evt as IPointerEvent);
+                        }
+                        break;
+                }
+            }
+
+            // Drag Events, For 3rd users. Univer itself doesn't use drag events.
+            if ((eventData as IDragEvent).dataTransfer) {
+                switch (eventData.type) {
+                    case 'dragenter':
+                        if (enableEnter) {
+                            this._onDragEnter(evt as IDragEvent);
+                        }
+                        break;
+                    case 'dragover': {
+                        const validIndex = eventData.inputIndex === PointerInput.Horizontal ||
+                        eventData.inputIndex === PointerInput.Vertical ||
+                        eventData.inputIndex === PointerInput.DeltaHorizontal ||
+                        eventData.inputIndex === PointerInput.DeltaVertical;
+                        if (enableMove && validIndex) {
+                            this._onDragOver(evt as IDragEvent);
+                        }
+                        break;
+                    }
+                    case 'dragleave':
+                        if (enableLeave) {
+                            this._onDragLeave(evt as IDragEvent);
+                        }
+                        break;
+                    case 'drop':
+                        this._onDrop(evt as IDragEvent);
+                        break;
                 }
             }
         });
 
-        this.disposeWithMe(
-            toDisposable(
-                this._onInput$
-            )
-        );
-
+        this.disposeWithMe(toDisposable(this._onInput$));
         this._alreadyAttached = true;
     }
 
@@ -432,29 +368,70 @@ export class InputManager extends Disposable {
         }
         // engine.onInputChanged$.remove(this._onInput$);
         this._onInput$?.unsubscribe();
-
         this._alreadyAttached = false;
     }
 
-    private _getCurrentObject(offsetX: number, offsetY: number) {
+    /**
+     * Get the object under the pointer, if scene.event is disabled, return null.
+     * @param offsetX
+     * @param offsetY
+     */
+    private _getObjectAtPos(offsetX: number, offsetY: number) {
         return this._scene?.pick(Vector2.FromArray([offsetX, offsetY]));
     }
 
-    private _checkDirectSceneEventTrigger(isTrigger: boolean, currentObject: Nullable<ThinScene | BaseObject>) {
-        let notObject = false;
+    /**
+     *
+     * If currentObject is null, return true
+     * @param isTrigger
+     * @param currentObject
+     * @returns
+     */
+
+    // The return value of this method is so weird! return type is object and boolean???
+    // TODO @lumixraku
+    // private _shouldDispatchEventToScene(isTrigger: boolean, currentObject: Nullable<Scene | BaseObject>) {
+        // let notObject = false;
+        // if (currentObject == null) {
+        //     notObject = true;
+        // }
+
+        // let isNotInSceneViewer = true;
+        // if (currentObject && currentObject.classType === RENDER_CLASS_TYPE.BASE_OBJECT) {
+        //     const scene = (currentObject as BaseObject).getScene() as Scene;
+        //     if (scene) {
+        //         const parent = scene.getParent();
+        //         isNotInSceneViewer = parent.classType !== RENDER_CLASS_TYPE.SCENE_VIEWER;
+        //     }
+        // }
+        // return (!this._scene.objectsEvented && isTrigger && isNotInSceneViewer) || notObject;
+
+    // }
+
+    private _shouldDispatchEventToScene(currentObject: Nullable<Scene | BaseObject>): boolean {
+        // 1. Check for empty object
         if (currentObject == null) {
-            notObject = true;
+            return true;
         }
 
-        let isNotInSceneViewer = true;
-        if (currentObject && currentObject.classType === RENDER_CLASS_TYPE.BASE_OBJECT) {
-            const scene = (currentObject as BaseObject).getScene() as ThinScene;
+        // 2. If the scene allows object events, no need to dispatch to the scene
+        if (this._scene.objectsEvented) {
+            return false;
+        }
+
+        // 3. Check if it is in the SceneViewer
+        return !this._isObjectInSceneViewer(currentObject);
+    }
+
+    private _isObjectInSceneViewer(obj: Scene | BaseObject): boolean {
+        if (obj && obj.classType === RENDER_CLASS_TYPE.BASE_OBJECT) {
+            const scene = (obj as BaseObject).getScene() as Scene;
             if (scene) {
                 const parent = scene.getParent();
-                isNotInSceneViewer = parent.classType !== RENDER_CLASS_TYPE.SCENE_VIEWER;
+                return parent.classType === RENDER_CLASS_TYPE.SCENE_VIEWER;
             }
         }
-        return (!this._scene.evented && isTrigger && isNotInSceneViewer) || notObject;
+        return false;
     }
 
     /**
@@ -510,5 +487,9 @@ export class InputManager extends Disposable {
     private _resetDoubleClickParam() {
         this._doubleClickOccurred = 0;
         clearTimeout(this._delayedTimeout);
+    }
+
+    get capturedObject() {
+        return this._scene._capturedObject;
     }
 }

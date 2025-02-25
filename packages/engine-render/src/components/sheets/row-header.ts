@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,10 @@
 import type { Nullable } from '@univerjs/core';
 import type { IViewportInfo, Vector2 } from '../../basics/vector2';
 import type { UniverRenderingContext } from '../../context';
-import { SheetRowHeaderExtensionRegistry } from '../extension';
 import type { IRowsHeaderCfgParam, RowHeaderLayout } from './extensions/row-header-layout';
+import type { SpreadsheetSkeleton } from './sheet.render-skeleton';
+import { SheetRowHeaderExtensionRegistry } from '../extension';
 import { SpreadsheetHeader } from './sheet-component';
-import type { SpreadsheetSkeleton } from './sheet-skeleton';
 
 export class SpreadsheetRowHeader extends SpreadsheetHeader {
     override getDocuments() {
@@ -58,7 +58,7 @@ export class SpreadsheetRowHeader extends SpreadsheetHeader {
 
         const parentScale = this.getParentScale();
 
-        spreadsheetSkeleton.calculateSegment(bounds);
+        spreadsheetSkeleton.updateVisibleRange(bounds);
 
         const segment = spreadsheetSkeleton.rowColumnSegment;
 

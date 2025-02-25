@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,15 @@
 import type zhCN from './zh-CN';
 
 const locale: typeof zhCN = {
-    uiToolbar: {
+    ribbon: {
         start: '開始',
         insert: '插入',
         formulas: '公式',
         data: '資料',
         view: '視圖',
         others: '其他',
+        more: '更多',
     },
-    more: '更多',
     fontFamily: {
         TimesNewRoman: 'Times New Roman',
         Arial: 'Arial',
@@ -76,6 +76,9 @@ const locale: typeof zhCN = {
         cancel: '取消',
     },
     'global-shortcut': '全域快捷鍵',
+    'zoom-slider': {
+        resetTo: '恢復至',
+    },
 };
 
 export default locale;

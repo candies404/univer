@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 import { UnitAction } from '@univerjs/protocol';
 import { WorkbookCommentPermission, WorkbookCopyPermission, WorkbookCopySheetPermission, WorkbookCreateSheetPermission, WorkbookDeleteSheetPermission, WorkbookDuplicatePermission, WorkbookEditablePermission, WorkbookExportPermission, WorkbookHideSheetPermission, WorkbookManageCollaboratorPermission, WorkbookMoveSheetPermission, WorkbookPrintPermission, WorkbookRecoverHistoryPermission, WorkbookRenameSheetPermission, WorkbookSharePermission, WorkbookViewHistoryPermission, WorkbookViewPermission } from '../permission-point';
+import { WorkbookCreateProtectPermission } from '../permission-point/workbook/create-permission';
 
 export const getAllWorkbookPermissionPoint = () => [
     WorkbookEditablePermission,
@@ -35,6 +36,7 @@ export const getAllWorkbookPermissionPoint = () => [
     WorkbookCopySheetPermission,
     WorkbookViewHistoryPermission,
     WorkbookRecoverHistoryPermission,
+    WorkbookCreateProtectPermission,
 ];
 
 export const defaultWorkbookPermissionPoints = [
@@ -53,4 +55,7 @@ export const defaultWorkbookPermissionPoints = [
     UnitAction.Share,
     UnitAction.MoveSheet,
     UnitAction.CopySheet,
+    UnitAction.RecoverHistory,
+    UnitAction.ViewHistory,
+    UnitAction.CreatePermissionObject,
 ];

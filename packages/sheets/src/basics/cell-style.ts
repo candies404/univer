@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,12 @@
 import type { IBorderData, ICellData, IDocumentData, IKeyValue, IParagraph, IStyleData, ITextRun, ITextStyle, Nullable, Styles } from '@univerjs/core';
 import { normalizeTextRuns, Tools } from '@univerjs/core';
 
+/**
+ *
+ * @param styles
+ * @param oldVal
+ * @param newVal
+ */
 export function handleStyle(styles: Styles, oldVal: ICellData, newVal: ICellData) {
     // use null to clear style
     const oldStyle = styles.getStyleByCell(oldVal);
@@ -34,7 +40,16 @@ export function handleStyle(styles: Styles, oldVal: ICellData, newVal: ICellData
     const merge = mergeStyle(oldStyle, newVal.s ? (newVal.s as Nullable<IStyleData>) : null);
 
     // then remove null
-    merge && Tools.removeNull(merge);
+    if (merge) {
+        Tools.removeNull(merge);
+
+        // remove empty object
+        Object.entries(merge).forEach(([key, val]) => {
+            if (typeof val === 'object' && val !== null && Object.keys(val).length === 0) {
+                delete merge[key as keyof IStyleData];
+            }
+        });
+    }
 
     if (Tools.isEmptyObject(merge)) {
         delete oldVal.s;
@@ -56,19 +71,10 @@ export function handleStyle(styles: Styles, oldVal: ICellData, newVal: ICellData
 /**
  * Convert old style data for storage
  * @param style
+ * @param oldStyle
+ * @param newStyle
  */
 export function transformStyle(oldStyle: Nullable<IStyleData>, newStyle: Nullable<IStyleData>): Nullable<IStyleData> {
-    const backupStyle = transformNormalKey(oldStyle, newStyle);
-    return backupStyle;
-}
-/**
- * Convert old style normal key for storage
- * @param style
- */
-function transformNormalKey(
-    oldStyle: Nullable<IStyleData>,
-    newStyle: Nullable<IStyleData>
-): Nullable<IStyleData> {
     // If there is no newly set style, directly store the historical style
     if (!newStyle || !Object.keys(newStyle).length) {
         return oldStyle;
@@ -91,6 +97,8 @@ function transformNormalKey(
 /**
  * Convert old style border for storage
  * @param style
+ * @param oldBorders
+ * @param newBorders
  */
 function transformBorders(oldBorders: IBorderData, newBorders: Nullable<IBorderData>): IBorderData {
     // If there is no newly set border, directly store the historical border
@@ -113,6 +121,7 @@ function transformBorders(oldBorders: IBorderData, newBorders: Nullable<IBorderD
  * merge new style to old style
  * @param oldStyle
  * @param newStyle
+ * @param isRichText
  */
 function mergeStyle(
     oldStyle: Nullable<IStyleData>,
@@ -125,9 +134,10 @@ function mergeStyle(
     if (newStyle === undefined) return oldStyle;
 
     const backupStyle: Record<string, any> = Tools.deepClone(oldStyle) || {};
-    if (!backupStyle) return;
+
     for (const k in newStyle) {
-        if (isRichText && ['bd', 'tr', 'td', 'ht', 'vt', 'tb', 'pd'].includes(k)) {
+        // Do not copy cell background color to rich text background color.
+        if (isRichText && ['bd', 'tr', 'td', 'ht', 'vt', 'tb', 'pd', 'bg'].includes(k)) {
             continue;
         }
         // you can only choose one of the themeColor and rgbColor of the border setting
@@ -155,6 +165,11 @@ function mergeStyle(
     return backupStyle;
 }
 
+/**
+ *
+ * @param paragraphs
+ * @param offset
+ */
 function skipParagraphs(paragraphs: IParagraph[], offset: number): number {
     if (paragraphs.some((p) => p.startIndex === offset)) {
         return skipParagraphs(paragraphs, offset + 1);

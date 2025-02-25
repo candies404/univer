@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,19 @@
  */
 
 import type { ICellData, IRange, Nullable } from '@univerjs/core';
-import { CellValueType, isNullCell, moveRangeByOffset } from '@univerjs/core';
-
-import { FormulaAstLRU } from '../../basics/cache-lru';
 import type { IRuntimeUnitDataType, IUnitData, IUnitSheetNameMap, IUnitStylesData } from '../../basics/common';
+
+import type { BaseValueObject, IArrayValueObject } from '../value-object/base-value-object';
+import { CellValueType, moveRangeByOffset } from '@univerjs/core';
+import { isTextFormat } from '@univerjs/engine-numfmt';
+import { FormulaAstLRU } from '../../basics/cache-lru';
 import { ERROR_TYPE_SET, ErrorType } from '../../basics/error-type';
+import { isNullCellForFormula } from '../../basics/is-null-cell';
 import { ObjectClassType } from '../../basics/object-class-type';
+import { getCellValue } from '../utils/cell';
+import { getRuntimeFeatureCell } from '../utils/get-runtime-feature-cell';
 import { ArrayValueObject, ValueObjectFactory } from '../value-object/array-value-object';
-import { type BaseValueObject, ErrorValueObject, type IArrayValueObject } from '../value-object/base-value-object';
+import { ErrorValueObject } from '../value-object/base-value-object';
 import {
     createBooleanValueObjectByRawValue,
     createNumberValueObjectByRawValue,
@@ -30,13 +35,12 @@ import {
     NumberValueObject,
     StringValueObject,
 } from '../value-object/primitive-object';
-import { getCellValue } from '../utils/cell';
 
 export type NodeValueType = BaseValueObject | BaseReferenceObject | AsyncObject | AsyncArrayObject;
 
 export type FunctionVariantType = BaseValueObject | BaseReferenceObject;
 
-const FORMULA_CACHE_LRU_COUNT = 100000;
+const FORMULA_CACHE_LRU_COUNT = 10000;
 
 export const FORMULA_REF_TO_ARRAY_CACHE = new FormulaAstLRU<ArrayValueObject>(FORMULA_CACHE_LRU_COUNT);
 export class BaseReferenceObject extends ObjectClassType {
@@ -134,6 +138,7 @@ export class BaseReferenceObject extends ObjectClassType {
         }
 
         return {
+            ...this._rangeData,
             startRow,
             endRow,
             startColumn,
@@ -163,9 +168,9 @@ export class BaseReferenceObject extends ObjectClassType {
                     return callback(ErrorValueObject.create(ErrorType.REF), r, c);
                 }
 
-                const cell = this.getCellData(r, c);
+                const cell = this.getCellData(r, c)!;
                 let result: Nullable<boolean> = false;
-                if (isNullCell(cell)) {
+                if (isNullCellForFormula(cell)) {
                     result = callback(null, r, c);
                     continue;
                 }
@@ -399,6 +404,11 @@ export class BaseReferenceObject extends ObjectClassType {
 
         if (cell.t === CellValueType.NUMBER) {
             const pattern = this._getPatternByCell(cell);
+
+            if (isTextFormat(pattern)) {
+                return StringValueObject.create(value.toString());
+            }
+
             return createNumberValueObjectByRawValue(value, pattern);
         }
         if (cell.t === CellValueType.STRING || cell.t === CellValueType.FORCE_STRING) {
@@ -468,26 +478,12 @@ export class BaseReferenceObject extends ObjectClassType {
     }
 
     getRuntimeFeatureCellValue(row: number, column: number) {
-        const featureKeys = Object.keys(this._runtimeFeatureCellData);
-
-        for (const featureId of featureKeys) {
-            const data = this._runtimeFeatureCellData[featureId];
-            const runtimeFeatureCellData = data?.[this.getUnitId()]?.[this.getSheetId()];
-            if (runtimeFeatureCellData == null) {
-                continue;
-            }
-
-            const value = runtimeFeatureCellData.getValue(row, column);
-
-            if (value == null) {
-                continue;
-            }
-
-            return value;
-        }
+        return getRuntimeFeatureCell(row, column, this.getSheetId(), this.getUnitId(), this._runtimeFeatureCellData);
     }
 
-    getCellByPosition(row?: number, column?: number) {
+    getCellByPosition(rowRaw?: number, columnRaw?: number) {
+        let row = rowRaw;
+        let column = columnRaw;
         if (!row) {
             row = this._rangeData.startRow;
         }

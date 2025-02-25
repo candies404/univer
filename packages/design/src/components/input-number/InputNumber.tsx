@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import type { InputNumberProps } from 'rc-input-number';
 import RcInputNumber from 'rc-input-number';
 import React, { forwardRef } from 'react';
 
@@ -70,6 +71,18 @@ export interface IInputNumberProps {
     onClick?: (e: React.MouseEvent<HTMLInputElement>) => void;
 
     /**
+     * Callback when user focus
+     * @param e
+     */
+    onFocus?: (e: React.FocusEvent<HTMLInputElement>) => void;
+
+    /**
+     * Callback when user blur
+     * @param e
+     */
+    onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void;
+
+    /**
      * Callback when user press a key
      * @param e
      */
@@ -85,7 +98,7 @@ export interface IInputNumberProps {
      * Callback when user press enter
      * @param e
      */
-    onPressEnter?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+    onPressEnter?: InputNumberProps['onPressEnter'];
 }
 
 export const InputNumber = forwardRef<HTMLInputElement, IInputNumberProps>((props, ref) => {
@@ -102,6 +115,8 @@ export const InputNumber = forwardRef<HTMLInputElement, IInputNumberProps>((prop
         onKeyDown,
         onChange,
         onPressEnter,
+        onBlur,
+        onFocus,
     } = props;
 
     function handleChange(value: number | null) {
@@ -112,6 +127,7 @@ export const InputNumber = forwardRef<HTMLInputElement, IInputNumberProps>((prop
 
     return (
         <RcInputNumber
+            ref={ref}
             prefixCls={styles.inputNumber}
             className={className}
             value={value}
@@ -125,7 +141,8 @@ export const InputNumber = forwardRef<HTMLInputElement, IInputNumberProps>((prop
             onKeyDown={onKeyDown}
             onChange={handleChange}
             onPressEnter={onPressEnter}
-            ref={ref}
+            onFocus={onFocus}
+            onBlur={onBlur}
         />
     );
 });

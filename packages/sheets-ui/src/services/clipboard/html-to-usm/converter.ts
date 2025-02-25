@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,22 +14,23 @@
  * limitations under the License.
  */
 
-import type { IDocumentBody, IDocumentData, ITextRun, ITextStyle, Nullable } from '@univerjs/core';
-import { ObjectMatrix, skipParseTagNames } from '@univerjs/core';
-import { handleStringToStyle, textTrim } from '@univerjs/ui';
+/* eslint-disable complexity */
 
-import type { IPastePlugin } from '@univerjs/docs-ui';
+import type { ICustomRange, IDocumentBody, IDocumentData, ITextRun, ITextStyle, Nullable } from '@univerjs/core';
 import type { SpreadsheetSkeleton } from '@univerjs/engine-render';
 import type { ISheetSkeletonManagerParam } from '../../sheet-skeleton-manager.service';
+
 import type {
     ICellDataWithSpanInfo,
     IClipboardPropertyItem,
     IParsedCellValueByClipboard,
     IUniverSheetCopyDataModel,
 } from '../type';
+import type { IAfterProcessRule, IPastePlugin } from './paste-plugins/type';
+import { CustomRangeType, DEFAULT_WORKSHEET_ROW_HEIGHT, generateRandomId, ObjectMatrix, skipParseTagNames } from '@univerjs/core';
+import { handleStringToStyle, textTrim } from '@univerjs/ui';
 import { extractNodeStyle } from './parse-node-style';
-import type { IAfterProcessRule } from './paste-plugins/type';
-import parseToDom, { generateParagraphs } from './utils';
+import parseToDom, { convertToCellStyle, generateParagraphs } from './utils';
 
 export interface IStyleRule {
     filter: string | string[] | ((node: HTMLElement) => boolean);
@@ -82,14 +83,14 @@ interface IHtmlToUSMServiceProps {
 }
 
 export class HtmlToUSMService {
-    private static pluginList: IPastePlugin[] = [];
+    private static _pluginList: IPastePlugin[] = [];
 
     static use(plugin: IPastePlugin) {
-        if (this.pluginList.includes(plugin)) {
+        if (this._pluginList.includes(plugin)) {
             throw new Error(`Univer paste plugin ${plugin.name} already added`);
         }
 
-        this.pluginList.push(plugin);
+        this._pluginList.push(plugin);
     }
 
     private _styleMap = new Map<string, CSSStyleDeclaration>();
@@ -110,7 +111,7 @@ export class HtmlToUSMService {
 
     // eslint-disable-next-line max-lines-per-function
     convert(html: string): IUniverSheetCopyDataModel {
-        const pastePlugin = HtmlToUSMService.pluginList.find((plugin) => plugin.checkPasteType(html));
+        const pastePlugin = HtmlToUSMService._pluginList.find((plugin) => plugin.checkPasteType(html));
         if (pastePlugin) {
             this._styleRules = [...pastePlugin.stylesRules];
             this._afterProcessRules = [...pastePlugin.afterProcessRules];
@@ -144,8 +145,7 @@ export class HtmlToUSMService {
         const tableStrings = html.match(/<table\b[^>]*>([\s\S]*?)<\/table>/gi);
         const tables: IParsedTablesInfo[] = [];
         this.process(null, this._dom.childNodes!, newDocBody, tables);
-        const { paragraphs, dataStream, textRuns, payloads } = newDocBody;
-
+        const { paragraphs, dataStream, textRuns, payloads, customRanges } = newDocBody;
         // use paragraph to split rows
         if (paragraphs) {
             const starts = paragraphs.map((p) => p.startIndex + 1);
@@ -170,12 +170,23 @@ export class HtmlToUSMService {
                         });
                     }
                 });
+                const cellCustomRanges: ICustomRange[] = [];
+                customRanges?.forEach((c) => {
+                    if (c.startIndex >= starts[i] && c.endIndex <= starts[i + 1]) {
+                        cellCustomRanges.push({
+                            ...c,
+                            startIndex: c.startIndex - starts[i],
+                            endIndex: c.endIndex - starts[i],
+                        });
+                    }
+                });
                 // set rich format
                 const p = this._generateDocumentDataModelSnapshot({
                     body: {
                         dataStream: cellDataStream,
                         textRuns: cellTextRuns,
                         paragraphs: generateParagraphs(cellDataStream),
+                        customRanges: cellCustomRanges,
                     },
                 });
                 const isEmptyMatrix = Object.keys(valueMatrix.getMatrix()).length === 0;
@@ -193,22 +204,16 @@ export class HtmlToUSMService {
                     textRuns,
                     paragraphs: generateParagraphs(singleDataStream),
                     payloads,
+                    customRanges,
                 };
 
-                const dataStreamLength = dataStream.length;
-                const textRunsLength = textRuns?.length ?? 0;
-                if (!textRunsLength || (textRunsLength === 1 && textRuns![0].st === 0 && textRuns![0].ed === dataStreamLength)) {
-                    valueMatrix.setValue(0, 0, {
-                        v: dataStream,
-                    });
+                if (!customRanges?.length) {
+                    valueMatrix.setValue(0, 0, convertToCellStyle({ v: dataStream }, dataStream, textRuns));
                 } else {
                     const p = this._generateDocumentDataModelSnapshot({
                         body: singleDocBody,
                     });
-                    valueMatrix.setValue(0, 0, {
-                        v: dataStream,
-                        p,
-                    });
+                    valueMatrix.setValue(0, 0, convertToCellStyle({ v: dataStream, p }, dataStream, textRuns));
                 }
 
                 rowProperties.push({}); // TODO@yuhongz
@@ -245,7 +250,6 @@ export class HtmlToUSMService {
         return css;
     }
 
-    // eslint-disable-next-line complexity
     private _getStyle(node: HTMLElement, styleStr: string) {
         const recordStyle: Record<string, string> = turnToStyleObject(styleStr);
         const style = node.style;
@@ -443,6 +447,12 @@ export class HtmlToUSMService {
                 }
             } else if (node.nodeType === Node.COMMENT_NODE || node.nodeName === 'STYLE') {
                 continue;
+            } else if (node.nodeName.toLowerCase() === 'br') {
+                if (!doc.paragraphs) {
+                    doc.paragraphs = [];
+                }
+                doc.paragraphs.push({ startIndex: doc.dataStream.length });
+                doc.dataStream += '\r';
             } else if (node.nodeType === Node.ELEMENT_NODE) {
                 const currentNodeStyle = this._getStyle(node as HTMLElement, styleStr);
                 const parentStyles = parent ? styleCache.get(parent) : {};
@@ -504,7 +514,6 @@ export class HtmlToUSMService {
         return documentModel?.getSnapshot();
     }
 
-    // eslint-disable-next-line max-lines-per-function
     private process(
         parent: Nullable<ChildNode>,
         nodes: NodeListOf<ChildNode>,
@@ -533,24 +542,6 @@ export class HtmlToUSMService {
                     textRuns: [],
                 };
 
-                // if ((parent as Element).tagName.toUpperCase() === 'A') {
-                //     const id = Tools.generateRandomId();
-                //     text = `${DataStreamTreeTokenType.CUSTOM_RANGE_START}${text}${DataStreamTreeTokenType.CUSTOM_RANGE_END}`;
-                //     doc.customRanges = [
-                //         ...(doc.customRanges ?? []),
-                //         {
-                //             startIndex: doc.dataStream.length,
-                //             endIndex: doc.dataStream.length + text.length - 1,
-                //             rangeId: id,
-                //             rangeType: CustomRangeType.HYPERLINK,
-                //         },
-                //     ];
-                //     doc.payloads = {
-                //         ...doc.payloads,
-                //         [id]: (parent as HTMLAnchorElement).href,
-                //     };
-                // }
-
                 doc.dataStream += text;
                 newDoc.dataStream += text;
                 if (style && Object.getOwnPropertyNames(style).length) {
@@ -567,10 +558,18 @@ export class HtmlToUSMService {
                 }
             } else if (skipParseTagNames.includes(node.nodeName.toLowerCase())) {
                 continue;
+            } else if (node.nodeName.toLowerCase() === 'br') {
+                if (!doc.paragraphs) {
+                    doc.paragraphs = [];
+                }
+                doc.paragraphs.push({ startIndex: doc.dataStream.length });
+                doc.dataStream += '\r';
             } else if (node.nodeType === Node.ELEMENT_NODE) {
                 if (node.nodeName === 'STYLE') {
                     continue;
                 }
+                const element = node as HTMLElement;
+                const linkStart = this._processBeforeLink(element, { body: doc });
                 const parentStyles = parent ? this._styleCache.get(parent) : {};
                 const styleRule = this._styleRules.find(({ filter }) => matchFilter(node as HTMLElement, filter));
                 const nodeStyles = styleRule
@@ -590,7 +589,29 @@ export class HtmlToUSMService {
                 if (afterProcessRule) {
                     afterProcessRule.handler(doc, node as HTMLElement);
                 }
+                this._processAfterLink(element, { body: doc }, linkStart);
             }
+        }
+    }
+
+    private _processBeforeLink(node: HTMLElement, doc: Partial<IDocumentData>) {
+        const body = doc.body!;
+        return body.dataStream.length;
+    }
+
+    private _processAfterLink(node: HTMLElement, doc: Partial<IDocumentData>, start: number) {
+        const body = doc.body!;
+        const element = node as HTMLElement;
+
+        if (element.tagName.toUpperCase() === 'A') {
+            body.customRanges = body.customRanges ?? [];
+            body.customRanges.push({
+                startIndex: start,
+                endIndex: body.dataStream.length - 1,
+                rangeId: element.dataset.rangeid ?? generateRandomId(),
+                rangeType: CustomRangeType.HYPERLINK,
+                properties: { url: (element as HTMLAnchorElement).href },
+            });
         }
     }
 
@@ -606,7 +627,7 @@ export class HtmlToUSMService {
  * @param html raw content
  * @returns
  */
-function parseTableRows(html: string): {
+export function parseTableRows(html: string): {
     rowProperties: IClipboardPropertyItem[];
     rowCount: number;
 } {
@@ -620,7 +641,14 @@ function parseTableRows(html: string): {
     }
 
     const rowMatchesAsArray = Array.from(rowMatches);
-    const rowProperties = rowMatchesAsArray.map((rowMatch) => parseProperties(rowMatch[1]));
+    const rowProperties = rowMatchesAsArray.map((rowMatch) => parseProperties(rowMatch[1])).map((properties) => {
+        if (!properties.height) {
+            const style = properties.style;
+            const match = style && style.match(/height\s*:\s*(\d+(\.\d+)?)px/);
+            properties.height = `${match ? Number.parseInt(match[1], 10) : DEFAULT_WORKSHEET_ROW_HEIGHT}`;
+        }
+        return properties;
+    });
 
     return {
         rowProperties,
@@ -679,7 +707,23 @@ function parseColGroup(raw: string): IClipboardPropertyItem[] | null {
         return null;
     }
 
-    return Array.from(colMatches).map((colMatch) => parseProperties(colMatch[1]));
+    const colPropertiesWithSpan = Array.from(colMatches).map((colMatch) => parseProperties(colMatch[1]));
+
+    const colProperties: IClipboardPropertyItem[] = [];
+    colPropertiesWithSpan.forEach((propertiesWithSpan) => {
+        const span = Number(propertiesWithSpan.span);
+        if (span) {
+            for (let i = 0; i < span; i++) {
+                const propertiesWithoutSpan = { ...propertiesWithSpan };
+                delete propertiesWithoutSpan.span;
+                colProperties.push(propertiesWithoutSpan);
+            }
+        } else {
+            colProperties.push(propertiesWithSpan);
+        }
+    });
+
+    return colProperties;
 }
 
 function childNodeToHTML(node: ChildNode) {

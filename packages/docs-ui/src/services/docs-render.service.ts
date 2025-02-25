@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-import type { DocumentDataModel } from '@univerjs/core';
-import { IUniverInstanceService, LifecycleStages, OnLifecycle, RxDisposable, UniverInstanceType } from '@univerjs/core';
+import type { DocumentDataModel, Workbook } from '@univerjs/core';
+import { IUniverInstanceService, RxDisposable, UniverInstanceType } from '@univerjs/core';
 import { IRenderManagerService } from '@univerjs/engine-render';
 import { takeUntil } from 'rxjs';
 
-@OnLifecycle(LifecycleStages.Ready, DocsRenderService)
+const DOC_MAIN_CANVAS_ID = 'univer-doc-main-canvas';
+
 export class DocsRenderService extends RxDisposable {
     constructor(
         @IUniverInstanceService private readonly _instanceSrv: IUniverInstanceService,
@@ -35,11 +36,12 @@ export class DocsRenderService extends RxDisposable {
             .pipe(takeUntil(this.dispose$))
             .subscribe((unitId) => this._createRenderWithId(unitId));
 
+        this._instanceSrv.getAllUnitsForType<DocumentDataModel>(UniverInstanceType.UNIVER_DOC)
+            .forEach((documentModel) => this._createRenderer(documentModel));
+
         this._instanceSrv.getTypeOfUnitAdded$<DocumentDataModel>(UniverInstanceType.UNIVER_DOC)
             .pipe(takeUntil(this.dispose$))
             .subscribe((doc) => this._createRenderer(doc));
-        this._instanceSrv.getAllUnitsForType<DocumentDataModel>(UniverInstanceType.UNIVER_DOC)
-            .forEach((documentModel) => this._createRenderer(documentModel));
 
         this._instanceSrv.getTypeOfUnitDisposed$<DocumentDataModel>(UniverInstanceType.UNIVER_DOC)
             .pipe(takeUntil(this.dispose$))
@@ -48,7 +50,13 @@ export class DocsRenderService extends RxDisposable {
 
     private _createRenderer(doc: DocumentDataModel) {
         const unitId = doc.getUnitId();
-
+        const workbookId = this._instanceSrv.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_DOC)?.getUnitId();
+        this._renderManagerService.created$.subscribe((renderer) => {
+            if (renderer.unitId === workbookId) {
+                renderer.engine.getCanvas().setId(DOC_MAIN_CANVAS_ID);
+                renderer.engine.getCanvas().getContext().setId(DOC_MAIN_CANVAS_ID);
+            }
+        });
         if (!this._renderManagerService.has(unitId)) {
             this._createRenderWithId(unitId);
 

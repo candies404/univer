@@ -12,7 +12,6 @@
         },
 
         "build": {
-            "cache": false
         },
 
         "build:e2e": {},
@@ -21,8 +20,6 @@
             "cache": false
         },
 
-        "lint:types": {},
-
-        "sync:cnpm": {}
+        "lint:types": {}
     }
 }

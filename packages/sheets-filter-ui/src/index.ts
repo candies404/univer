@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,23 +14,19 @@
  * limitations under the License.
  */
 
-export { UniverSheetsFilterUIPlugin } from './plugin';
-export { UniverSheetsFilterMobileUIPlugin } from './mobile-plugin';
+import './global.css';
+
+export { UniverSheetsFilterUIPlugin } from './filter-ui-desktop.plugin';
+export { UniverSheetsFilterMobileUIPlugin } from './filter-ui-mobile.plugin';
 export { UniverSheetsFilterUIWorkerPlugin } from './worker/plugin';
 
 // #region - all commands
 
 export {
-    SmartToggleSheetsFilterCommand,
-    SetSheetsFilterCriteriaCommand,
-    ClearSheetsFilterCriteriaCommand,
-    ReCalcSheetsFilterCommand,
-} from './commands/commands/sheets-filter.command';
-export {
-    OpenFilterPanelOperation,
-    CloseFilterPanelOperation,
     ChangeFilterByOperation,
+    CloseFilterPanelOperation,
     type IOpenFilterPanelOperationParams,
+    OpenFilterPanelOperation,
 } from './commands/operations/sheets-filter.operation';
 
 // #endregion

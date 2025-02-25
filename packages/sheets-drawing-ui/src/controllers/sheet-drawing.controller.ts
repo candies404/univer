@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,50 +14,39 @@
  * limitations under the License.
  */
 
-import type { DependencyOverride } from '@univerjs/core';
-import { Disposable, ICommandService, Inject, Injector, LifecycleStages, OnLifecycle } from '@univerjs/core';
-import type { MenuConfig } from '@univerjs/ui';
-import { ComponentManager, IMenuService, IShortcutService } from '@univerjs/ui';
+import { Disposable, ICommandService, Inject } from '@univerjs/core';
+import { IDrawingManagerService } from '@univerjs/drawing';
 
 import { AddImageSingle } from '@univerjs/icons';
-import { UploadFileMenu } from '../views/upload-component/UploadFile';
-import { COMPONENT_UPLOAD_FILE_MENU } from '../views/upload-component/component-name';
-import { IMAGE_UPLOAD_ICON, ImageMenuFactory, UploadFloatImageMenuFactory } from '../views/menu/image.menu';
-import { InsertCellImageOperation, InsertFloatImageOperation } from '../commands/operations/insert-image.operation';
+import { SheetsSelectionsService } from '@univerjs/sheets';
+import { ComponentManager, IMenuManagerService, IShortcutService } from '@univerjs/ui';
+import { DeleteDrawingsCommand } from '../commands/commands/delete-drawings.command';
+import { GroupSheetDrawingCommand } from '../commands/commands/group-sheet-drawing.command';
+import { InsertCellImageCommand, InsertFloatImageCommand } from '../commands/commands/insert-image.command';
 import { InsertSheetDrawingCommand } from '../commands/commands/insert-sheet-drawing.command';
-import { RemoveSheetDrawingCommand } from '../commands/commands/remove-sheet-drawing.command';
-import { SetSheetDrawingCommand } from '../commands/commands/set-sheet-drawing.command';
-import { COMPONENT_SHEET_DRAWING_PANEL } from '../views/sheet-image-panel/component-name';
-import { SheetDrawingPanel } from '../views/sheet-image-panel/SheetDrawingPanel';
+import { MoveDrawingsCommand } from '../commands/commands/move-drawings.command';
 
+import { RemoveSheetDrawingCommand } from '../commands/commands/remove-sheet-drawing.command';
+import { SetDrawingArrangeCommand } from '../commands/commands/set-drawing-arrange.command';
+import { SetSheetDrawingCommand } from '../commands/commands/set-sheet-drawing.command';
+import { UngroupSheetDrawingCommand } from '../commands/commands/ungroup-sheet-drawing.command';
 import { ClearSheetDrawingTransformerOperation } from '../commands/operations/clear-drawing-transformer.operation';
 import { EditSheetDrawingOperation } from '../commands/operations/edit-sheet-drawing.operation';
-import { GroupSheetDrawingCommand } from '../commands/commands/group-sheet-drawing.command';
-import { UngroupSheetDrawingCommand } from '../commands/commands/ungroup-sheet-drawing.command';
 import { SidebarSheetDrawingOperation } from '../commands/operations/open-drawing-panel.operation';
-import { MoveDrawingsCommand } from '../commands/commands/move-drawings.command';
-import { DeleteDrawingsCommand } from '../commands/commands/delete-drawings.command';
-import { SetDrawingArrangeCommand } from '../commands/commands/set-drawing-arrange.command';
+import { IMAGE_UPLOAD_ICON } from '../views/menu/image.menu';
+import { COMPONENT_SHEET_DRAWING_PANEL } from '../views/sheet-image-panel/component-name';
+import { SheetDrawingPanel } from '../views/sheet-image-panel/SheetDrawingPanel';
+import { menuSchema } from './menu.schema';
 import { DeleteDrawingsShortcutItem, MoveDrawingDownShortcutItem, MoveDrawingLeftShortcutItem, MoveDrawingRightShortcutItem, MoveDrawingUpShortcutItem } from './shortcuts/drawing.shortcut';
 
-export interface IUniverSheetsDrawingConfig {
-    menu?: MenuConfig;
-    overrides?: DependencyOverride;
-}
-
-export const DefaultSheetsDrawingConfig: IUniverSheetsDrawingConfig = {
-
-};
-
-@OnLifecycle(LifecycleStages.Rendered, SheetDrawingUIController)
 export class SheetDrawingUIController extends Disposable {
     constructor(
-        private readonly _config: Partial<IUniverSheetsDrawingConfig>,
-        @Inject(Injector) private readonly _injector: Injector,
         @Inject(ComponentManager) private readonly _componentManager: ComponentManager,
-        @IMenuService private readonly _menuService: IMenuService,
+        @IMenuManagerService private readonly _menuManagerService: IMenuManagerService,
         @ICommandService private readonly _commandService: ICommandService,
-        @IShortcutService private readonly _shortcutService: IShortcutService
+        @IShortcutService private readonly _shortcutService: IShortcutService,
+        @IDrawingManagerService private readonly _drawingManagerService: IDrawingManagerService,
+        @Inject(SheetsSelectionsService) private readonly _sheetsSelectionsService: SheetsSelectionsService
     ) {
         super();
 
@@ -67,26 +56,17 @@ export class SheetDrawingUIController extends Disposable {
     private _initCustomComponents(): void {
         const componentManager = this._componentManager;
         this.disposeWithMe(componentManager.register(IMAGE_UPLOAD_ICON, AddImageSingle));
-        this.disposeWithMe(componentManager.register(COMPONENT_UPLOAD_FILE_MENU, UploadFileMenu));
         this.disposeWithMe(componentManager.register(COMPONENT_SHEET_DRAWING_PANEL, SheetDrawingPanel));
     }
 
     private _initMenus(): void {
-        const { menu = {} } = this._config;
-        // init menus
-        [
-            ImageMenuFactory,
-            UploadFloatImageMenuFactory,
-            // UploadCellImageMenuFactory,
-        ].forEach((menuFactory) => {
-            this._menuService.addMenuItem(menuFactory(this._injector), menu);
-        });
+        this._menuManagerService.mergeMenu(menuSchema);
     }
 
     private _initCommands() {
         [
-            InsertFloatImageOperation,
-            InsertCellImageOperation,
+            InsertFloatImageCommand,
+            InsertCellImageCommand,
             InsertSheetDrawingCommand,
             RemoveSheetDrawingCommand,
             SetSheetDrawingCommand,

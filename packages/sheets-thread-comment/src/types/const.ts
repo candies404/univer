@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,4 @@
  * limitations under the License.
  */
 
-export const SHEETS_THREAD_COMMENT_MODAL = 'univer.sheet.thread-comment-modal';
-export const COMMENT_SINGLE_ICON = 'comment-single';
-export const SHEETS_THREAD_COMMENT = 'SHEET_THREAD_COMMENT';
+export const SHEET_THREAD_COMMENT_BASE = 'SHEET_THREAD_COMMENT_BASE_PLUGIN';

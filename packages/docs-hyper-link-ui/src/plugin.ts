@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,18 +14,18 @@
  * limitations under the License.
  */
 
-import { DependentOn, Inject, Injector, Plugin, UniverInstanceType } from '@univerjs/core';
 import type { Dependency } from '@univerjs/core';
+import type { IUniverDocsHyperLinkUIConfig } from './controllers/config.schema';
+import { DependentOn, IConfigService, Inject, Injector, merge, Plugin, UniverInstanceType } from '@univerjs/core';
 import { UniverDocsHyperLinkPlugin } from '@univerjs/docs-hyper-link';
 import { IRenderManagerService } from '@univerjs/engine-render';
-import { DOC_HYPER_LINK_UI_PLUGIN } from './types/const';
-import type { IDocHyperLinkUIConfig } from './controllers/ui.controller';
+import { defaultPluginConfig, DOCS_HYPER_LINK_UI_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
+import { DocHyperLinkSelectionController } from './controllers/doc-hyper-link-selection.controller';
+import { DocHyperLinkEventRenderController } from './controllers/render-controllers/hyper-link-event.render-controller';
+import { DocHyperLinkRenderController } from './controllers/render-controllers/render.controller';
 import { DocHyperLinkUIController } from './controllers/ui.controller';
 import { DocHyperLinkPopupService } from './services/hyper-link-popup.service';
-import { DocHyperLinkSelectionController } from './controllers/doc-hyper-link-selection.controller';
-import { DocHyperLinkRenderController } from './controllers/render-controllers/render.controller';
-import { DocHyperLinkClipboardController } from './controllers/doc-hyper-link-clipboard.controller';
-import { DocHyperLinkCustomRangeController } from './controllers/doc-hyper-link-custom-range.controller';
+import { DOC_HYPER_LINK_UI_PLUGIN } from './types/const';
 
 @DependentOn(UniverDocsHyperLinkPlugin)
 export class UniverDocsHyperLinkUIPlugin extends Plugin {
@@ -33,29 +33,40 @@ export class UniverDocsHyperLinkUIPlugin extends Plugin {
     static override type = UniverInstanceType.UNIVER_DOC;
 
     constructor(
-        private _config: IDocHyperLinkUIConfig = { menu: {} },
+        private readonly _config: Partial<IUniverDocsHyperLinkUIConfig> = defaultPluginConfig,
         @Inject(Injector) protected override _injector: Injector,
-        @IRenderManagerService private readonly _renderManagerSrv: IRenderManagerService
+        @IRenderManagerService private readonly _renderManagerSrv: IRenderManagerService,
+        @IConfigService private readonly _configService: IConfigService
     ) {
         super();
+
+        // Manage the plugin configuration.
+        const { menu, ...rest } = merge(
+            {},
+            defaultPluginConfig,
+            this._config
+        );
+        if (menu) {
+            this._configService.setConfig('menu', menu, { merge: true });
+        }
+        this._configService.setConfig(DOCS_HYPER_LINK_UI_PLUGIN_CONFIG_KEY, rest);
     }
 
     override onStarting(): void {
         const deps: Dependency[] = [
             [DocHyperLinkPopupService],
-            [DocHyperLinkUIController,
-                {
-                    useFactory: () => this._injector.createInstance(DocHyperLinkUIController, this._config),
-                },
-            ],
+            [DocHyperLinkUIController],
             [DocHyperLinkSelectionController],
-            [DocHyperLinkClipboardController],
-            [DocHyperLinkCustomRangeController],
         ];
-
         deps.forEach((dep) => {
             this._injector.add(dep);
         });
+
+        this._injector.get(DocHyperLinkUIController);
+    }
+
+    override onReady(): void {
+        this._injector.get(DocHyperLinkSelectionController);
     }
 
     override onRendered(): void {
@@ -63,8 +74,11 @@ export class UniverDocsHyperLinkUIPlugin extends Plugin {
     }
 
     private _initRenderModule() {
-        [DocHyperLinkRenderController].forEach((dep) => {
-            this._renderManagerSrv.registerRenderModule(UniverInstanceType.UNIVER_DOC, dep as unknown as Dependency);
+        ([
+            [DocHyperLinkRenderController],
+            [DocHyperLinkEventRenderController],
+        ] as Dependency[]).forEach((dep) => {
+            this._renderManagerSrv.registerRenderModule(UniverInstanceType.UNIVER_DOC, dep);
         });
     }
 }

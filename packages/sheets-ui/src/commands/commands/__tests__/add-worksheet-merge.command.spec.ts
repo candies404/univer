@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,10 +28,12 @@ import {
     AddWorksheetMergeMutation,
     InsertColAfterCommand,
     InsertColBeforeCommand,
+    InsertColByRangeCommand,
     InsertColCommand,
     InsertColMutation,
     InsertRowAfterCommand,
     InsertRowBeforeCommand,
+    InsertRowByRangeCommand,
     InsertRowCommand,
     InsertRowMutation,
     MergeCellController,
@@ -39,8 +41,10 @@ import {
     MoveColsMutation,
     MoveRangeMutation,
     RefRangeService,
+    RemoveColByRangeCommand,
     RemoveColCommand,
     RemoveColMutation,
+    RemoveRowByRangeCommand,
     RemoveRowCommand,
     RemoveRowMutation,
     RemoveWorksheetMergeCommand,
@@ -53,6 +57,7 @@ import { type IConfirmPartMethodOptions, IConfirmService } from '@univerjs/ui';
 import { Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { getClearContentMutationParamForRange } from '../../../common/utils';
 import {
     AddWorksheetMergeAllCommand,
     AddWorksheetMergeCommand,
@@ -107,6 +112,15 @@ describe('Test add worksheet merge commands', () => {
         commandService.registerCommand(RemoveWorksheetMergeMutation);
 
         [
+            RemoveColByRangeCommand,
+            RemoveRowByRangeCommand,
+            InsertRowByRangeCommand,
+            InsertColByRangeCommand,
+        ].forEach((command) => {
+            commandService.registerCommand(command);
+        });
+
+        [
             InsertRowCommand,
             InsertRowBeforeCommand,
             InsertRowAfterCommand,
@@ -158,7 +172,8 @@ describe('Test add worksheet merge commands', () => {
                     return get(IUniverInstanceService)
                         .getUniverSheetInstance('test')
                         ?.getSheetBySheetId('sheet1')
-                        ?.getConfig().mergeData;
+                        ?.getConfig()
+                        .mergeData;
                 }
 
                 expect(getMerge()?.length).toBe(0);
@@ -204,7 +219,8 @@ describe('Test add worksheet merge commands', () => {
                     return get(IUniverInstanceService)
                         .getUniverSheetInstance('test')
                         ?.getSheetBySheetId('sheet1')
-                        ?.getConfig().mergeData;
+                        ?.getConfig()
+                        .mergeData;
                 }
 
                 expect(getMerge()?.length).toBe(0);
@@ -248,7 +264,8 @@ describe('Test add worksheet merge commands', () => {
                     return get(IUniverInstanceService)
                         .getUniverSheetInstance('test')
                         ?.getSheetBySheetId('sheet1')
-                        ?.getConfig().mergeData;
+                        ?.getConfig()
+                        .mergeData;
                 }
 
                 expect(getMerge()?.length).toBe(0);
@@ -262,6 +279,59 @@ describe('Test add worksheet merge commands', () => {
             it('will not apply when there is no selected ranges', async () => {
                 const result = await commandService.executeCommand(AddWorksheetMergeHorizontalCommand.id);
                 expect(result).toBeFalsy();
+            });
+        });
+
+        describe('horizontal with other merge cell', () => {
+            it('test only the upper left conner has a value', async () => {
+                const selectionManager = get(SheetsSelectionsService);
+                selectionManager.addSelections([
+                    {
+                        range: { startRow: 10, startColumn: 2, endColumn: 2, endRow: 12, rangeType: RANGE_TYPE.NORMAL },
+                        primary: null,
+                        style: null,
+                    },
+                ]);
+
+                function getMerge(): IRange[] | undefined {
+                    return get(IUniverInstanceService)
+                        .getUniverSheetInstance('test')
+                        ?.getSheetBySheetId('sheet1')
+                        ?.getConfig()
+                        .mergeData;
+                }
+
+                expect(getMerge()?.length).toBe(0);
+                expect(await commandService.executeCommand(AddWorksheetMergeAllCommand.id)).toBeTruthy();
+                expect(getMerge()?.length).toBe(1);
+                commandService.executeCommand(SetRangeValuesMutation.id, {
+                    unitId: 'test',
+                    subUnitId: 'sheet1',
+                    cellValue: {
+                        10: {
+                            2: {
+                                v: 1234,
+                            },
+                        },
+                    },
+                });
+
+                selectionManager.clear();
+                selectionManager.addSelections([
+                    {
+                        range: { startRow: 10, startColumn: 1, endColumn: 2, endRow: 12, rangeType: RANGE_TYPE.NORMAL },
+                        primary: null,
+                        style: null,
+                    },
+                ]);
+                expect(await commandService.executeCommand(AddWorksheetMergeHorizontalCommand.id)).toBeTruthy();
+                expect(getMerge()?.length).toBe(3);
+
+                const worksheet = get(IUniverInstanceService).getUnit<Workbook>('test')?.getSheetBySheetId('sheet1');
+                if (worksheet) {
+                    expect(worksheet.getCellMatrix().getValue(10, 1)?.v).toBe(1234);
+                    expect(worksheet.getCellMatrix().getValue(10, 2)?.v).toBeUndefined();
+                }
             });
         });
     });
@@ -282,7 +352,8 @@ describe('Test add worksheet merge commands', () => {
                     return get(IUniverInstanceService)
                         .getUniverSheetInstance('test')
                         ?.getSheetBySheetId('sheet1')
-                        ?.getConfig().mergeData;
+                        ?.getConfig()
+                        .mergeData;
                 }
 
                 expect(getMerge()?.length).toBe(0);
@@ -303,6 +374,96 @@ describe('Test add worksheet merge commands', () => {
                 const result = await commandService.executeCommand(RemoveWorksheetMergeCommand.id);
                 expect(result).toBeFalsy();
             });
+        });
+    });
+
+    describe('merge cell with set cell data', () => {
+        it('test clear util', () => {
+            const commandService = get(ICommandService);
+            const univerInstanceService = get(IUniverInstanceService);
+            const workbook = univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+            const worksheet = workbook.getActiveSheet();
+            if (!worksheet) throw new Error('No active sheet found');
+
+            commandService.executeCommand(SetRangeValuesMutation.id, {
+                unitId: workbook.getUnitId(),
+                subUnitId: worksheet.getSheetId(),
+                cellValue: {
+                    2: {
+                        2: {
+                            p: {
+                                id: '__INTERNAL_EDITOR__DOCS_NORMAL',
+                                documentStyle: {
+                                    pageSize: {
+                                        width: 82.20805358886719,
+                                        height: null,
+                                    },
+                                    marginTop: 0,
+                                    marginBottom: 1,
+                                    marginRight: 2,
+                                    marginLeft: 2,
+                                    renderConfig: {
+                                        horizontalAlign: 0,
+                                        verticalAlign: 0,
+                                        centerAngle: 0,
+                                        vertexAngle: 0,
+                                        wrapStrategy: 0,
+                                    },
+                                },
+                                body: {
+                                    dataStream: 'hahaha\r\n',
+                                    textRuns: [
+                                        {
+                                            st: 3,
+                                            ed: 5,
+                                            ts: {
+                                                fs: 28,
+                                            },
+                                        },
+                                    ],
+                                    paragraphs: [
+                                        {
+                                            startIndex: 6,
+                                            paragraphStyle: {
+                                                horizontalAlign: 0,
+                                            },
+                                        },
+                                    ],
+                                    sectionBreaks: [
+                                        {
+                                            startIndex: 7,
+                                        },
+                                    ],
+                                    customRanges: [],
+                                    customDecorations: [],
+                                },
+                                drawings: {},
+                                drawingsOrder: [],
+                                settings: {
+                                    zoomRatio: 1,
+                                },
+                                resources: [
+                                    {
+                                        name: 'SHEET_THREAD_COMMENT_PLUGIN',
+                                        data: '{}',
+                                    },
+                                    {
+                                        name: 'SHEET_AuthzIoMockService_PLUGIN',
+                                        data: '{}',
+                                    },
+                                ],
+                            },
+                            v: null,
+                            f: null,
+                            si: null,
+                            custom: {},
+                        },
+                    },
+                },
+            });
+            const res = getClearContentMutationParamForRange(worksheet, { startRow: 0, startColumn: 2, endRow: 2, endColumn: 2 });
+            expect(res.getValue(0, 2)?.p).toBeTruthy();
+            expect(res.getValue(2, 2)).toBeNull();
         });
     });
 

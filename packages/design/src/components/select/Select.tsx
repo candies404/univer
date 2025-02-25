@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,11 @@
  */
 
 import { MoreDownSingle } from '@univerjs/icons';
-import RcSelect from 'rc-select';
-import React, { useContext } from 'react';
-
-import type { LabelInValueType } from 'rc-select/lib/Select';
 import clsx from 'clsx';
+import RcSelect from 'rc-select';
+
+import React, { useContext } from 'react';
+import type { LabelInValueType } from 'rc-select/lib/Select';
 import { ConfigContext } from '../config-provider/ConfigProvider';
 import styles from './index.module.less';
 
@@ -92,7 +92,7 @@ export function Select(props: ISelectProps) {
         disabled,
     } = props;
 
-    const { mountContainer } = useContext(ConfigContext);
+    const { mountContainer, locale } = useContext(ConfigContext);
 
     const _className = clsx(className, {
         [styles.selectBorderless]: borderless,
@@ -115,6 +115,7 @@ export function Select(props: ISelectProps) {
             open={open}
             dropdownStyle={dropdownStyle}
             onDropdownVisibleChange={onDropdownVisibleChange}
+            notFoundContent={locale?.Select.empty}
             disabled={disabled}
         />
     );

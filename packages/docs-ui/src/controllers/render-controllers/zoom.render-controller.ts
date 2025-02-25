@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,41 +15,44 @@
  */
 
 import type { DocumentDataModel, ICommandInfo } from '@univerjs/core';
+import type { IRenderContext, IRenderModule, IWheelEvent } from '@univerjs/engine-render';
+
+import type { ISetDocZoomRatioOperationParams } from '../../commands/operations/set-doc-zoom-ratio.operation';
 import {
     Disposable,
+    DocumentFlavor,
+    FOCUSING_DOC,
     ICommandService,
+    IContextService,
     Inject,
     IUniverInstanceService,
 } from '@univerjs/core';
-import { DocSkeletonManagerService, neoGetDocObject, SetDocZoomRatioCommand, SetDocZoomRatioOperation, TextSelectionManagerService } from '@univerjs/docs';
-import type { IRenderContext, IRenderModule, IWheelEvent } from '@univerjs/engine-render';
-import { IEditorService } from '@univerjs/ui';
+import { DocSelectionManagerService, DocSkeletonManagerService } from '@univerjs/docs';
+import { neoGetDocObject } from '../../basics/component-tools';
+import { SetDocZoomRatioCommand } from '../../commands/commands/set-doc-zoom-ratio.command';
+import { SwitchDocModeCommand } from '../../commands/commands/switch-doc-mode.command';
+import { SetDocZoomRatioOperation } from '../../commands/operations/set-doc-zoom-ratio.operation';
 import { DocPageLayoutService } from '../../services/doc-page-layout.service';
-
-interface ISetDocMutationParams {
-    unitId: string;
-}
+import { IEditorService } from '../../services/editor/editor-manager.service';
 
 export class DocZoomRenderController extends Disposable implements IRenderModule {
     constructor(
         private readonly _context: IRenderContext<DocumentDataModel>,
+        @IContextService private readonly _contextService: IContextService,
         @Inject(DocSkeletonManagerService) private readonly _docSkeletonManagerService: DocSkeletonManagerService,
         @IUniverInstanceService private readonly _univerInstanceService: IUniverInstanceService,
         @ICommandService private readonly _commandService: ICommandService,
-        @Inject(TextSelectionManagerService) private readonly _textSelectionManagerService: TextSelectionManagerService,
+        @Inject(DocSelectionManagerService) private readonly _textSelectionManagerService: DocSelectionManagerService,
         @IEditorService private readonly _editorService: IEditorService,
         @Inject(DocPageLayoutService) private readonly _docPageLayoutService: DocPageLayoutService
     ) {
         super();
 
-        this._init();
-    }
-
-    private _init() {
         this._initSkeletonListener();
         this._initCommandExecutedListener();
         this._initRenderRefresher();
 
+        // TODO: do not use setTimeout.
         setTimeout(() => this.updateViewZoom(1, true), 20);
     }
 
@@ -65,12 +68,19 @@ export class DocZoomRenderController extends Disposable implements IRenderModule
             }
 
             this.disposeWithMe(scene.onMouseWheel$.subscribeEvent((e: IWheelEvent) => {
-                if (!e.ctrlKey) {
+                if (!e.ctrlKey || !this._contextService.getContextValue(FOCUSING_DOC)) {
                     return;
                 }
 
                 const documentModel = this._univerInstanceService.getCurrentUniverDocInstance();
                 if (!documentModel) {
+                    return;
+                }
+
+                const { documentFlavor } = documentModel.getSnapshot().documentStyle;
+
+                // Modern document does not support zooming.
+                if (documentFlavor === DocumentFlavor.MODERN) {
                     return;
                 }
 
@@ -115,28 +125,32 @@ export class DocZoomRenderController extends Disposable implements IRenderModule
         const updateCommandList = [SetDocZoomRatioOperation.id];
 
         this.disposeWithMe(this._commandService.onCommandExecuted((command: ICommandInfo) => {
-            if (updateCommandList.includes(command.id)) {
-                const documentModel = this._univerInstanceService.getCurrentUniverDocInstance();
-                if (!documentModel) return;
-
-                const params = command.params;
-                const { unitId } = params as ISetDocMutationParams;
-                if (!(unitId === documentModel.getUnitId())) {
-                    return;
-                }
-
+            if (updateCommandList.includes(command.id) && (command.params as ISetDocZoomRatioOperationParams).unitId === this._context.unitId) {
+                const documentModel = this._context.unit;
                 const zoomRatio = documentModel.zoomRatio || 1;
-
                 this.updateViewZoom(zoomRatio);
             }
         }));
+
+        this.disposeWithMe(
+            this._commandService.beforeCommandExecuted((command: ICommandInfo) => {
+                if (command.id === SwitchDocModeCommand.id) {
+                    this._commandService.executeCommand(SetDocZoomRatioCommand.id, {
+                        zoomRatio: 1,
+                        unitId: this._context.unitId,
+                    });
+                }
+            })
+        );
     }
 
     updateViewZoom(zoomRatio: number, needRefreshSelection = true) {
         const docObject = neoGetDocObject(this._context);
         docObject.scene.scale(zoomRatio, zoomRatio);
 
-        this._docPageLayoutService.calculatePagePosition();
+        if (!this._editorService.isEditor(this._context.unitId)) {
+            this._docPageLayoutService.calculatePagePosition();
+        }
 
         if (needRefreshSelection && !this._editorService.isEditor(this._context.unitId)) {
             this._textSelectionManagerService.refreshSelection();

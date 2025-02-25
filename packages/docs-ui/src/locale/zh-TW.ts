@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,6 +36,12 @@ const locale: typeof zhCN = {
             main: '文字背景色',
             right: '背景色選擇',
         },
+        table: {
+            main: 'Table',
+            insert: 'Insert Table',
+            colCount: 'Column count',
+            rowCount: 'Row count',
+        },
         resetColor: '重置顏色',
         order: '有序列表',
         unorder: '無序列表',
@@ -44,6 +50,19 @@ const locale: typeof zhCN = {
         alignRight: '右對齊',
         alignJustify: '兩端對齊',
         headerFooter: '頁眉頁腳',
+        checklist: '任務列表',
+        documentFlavor: '现代模式',
+    },
+    table: {
+        insert: 'Insert',
+        insertRowAbove: 'Insert row above',
+        insertRowBelow: 'Insert row below',
+        insertColumnLeft: 'Insert column left',
+        insertColumnRight: 'Insert column right',
+        delete: 'Table delete',
+        deleteRows: 'Delete row',
+        deleteColumns: 'Delete column',
+        deleteTable: 'Delete table',
     },
     headerFooter: {
         header: '頁眉',
@@ -74,6 +93,8 @@ const locale: typeof zhCN = {
             before: 'Before',
             after: 'After',
             lineSpace: 'Line Space',
+            multiSpace: 'Multi Space',
+            fixedValue: 'Fixed Value(px)',
         },
     },
 };

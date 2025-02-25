@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,81 +14,27 @@
  * limitations under the License.
  */
 
-export { getParagraphsInRange } from './commands/commands/list.command';
-export { replaceSelectionFactory } from './basics/replace';
-export { getSelectionText, getDeleteSelection, getInsertSelection, isSegmentIntersects } from './basics/selection';
-export type { IDocObjectParam } from './basics/component-tools';
-export { getDocObject, neoGetDocObject, getDocObjectById } from './basics/component-tools';
-export * from './basics/docs-view-key';
-
-export { type IUniverDocsConfig, UniverDocsPlugin } from './doc-plugin';
+export type { IUniverDocsConfig } from './controllers/config.schema';
+export { UniverDocsPlugin } from './doc-plugin';
+export { DocInterceptorService } from './services/doc-interceptor/doc-interceptor.service';
+export { DOC_INTERCEPTOR_POINT } from './services/doc-interceptor/interceptor-const';
+export { DocSelectionManagerService } from './services/doc-selection-manager.service';
 export { DocSkeletonManagerService } from './services/doc-skeleton-manager.service';
-export { TextSelectionManagerService, serializeTextRange } from './services/text-selection-manager.service';
-export { DocStateChangeManagerService, type IDocStateChangeParams } from './services/doc-state-change-manager.service';
-export { IMEInputManagerService } from './services/ime-input-manager.service';
-export { DocCustomRangeService, type ICustomRangeHook } from './services/doc-custom-range.service';
+export { addCustomRangeBySelectionFactory, addCustomRangeFactory, deleteCustomRangeFactory } from './utils/custom-range-factory';
+export { replaceSelectionFactory } from './utils/replace-selection-factory';
+export type { IDocStateChangeInfo, IDocStateChangeParams } from './services/doc-state-emit.service';
+export { DocStateEmitService } from './services/doc-state-emit.service';
 
 // #region - all commands
 
-export { BreakLineCommand } from './commands/commands/break-line.command';
-export { CutContentCommand, InnerPasteCommand } from './commands/commands/clipboard.inner.command';
 export {
-    InsertCommand,
-    DeleteCommand,
-    UpdateCommand,
-    EditorInsertTextCommandId,
-    type ICoverCommandParams,
-    type IDeleteCommandParams,
-    type IInsertCommandParams,
-    type IUpdateCommandParams,
-} from './commands/commands/core-editing.command';
-export { DeleteLeftCommand, DeleteRightCommand, DeleteCustomBlockCommand, MergeTwoParagraphCommand, type IDeleteCustomBlockParams } from './commands/commands/delete.command';
-export { IMEInputCommand, type IIMEInputCommandParams } from './commands/commands/ime-input.command';
-export {
-    SetInlineFormatBoldCommand,
-    SetInlineFormatItalicCommand,
-    SetInlineFormatUnderlineCommand,
-    SetInlineFormatStrikethroughCommand,
-    SetInlineFormatSubscriptCommand,
-    SetInlineFormatSuperscriptCommand,
-    SetInlineFormatFontSizeCommand,
-    SetInlineFormatFontFamilyCommand,
-    SetInlineFormatTextColorCommand,
-    SetInlineFormatTextBackgroundColorCommand,
-    ResetInlineFormatTextBackgroundColorCommand,
-    SetInlineFormatCommand,
-} from './commands/commands/inline-format.command';
-export { ListOperationCommand, BulletListCommand, OrderListCommand, ChangeListNestingLevelCommand, ChangeListTypeCommand } from './commands/commands/list.command';
-export {
-    AlignOperationCommand,
-    AlignLeftCommand,
-    AlignCenterCommand,
-    AlignRightCommand,
-    AlignJustifyCommand,
-} from './commands/commands/paragraph-align.command';
-export { ReplaceContentCommand, CoverContentCommand } from './commands/commands/replace-content.command';
-export { SetDocZoomRatioCommand } from './commands/commands/set-doc-zoom-ratio.command';
-export { SpaceCommand, TabCommand, EnterCommand, type ITabCommandParams } from './commands/commands/auto-format.command';
-export {
-    RichTextEditingMutation,
     type IRichTextEditingMutationParams,
+    RichTextEditingMutation,
 } from './commands/mutations/core-editing.mutation';
-export { MoveCursorOperation, MoveSelectionOperation } from './commands/operations/cursor.operation';
-export { SelectAllOperation } from './commands/operations/select-all.operation';
-export { SetDocZoomRatioOperation, type ISetDocZoomRatioOperationParams } from './commands/operations/set-doc-zoom-ratio.operation';
+
 export {
-    SetTextSelectionsOperation,
     type ISetTextSelectionsOperationParams,
+    SetTextSelectionsOperation,
 } from './commands/operations/text-selection.operation';
 
 // #endregion
-
-export { getRetainAndDeleteFromReplace } from './basics/retain-delete-params';
-export { getRichTextEditPath } from './commands/util';
-export { getPlainTextFormDocument } from './basics/plain-text';
-export { addCustomRangeFactory, addCustomRangeBySelectionFactory, deleteCustomRangeFactory } from './basics/custom-range-factory';
-export { addCustomDecorationBySelectionFactory, addCustomDecorationFactory, deleteCustomDecorationFactory } from './basics/custom-decoration-factory';
-export { DocInterceptorService } from './services/doc-interceptor/doc-interceptor.service';
-export { DOC_INTERCEPTOR_POINT } from './services/doc-interceptor/interceptor-const';
-export { DocAutoFormatService } from './services/doc-auto-format.service';
-export { ChangeListNestingLevelType } from './commands/commands/list.command';

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,12 @@
  * limitations under the License.
  */
 
+import type { ICellData, ICellDataForSheetInterceptor, ICellWithCoord, IRange, IRangeWithCoord, ISelectionCell } from '../sheets/typedef';
+import type { Worksheet } from '../sheets/worksheet';
+import type { IDocumentData } from '../types/interfaces/i-document-data';
+import type { IColorStyle, IStyleData } from '../types/interfaces/i-style-data';
+import type { Nullable } from './types';
+import { RANGE_TYPE } from '../sheets/typedef';
 import {
     BaselineOffset,
     BorderStyleTypes,
@@ -22,16 +28,15 @@ import {
     VerticalAlign,
     WrapStrategy,
 } from '../types/enum';
-import { type IRange, RANGE_TYPE } from '../types/interfaces';
-import type { ICellData, ICellDataForSheetInterceptor } from '../types/interfaces/i-cell-data';
-import type { IDocumentData } from '../types/interfaces/i-document-data';
-import type { IRangeWithCoord, ISelectionCell, ISelectionCellWithMergeInfo } from '../types/interfaces/i-selection-data';
-import type { IColorStyle, IStyleData } from '../types/interfaces/i-style-data';
 import { ColorBuilder } from './color/color';
 import { Tools } from './tools';
-import type { Nullable } from './types';
 
-export function makeCellToSelection(cellInfo: ISelectionCellWithMergeInfo): IRangeWithCoord {
+/**
+ * Data type convert, convert ICellWithCoord to IRangeWithCoord
+ * @param cellInfo
+ * @returns IRangeWithCoord
+ */
+export function convertCellToRange(cellInfo: ICellWithCoord): IRangeWithCoord {
     const { actualRow, actualColumn, isMerged, isMergedMainCell, mergeInfo } = cellInfo;
     let { startY, endY, startX, endX } = cellInfo;
     let startRow = actualRow;
@@ -65,9 +70,7 @@ export function makeCellToSelection(cellInfo: ISelectionCellWithMergeInfo): IRan
         endY = mergeInfo.endY;
         startX = mergeInfo.startX;
         endX = mergeInfo.endX;
-
         endRow = mergeInfo.endRow;
-
         endColumn = mergeInfo.endColumn;
     }
 
@@ -82,6 +85,12 @@ export function makeCellToSelection(cellInfo: ISelectionCellWithMergeInfo): IRan
         endX,
     };
 }
+
+/**
+ * @deprecated use `convertCellToRange` instead
+ */
+const makeCellToSelection = convertCellToRange;
+export { makeCellToSelection };
 
 export function makeCellRangeToRangeData(cellInfo: Nullable<ISelectionCell>): Nullable<IRange> {
     if (!cellInfo) {
@@ -488,7 +497,7 @@ export function getDocsUpdateBody(model: IDocumentData, segmentId?: string) {
     return body;
 }
 
-export function isValidRange(range: IRange): boolean {
+export function isValidRange(range: IRange, worksheet?: Worksheet): boolean {
     const { startRow, endRow, startColumn, endColumn, rangeType } = range;
     if (
         startRow < 0
@@ -517,6 +526,14 @@ export function isValidRange(range: IRange): boolean {
         )
     ) {
         return false;
+    }
+
+    if (worksheet) {
+        const rowCount = worksheet.getRowCount();
+        const colCount = worksheet.getColumnCount();
+        if (endRow >= rowCount || endColumn >= colCount) {
+            return false;
+        }
     }
 
     return true;

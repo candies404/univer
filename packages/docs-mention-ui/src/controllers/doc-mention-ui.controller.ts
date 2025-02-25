@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-import { Disposable, ICommandService, Inject, LifecycleStages, OnLifecycle } from '@univerjs/core';
+import { Disposable, ICommandService, Inject } from '@univerjs/core';
 import { ComponentManager } from '@univerjs/ui';
+import { AddDocMentionCommand, DeleteDocMentionCommand } from '../commands/commands/doc-mention.command';
 import { CloseMentionEditPopupOperation, CloseMentionInfoPopupOperation, ShowMentionEditPopupOperation, ShowMentionInfoPopupOperation } from '../commands/operations/mention-popup.operation';
 import { MentionEditPopup } from '../views/mention-edit-popup';
 
-@OnLifecycle(LifecycleStages.Starting, DocMentionUIController)
 export class DocMentionUIController extends Disposable {
     constructor(
         @ICommandService private readonly _commandService: ICommandService,
@@ -37,6 +37,8 @@ export class DocMentionUIController extends Disposable {
             CloseMentionInfoPopupOperation,
             ShowMentionEditPopupOperation,
             CloseMentionEditPopupOperation,
+            AddDocMentionCommand,
+            DeleteDocMentionCommand,
         ].forEach((operation) => {
             this.disposeWithMe(this._commandService.registerCommand(operation));
         });

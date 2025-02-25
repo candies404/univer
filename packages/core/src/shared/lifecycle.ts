@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,9 @@
  */
 
 import type { Subscription, SubscriptionLike } from 'rxjs';
+import type { IDisposable } from '../common/di';
 import { Subject } from 'rxjs';
 import { isSubscription } from 'rxjs/internal/Subscription';
-import type { IDisposable } from '../common/di';
 
 type DisposableLike = IDisposable | SubscriptionLike | (() => void);
 
@@ -68,13 +68,16 @@ export function fromObservable(subscription: Subscription) {
 export class DisposableCollection implements IDisposable {
     private readonly _disposables = new Set<IDisposable>();
 
-    add(disposable: DisposableLike): IDisposable {
+    add(disposable: DisposableLike): { dispose: (notDisposeSelf?: boolean) => void } {
         const d = toDisposable(disposable);
         this._disposables.add(d);
 
         return {
-            dispose: () => {
-                d.dispose();
+            dispose: (notDisposeSelf: boolean = false) => {
+                if (!notDisposeSelf) {
+                    d.dispose();
+                }
+
                 this._disposables.delete(d);
             },
         };
@@ -93,7 +96,7 @@ export class Disposable implements IDisposable {
     protected _disposed = false;
     private readonly _collection = new DisposableCollection();
 
-    protected disposeWithMe(disposable: DisposableLike): IDisposable {
+    public disposeWithMe(disposable: DisposableLike): IDisposable {
         return this._collection.add(disposable);
     }
 

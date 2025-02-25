@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,10 @@
 
 import type { Dependency, IDisposable, IWorkbookData } from '@univerjs/core';
 import { DisposableCollection, ILogService, Inject, Injector, IUniverInstanceService, LocaleService, LocaleType, LogLevel, Plugin, Univer, UniverInstanceType } from '@univerjs/core';
+import { CalculateFormulaService, DefinedNamesService, FormulaCurrentConfigService, FormulaDataModel, FormulaRuntimeService, ICalculateFormulaService, IDefinedNamesService, IFormulaCurrentConfigService, IFormulaRuntimeService, LexerTreeBuilder } from '@univerjs/engine-formula';
 import { IRenderManagerService, RenderManagerService } from '@univerjs/engine-render';
-import { SheetInterceptorService, SheetsSelectionsService } from '@univerjs/sheets';
+import { SheetInterceptorService, SheetSkeletonService, SheetsSelectionsService } from '@univerjs/sheets';
+
 import {
     BrowserClipboardService,
     DesktopMessageService,
@@ -27,15 +29,16 @@ import {
     IMessageService,
     INotificationService,
     IPlatformService,
+    IUIPartsService,
+    UIPartsService,
 } from '@univerjs/ui';
-
-import { CalculateFormulaService, DefinedNamesService, FormulaCurrentConfigService, FormulaDataModel, FormulaRuntimeService, IDefinedNamesService, IFormulaCurrentConfigService, IFormulaRuntimeService, LexerTreeBuilder } from '@univerjs/engine-formula';
+import { BehaviorSubject } from 'rxjs';
 import { SheetClipboardController } from '../../../controllers/clipboard/clipboard.controller';
 import { IMarkSelectionService } from '../../mark-selection/mark-selection.service';
-import { SheetSelectionRenderService } from '../../selection/selection-render.service';
-import { ISheetClipboardService, SheetClipboardService } from '../clipboard.service';
-import { SheetSkeletonManagerService } from '../../sheet-skeleton-manager.service';
 import { ISheetSelectionRenderService } from '../../selection/base-selection-render.service';
+import { SheetSelectionRenderService } from '../../selection/selection-render.service';
+import { SheetSkeletonManagerService } from '../../sheet-skeleton-manager.service';
+import { ISheetClipboardService, SheetClipboardService } from '../clipboard.service';
 
 const cellData = {
     0: {
@@ -487,6 +490,10 @@ export class testMarkSelectionService {
         return null;
     }
 
+    addShapeWithNoFresh(): string | null {
+        return null;
+    }
+
     removeShape(id: string): void {
         // empty
     }
@@ -540,6 +547,7 @@ export function clipboardTestBed(workbookData?: IWorkbookData, dependencies?: De
 
         override onStarting(): void {
             const injector = this._injector;
+            injector.add([IUIPartsService, { useClass: UIPartsService }]);
             injector.add([SheetsSelectionsService]);
             injector.add([IClipboardInterfaceService, { useClass: BrowserClipboardService, lazy: true }]);
             injector.add([ISheetClipboardService, { useClass: SheetClipboardService }]);
@@ -560,17 +568,20 @@ export function clipboardTestBed(workbookData?: IWorkbookData, dependencies?: De
 
             injector.add([SheetClipboardController, { useValue: sheetClipboardController }]);
             injector.add([SheetInterceptorService]);
-            injector.add([CalculateFormulaService]);
+            injector.add([ICalculateFormulaService, { useClass: CalculateFormulaService }]);
             injector.add([FormulaDataModel]);
             injector.add([LexerTreeBuilder]);
             injector.add([IDefinedNamesService, { useClass: DefinedNamesService }]);
             injector.add([IFormulaRuntimeService, { useClass: FormulaRuntimeService }]);
             injector.add([IFormulaCurrentConfigService, { useClass: FormulaCurrentConfigService }]);
+            injector.add([SheetSkeletonService]);
 
             dependencies?.forEach((d) => injector.add(d));
 
             const localeService = injector.get(LocaleService);
             localeService.load({});
+
+            injector.get(IUIPartsService);
         }
     }
 
@@ -585,6 +596,7 @@ export function clipboardTestBed(workbookData?: IWorkbookData, dependencies?: De
 
     // NOTE: This is pretty hack for the test. But with these hacks we can avoid to create
     // real canvas-environment in univerjs/sheets-ui. If some we have to do that, this hack could be removed.
+    const mockSheetSkService = new SheetSkeletonService(injector);
     const fakeSheetSkeletonManagerService = new SheetSkeletonManagerService({
         unit: sheet,
         unitId: 'test',
@@ -594,10 +606,14 @@ export function clipboardTestBed(workbookData?: IWorkbookData, dependencies?: De
         mainComponent: null as any,
         components: null as any,
         isMainScene: true,
-    }, injector);
+        activated$: new BehaviorSubject(true),
+        activate: () => {},
+        deactivate: () => {},
+    }, injector, injector.get(SheetSkeletonService));
 
     injector.add([SheetSkeletonManagerService, { useValue: fakeSheetSkeletonManagerService }]);
     injector.get(IRenderManagerService).addRender('test', {
+        type: UniverInstanceType.UNIVER_SHEET,
         unitId: 'test',
         engine: new DisposableCollection() as any,
         scene: new DisposableCollection() as any,
@@ -605,6 +621,9 @@ export function clipboardTestBed(workbookData?: IWorkbookData, dependencies?: De
         components: new Map(),
         isMainScene: true,
         with: injector.get.bind(injector),
+        activated$: new BehaviorSubject(true),
+        activate: () => {},
+        deactivate: () => {},
     });
 
     return {

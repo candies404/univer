@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-import { BehaviorSubject, switchMap } from 'rxjs';
 import type { MenuConfig, MenuItemConfig } from '../services/menu/menu';
+import { BehaviorSubject, Observable, switchMap } from 'rxjs';
 
 export function mergeMenuConfigs<T = MenuConfig>(baseConfig: T, additionalConfig: MenuItemConfig | null): T {
     if (!additionalConfig || !baseConfig) return baseConfig;
@@ -24,7 +24,7 @@ export function mergeMenuConfigs<T = MenuConfig>(baseConfig: T, additionalConfig
     const { hidden, disabled, activated } = additionalConfig;
 
     // Update properties directly if they exist in additionalConfig
-    const properties: (keyof MenuItemConfig)[] = ['group', 'type', 'icon', 'title', 'tooltip', 'positions'];
+    const properties: (keyof MenuItemConfig)[] = ['type', 'icon', 'title', 'tooltip'];
     properties.forEach((prop) => {
         if (additionalConfig[prop] !== undefined) {
             // Use type assertion to assure TypeScript about the operation's safety
@@ -43,10 +43,16 @@ export function mergeMenuConfigs<T = MenuConfig>(baseConfig: T, additionalConfig
 
 // Helper function to update reactive properties
 function updateReactiveProperty<T, K extends keyof T>(baseConfig: T, key: K, value: any): void {
-    if (value !== undefined && baseConfig[key]) {
-        const subject$ = (baseConfig[key] as any).pipe(
-            switchMap(() => new BehaviorSubject(value))
-        );
-        baseConfig[key] = subject$;
+    if (value !== undefined) {
+        if (baseConfig[key]) {
+            const subject$ = (baseConfig[key] as any).pipe(
+                switchMap(() => new BehaviorSubject(value))
+            );
+            baseConfig[key] = subject$;
+        } else {
+            baseConfig[key] = new Observable((subscriber) => {
+                subscriber.next(value);
+            }) as any;
+        }
     }
 }

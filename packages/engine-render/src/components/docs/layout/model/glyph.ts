@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,20 +14,21 @@
  * limitations under the License.
  */
 
-import { BooleanNumber, BulletAlignment, DataStreamTreeTokenType as DT, GridType } from '@univerjs/core';
-
-import { FontCache } from '../shaping-engine/font-cache';
 import type {
     IAdjustability,
+    IDocumentSkeletonBoundingBox,
     IDocumentSkeletonBullet,
     IDocumentSkeletonDivide,
     IDocumentSkeletonGlyph,
 } from '../../../../basics/i-document-skeleton-cached';
-import { GlyphType } from '../../../../basics/i-document-skeleton-cached';
+
 import type { IFontCreateConfig } from '../../../../basics/interfaces';
-import { hasCJK, hasCJKText, isCjkCenterAlignedPunctuation, isCjkLeftAlignedPunctuation, isCjkRightAlignedPunctuation, ptToPixel } from '../../../../basics/tools';
-import { validationGrid } from '../tools';
 import type { IOpenTypeGlyphInfo } from '../shaping-engine/text-shaping';
+import { BooleanNumber, BulletAlignment, DataStreamTreeTokenType as DT, GridType } from '@univerjs/core';
+import { GlyphType } from '../../../../basics/i-document-skeleton-cached';
+import { hasCJK, hasCJKText, isCjkCenterAlignedPunctuation, isCjkLeftAlignedPunctuation, isCjkRightAlignedPunctuation, ptToPixel } from '../../../../basics/tools';
+import { FontCache } from '../shaping-engine/font-cache';
+import { validationGrid } from '../tools';
 
 export function isSpace(char: string) {
     const SPACE_CHARS = [' ', '\u{00A0}', '　'];
@@ -249,13 +250,17 @@ export function createSkeletonBulletGlyph(
     charSpaceApply: number
 ): IDocumentSkeletonGlyph {
     const {
-        bBox: boundingBox,
+        // bBox: boundingBox,
         symbol: content,
-        ts: textStyle,
-        fontStyle,
+        // ts: textStyle,
+        // fontStyle,
         bulletAlign = BulletAlignment.START,
         bulletType = false,
     } = bulletSkeleton;
+    const { fontStyle } = glyph;
+    // glyph.fontStyle
+    // getFontStyleString(fontStyle, localeService);
+    const boundingBox = FontCache.getTextSize(content, fontStyle!);
     const contentWidth = boundingBox.width;
     // 当文字也需要对齐到网格式，进行处理, LINES默认参照是doc全局字体大小
 
@@ -275,11 +280,17 @@ export function createSkeletonBulletGlyph(
         }
     }
 
-    const bBox = _getMaxBoundingBox(glyph, bulletSkeleton);
+    const bBox = _getMaxBoundingBox(glyph, boundingBox);
 
     return {
         content,
-        ts: textStyle,
+        ts: {
+            ...glyph.ts,
+            // ...textStyle,
+            st: {
+                s: BooleanNumber.FALSE,
+            },
+        },
         fontStyle,
         width,
         xOffset: 0,
@@ -327,15 +338,15 @@ export function addGlyphToDivide(
     divide.glyphGroup.push(...glyphGroup);
 }
 
-function _getMaxBoundingBox(glyph: IDocumentSkeletonGlyph, bulletSkeleton: IDocumentSkeletonBullet) {
+function _getMaxBoundingBox(glyph: IDocumentSkeletonGlyph, bulletBBox: IDocumentSkeletonBoundingBox) {
     const { ba: spanAscent, bd: spanDescent } = glyph.bBox;
-    const { ba: bulletAscent, bd: bulletDescent } = bulletSkeleton.bBox;
+    const { ba: bulletAscent, bd: bulletDescent } = bulletBBox;
 
     if (spanAscent + spanDescent > bulletAscent + bulletDescent) {
         return glyph.bBox;
     }
 
-    return bulletSkeleton.bBox;
+    return bulletBBox;
 }
 
 export function glyphShrinkRight(glyph: IDocumentSkeletonGlyph, amount: number) {

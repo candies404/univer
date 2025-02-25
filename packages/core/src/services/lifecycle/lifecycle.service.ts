@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,11 @@
 
 import type { Observable } from 'rxjs';
 import { BehaviorSubject, merge, of, skip } from 'rxjs';
-import type { DependencyIdentifier } from '../../common/di';
-import { Inject, Injector } from '../../common/di';
 
 import { Disposable } from '../../shared/lifecycle';
-import { ILogService } from '../log/log.service';
 import { takeAfter } from '../../shared/rxjs';
-import { LifecycleNameMap, LifecycleStages, LifecycleToModules } from './lifecycle';
+import { ILogService } from '../log/log.service';
+import { LifecycleNameMap, LifecycleStages } from './lifecycle';
 
 /**
  * This service controls the lifecycle of a Univer instance. Other modules can
@@ -46,28 +44,18 @@ export class LifecycleService extends Disposable {
     }
 
     set stage(stage: LifecycleStages) {
-        if (stage < this.stage) {
-            throw new Error('[LifecycleService]: lifecycle stage cannot go backward!');
-        }
+        if (this._lock) throw new Error('[LifecycleService]: cannot set new stage when related logic is all handled!');
+        if (stage < this.stage) throw new Error('[LifecycleService]: lifecycle stage cannot go backward!');
+        if (stage === this.stage) return;
 
-        if (stage === this.stage) {
-            return;
-        }
-
-        if (this._lock) {
-            throw new Error('[LifecycleService]: cannot set new stage when related logic is all handled!');
-        }
         this._lock = true;
-
         this._reportProgress(stage);
         this._lifecycle$.next(stage);
-
         this._lock = false;
     }
 
     override dispose(): void {
         this._lifecycle$.complete();
-
         super.dispose();
     }
 
@@ -83,33 +71,6 @@ export class LifecycleService extends Disposable {
 
     private _reportProgress(stage: LifecycleStages): void {
         this._logService.debug('[LifecycleService]', `lifecycle progressed to "${LifecycleNameMap[stage]}".`);
-    }
-}
-
-/**
- * This service is used to initialize modules on a certain lifecycle stage.
- * Refer to `runOnLifecycle` and `OnLifecycle` for more details.
- *
- * @internal
- */
-export class LifecycleInitializerService extends Disposable {
-    private _seenTokens = new Set<DependencyIdentifier<unknown>>();
-
-    constructor(
-        @Inject(Injector) private readonly _injector: Injector
-    ) {
-        super();
-    }
-
-    initModulesOnStage(stage: LifecycleStages): void {
-        LifecycleToModules.get(stage)?.forEach((m) => {
-            if (this._injector.has(m) && !this._seenTokens.has(m)) {
-                this._injector.get(m);
-
-                // swap these two lines and they will be fixed
-                this._seenTokens.add(m);
-            }
-        });
     }
 }
 

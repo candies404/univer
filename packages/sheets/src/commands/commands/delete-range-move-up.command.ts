@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 
 import type { IAccessor, ICommand, IMutationInfo, IRange } from '@univerjs/core';
+import type { IDeleteRangeMutationParams } from '../../basics/interfaces/mutation-interface';
+
 import {
     CommandType,
     Dimension,
@@ -23,9 +25,7 @@ import {
     IUniverInstanceService,
     sequenceExecute,
 } from '@univerjs/core';
-
-import type { IDeleteRangeMutationParams } from '../../basics/interfaces/mutation-interface';
-import { SheetsSelectionsService } from '../../services/selections/selection-manager.service';
+import { SheetsSelectionsService } from '../../services/selections/selection.service';
 import { SheetInterceptorService } from '../../services/sheet-interceptor/sheet-interceptor.service';
 import { getRemoveRangeMutations } from '../utils/handle-range-mutation';
 import { followSelectionOperation } from './utils/selection-utils';

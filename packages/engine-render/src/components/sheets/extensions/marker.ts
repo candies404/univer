@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-import { Range } from '@univerjs/core';
 import type { IRange, IScale } from '@univerjs/core';
 import type { UniverRenderingContext } from '../../../context';
-import type { SpreadsheetSkeleton } from '../sheet-skeleton';
+import type { SpreadsheetSkeleton } from '../sheet.render-skeleton';
+import { Range } from '@univerjs/core';
 import { SpreadsheetExtensionRegistry } from '../../extension';
 import { SheetExtension } from './sheet-extension';
 
@@ -50,14 +50,12 @@ export class Marker extends SheetExtension {
 
         // eslint-disable-next-line max-lines-per-function
         Range.foreach(rowColumnSegment, (row, col) => {
+            if (!worksheet.getRowVisible(row) || !worksheet.getColVisible(col)) {
+                return;
+            }
+
             let cellData = worksheet.getCell(row, col);
-            const cellInfo = this.getCellIndex(
-                row,
-                col,
-                skeleton.rowHeightAccumulation,
-                skeleton.columnWidthAccumulation,
-                skeleton.dataMergeCache
-            );
+            const cellInfo = skeleton.getCellWithCoordByIndex(row, col, false);
             const { isMerged, isMergedMainCell, mergeInfo } = cellInfo;
             let { startY, endY, startX, endX } = cellInfo;
 
@@ -88,11 +86,6 @@ export class Marker extends SheetExtension {
                 }
 
                 mergeCellRendered.add(rangeStr);
-            }
-
-            // current cell is hidden
-            if (!worksheet.getColVisible(col) || !worksheet.getRowVisible(row)) {
-                return;
             }
 
             if (!cellData) {

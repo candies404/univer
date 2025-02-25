@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,19 +17,17 @@
 import type { IAccessor } from '@univerjs/core';
 import { UniverInstanceType } from '@univerjs/core';
 import type { IMenuButtonItem } from '@univerjs/ui';
-import { getMenuHiddenObservable, MenuGroup, MenuItemType, MenuPosition } from '@univerjs/ui';
-import { SlideAddTextOperation } from '../commands/operations/insert-text.operation';
+import { getMenuHiddenObservable, MenuItemType } from '@univerjs/ui';
+import { SlideAddTextCommand } from '../commands/operations/insert-text.operation';
 
 export const TEXT_ICON_ID = 'text-single';
 
 export function SlideAddTextMenuItemFactory(_accessor: IAccessor): IMenuButtonItem {
     return {
-        id: SlideAddTextOperation.id,
-        group: MenuGroup.TOOLBAR_FORMULAS_INSERT,
+        id: SlideAddTextCommand.id,
         type: MenuItemType.BUTTON,
         icon: TEXT_ICON_ID,
         tooltip: 'slide.text.insert.title',
-        positions: [MenuPosition.TOOLBAR_START],
         hidden$: getMenuHiddenObservable(_accessor, UniverInstanceType.UNIVER_SLIDE),
     };
 }

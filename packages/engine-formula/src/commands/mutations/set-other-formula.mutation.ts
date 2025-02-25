@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,14 @@
  */
 
 import type { IMutation } from '@univerjs/core';
-import { CommandType } from '@univerjs/core';
+import type { IOtherFormulaDataItem } from '../../basics/common';
 
-import type { IFormulaDataItem } from '../../basics/common';
+import { CommandType } from '@univerjs/core';
 
 export interface ISetOtherFormulaMutationParams {
     unitId: string;
     subUnitId: string;
-    formulaMap: Record<string, IFormulaDataItem>;
+    formulaMap: Record<string, IOtherFormulaDataItem>;
 };
 export interface IRemoveOtherFormulaMutationParams {
     unitId: string;

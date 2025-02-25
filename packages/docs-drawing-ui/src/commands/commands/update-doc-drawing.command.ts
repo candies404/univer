@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 
 import type { DocumentDataModel, IAccessor, ICommand, IDocDrawingBase, IDocDrawingPosition, IMutationInfo, IObjectPositionH, IObjectPositionV, ISize, JSONXActions, WrapTextType } from '@univerjs/core';
+import type { IRichTextEditingMutationParams } from '@univerjs/docs';
+import type { IDocDrawing } from '@univerjs/docs-drawing';
 import {
     BooleanNumber,
     CommandType,
@@ -28,10 +30,9 @@ import {
     TextXActionType,
     Tools,
 } from '@univerjs/core';
-import type { IRichTextEditingMutationParams } from '@univerjs/docs';
-import { DocSkeletonManagerService, getRichTextEditPath, RichTextEditingMutation } from '@univerjs/docs';
-import type { IDocDrawing } from '@univerjs/docs-drawing';
-import { DocumentEditArea, IRenderManagerService, ITextSelectionRenderManager } from '@univerjs/engine-render';
+import { DocSkeletonManagerService, RichTextEditingMutation } from '@univerjs/docs';
+import { DocSelectionRenderService, getRichTextEditPath } from '@univerjs/docs-ui';
+import { DocumentEditArea, IRenderManagerService } from '@univerjs/engine-render';
 import { DocRefreshDrawingsService } from '../../services/doc-refresh-drawings.service';
 
 export enum TextWrappingStyle {
@@ -58,7 +59,7 @@ function getDeleteAndInsertCustomBlockActions(
     offset: number,
     drawingId: string,
     documentDataModel: DocumentDataModel,
-    textSelectionRenderManager: ITextSelectionRenderManager
+    docSelectionRenderManager: DocSelectionRenderService
 ) {
     const textX = new TextX();
     const jsonX = JSONX.getInstance();
@@ -87,7 +88,6 @@ function getDeleteAndInsertCustomBlockActions(
                 textX.push({
                     t: TextXActionType.RETAIN,
                     len: offset,
-                    segmentId: oldSegmentId,
                 });
             }
 
@@ -101,21 +101,16 @@ function getDeleteAndInsertCustomBlockActions(
                     }],
                 },
                 len: 1,
-                line: 0,
-                segmentId: oldSegmentId,
             });
 
             textX.push({
                 t: TextXActionType.RETAIN,
                 len: oldOffset - offset,
-                segmentId: oldSegmentId,
             });
 
             textX.push({
                 t: TextXActionType.DELETE,
                 len: 1,
-                line: 0,
-                segmentId: '',
             });
         } else {
             // Delete first.
@@ -123,22 +118,18 @@ function getDeleteAndInsertCustomBlockActions(
                 textX.push({
                     t: TextXActionType.RETAIN,
                     len: oldOffset,
-                    segmentId: oldSegmentId,
                 });
             }
 
             textX.push({
                 t: TextXActionType.DELETE,
                 len: 1,
-                line: 0,
-                segmentId: '',
             });
 
             if (offset - oldOffset - 1 > 0) {
                 textX.push({
                     t: TextXActionType.RETAIN,
                     len: offset - oldOffset - 1,
-                    segmentId: oldSegmentId,
                 });
             }
 
@@ -152,8 +143,6 @@ function getDeleteAndInsertCustomBlockActions(
                     }],
                 },
                 len: 1,
-                line: 0,
-                segmentId: oldSegmentId,
             });
         }
 
@@ -167,15 +156,12 @@ function getDeleteAndInsertCustomBlockActions(
             textX.push({
                 t: TextXActionType.RETAIN,
                 len: oldOffset,
-                segmentId: oldSegmentId,
             });
         }
 
         textX.push({
             t: TextXActionType.DELETE,
             len: 1,
-            line: 0,
-            segmentId: '',
         });
 
         let path = getRichTextEditPath(documentDataModel, oldSegmentId);
@@ -188,7 +174,6 @@ function getDeleteAndInsertCustomBlockActions(
             textX.push({
                 t: TextXActionType.RETAIN,
                 len: offset,
-                segmentId,
             });
         }
 
@@ -202,16 +187,14 @@ function getDeleteAndInsertCustomBlockActions(
                 }],
             },
             len: 1,
-            line: 0,
-            segmentId,
         });
 
         path = getRichTextEditPath(documentDataModel, segmentId);
         action = jsonX.editOp(textX.serialize(), path);
         rawActions.push(action!);
 
-        textSelectionRenderManager.setSegment(segmentId);
-        textSelectionRenderManager.setSegmentPage(segmentPage);
+        docSelectionRenderManager.setSegment(segmentId);
+        docSelectionRenderManager.setSegmentPage(segmentPage);
     }
 
     return rawActions;
@@ -652,6 +635,7 @@ export interface IMoveInlineDrawingParams {
     offset: number;
     segmentId: string;
     segmentPage: number;
+    needRefreshDrawings?: boolean;
 }
 
 /**
@@ -662,18 +646,19 @@ export const IMoveInlineDrawingCommand: ICommand = {
 
     type: CommandType.COMMAND,
 
-    handler: (accessor: IAccessor, params?: IMoveInlineDrawingParams) => {
+    handler: (accessor: IAccessor, params: IMoveInlineDrawingParams) => {
         if (params == null) {
             return false;
         }
 
         const renderManagerService = accessor.get(IRenderManagerService);
-        const textSelectionRenderManager = accessor.get(ITextSelectionRenderManager);
+        const docSelectionRenderService = renderManagerService.getRenderById(params.unitId)?.with(DocSelectionRenderService);
+
         const docRefreshDrawingsService = accessor.get(DocRefreshDrawingsService);
         const renderObject = renderManagerService.getRenderById(params.unitId);
         const scene = renderObject?.scene;
         const skeleton = renderObject?.with(DocSkeletonManagerService).getSkeleton();
-        if (scene == null) {
+        if (scene == null || docSelectionRenderService == null) {
             return false;
         }
         const transformer = scene.getTransformerByCreate();
@@ -686,12 +671,19 @@ export const IMoveInlineDrawingCommand: ICommand = {
             return false;
         }
 
-        const { drawing, unitId, offset, segmentId: newSegmentId, segmentPage } = params;
+        const { drawing, unitId, offset, segmentId: newSegmentId, segmentPage, needRefreshDrawings } = params;
+
+        // Need to refresh drawings if not find the anchor position.
+        if (needRefreshDrawings) {
+            docRefreshDrawingsService.refreshDrawings(skeleton);
+            transformer.refreshControls();
+            return true;
+        }
 
         const rawActions: JSONXActions = [];
 
         const { drawingId } = drawing;
-        const segmentId = textSelectionRenderManager.getSegment() ?? '';
+        const segmentId = docSelectionRenderService.getSegment() ?? '';
 
         const actions = getDeleteAndInsertCustomBlockActions(
             newSegmentId,
@@ -700,7 +692,7 @@ export const IMoveInlineDrawingCommand: ICommand = {
             offset,
             drawingId,
             documentDataModel,
-            textSelectionRenderManager
+            docSelectionRenderService
         );
 
         if (actions == null || actions.length === 0) {
@@ -759,12 +751,13 @@ export const ITransformNonInlineDrawingCommand: ICommand = {
             return false;
         }
 
-        const textSelectionRenderManager = accessor.get(ITextSelectionRenderManager);
-
         const renderManagerService = accessor.get(IRenderManagerService);
+
+        const docSelectionRenderService = renderManagerService.getRenderById(params.unitId)?.with(DocSelectionRenderService);
+
         const renderObject = renderManagerService.getRenderById(params.unitId);
         const scene = renderObject?.scene;
-        if (scene == null) {
+        if (scene == null || docSelectionRenderService == null) {
             return false;
         }
         const transformer = scene.getTransformerByCreate();
@@ -782,7 +775,7 @@ export const ITransformNonInlineDrawingCommand: ICommand = {
 
         const { drawingId } = drawing;
 
-        const segmentId = textSelectionRenderManager.getSegment() ?? '';
+        const segmentId = docSelectionRenderService.getSegment() ?? '';
 
         const actions = getDeleteAndInsertCustomBlockActions(
             newSegmentId,
@@ -791,7 +784,7 @@ export const ITransformNonInlineDrawingCommand: ICommand = {
             offset,
             drawingId,
             documentDataModel,
-            textSelectionRenderManager
+            docSelectionRenderService
         );
 
         if (actions == null) {

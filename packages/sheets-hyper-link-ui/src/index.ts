@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,27 +14,24 @@
  * limitations under the License.
  */
 
-export { SheetsHyperLinkRemoveSheetController } from './controllers/remove-sheet.controller';
-export { SheetsHyperLinkRenderManagerController, SheetsHyperLinkRenderController } from './controllers/render-controllers/render.controller';
-export { SheetsHyperLinkPopupService } from './services/popup.service';
-export { SheetsHyperLinkResolverService } from './services/resolver.service';
-export { SheetHyperLinkSetRangeController } from './controllers/set-range.controller';
-export { SheetsHyperLinkPopupController } from './controllers/popup.controller';
-export { SheetsHyperLinkUIController } from './controllers/ui.controller';
-export { SheetsHyperLinkAutoFillController } from './controllers/auto-fill.controller';
-export { SheetsHyperLinkCopyPasteController } from './controllers/copy-paste.controller';
-export { SheetHyperLinkUrlController } from './controllers/url.controller';
+import './global.css';
 
-export { UniverSheetsHyperLinkUIPlugin } from './plugin';
+export { SheetsHyperLinkCopyPasteController } from './controllers/copy-paste.controller';
 export { InsertLinkShortcut } from './controllers/menu';
+export { UniverSheetsHyperLinkUIPlugin } from './plugin';
+
+export { SheetsHyperLinkPopupService } from './services/popup.service';
+
+export { SheetsHyperLinkResolverService } from './services/resolver.service';
+export { type ICustomHyperLinkView, SheetsHyperLinkSidePanelService } from './services/side-panel.service';
 
 // #region - all commands
 
 export {
-    OpenHyperLinkSidebarOperation,
+    CloseHyperLinkPopupOperation,
     InsertHyperLinkOperation,
-    CloseHyperLinkSidebarOperation,
-    type IOpenHyperLinkSidebarOperationParams,
-} from './commands/operations/sidebar.operations';
+    type IOpenHyperLinkEditPanelOperationParams,
+    OpenHyperLinkEditPanelOperation,
+} from './commands/operations/popup.operations';
 
 // #endregion

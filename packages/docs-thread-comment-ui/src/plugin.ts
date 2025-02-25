@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,16 +14,17 @@
  * limitations under the License.
  */
 
-import { DependentOn, Inject, Injector, Plugin, UniverInstanceType } from '@univerjs/core';
 import type { Dependency } from '@univerjs/core';
-import { UniverThreadCommentUIPlugin } from '@univerjs/thread-comment-ui';
+import type { IUniverDocsThreadCommentUIConfig } from './controllers/config.schema';
+import { DependentOn, IConfigService, Inject, Injector, merge, Plugin, UniverInstanceType } from '@univerjs/core';
 import { IRenderManagerService } from '@univerjs/engine-render';
+import { UniverThreadCommentUIPlugin } from '@univerjs/thread-comment-ui';
 import { PLUGIN_NAME } from './common/const';
-import type { IDocThreadCommentUIConfig } from './controllers/doc-thread-comment-ui.controller';
-import { DocThreadCommentUIController } from './controllers/doc-thread-comment-ui.controller';
-import { DocThreadCommentService } from './services/doc-thread-comment.service';
+import { defaultPluginConfig, DOCS_THREAD_COMMENT_UI_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
 import { DocThreadCommentSelectionController } from './controllers/doc-thread-comment-selection.controller';
+import { DocThreadCommentUIController } from './controllers/doc-thread-comment-ui.controller';
 import { DocThreadCommentRenderController } from './controllers/render-controllers/render.controller';
+import { DocThreadCommentService } from './services/doc-thread-comment.service';
 
 @DependentOn(UniverThreadCommentUIPlugin)
 export class UniverDocsThreadCommentUIPlugin extends Plugin {
@@ -31,23 +32,29 @@ export class UniverDocsThreadCommentUIPlugin extends Plugin {
     static override type = UniverInstanceType.UNIVER_DOC;
 
     constructor(
-        private _config: IDocThreadCommentUIConfig = { menu: {} },
+        private readonly _config: Partial<IUniverDocsThreadCommentUIConfig> = defaultPluginConfig,
         @Inject(Injector) protected _injector: Injector,
-        @IRenderManagerService private readonly _renderManagerSrv: IRenderManagerService
+        @IRenderManagerService private readonly _renderManagerSrv: IRenderManagerService,
+        @IConfigService private readonly _configService: IConfigService
     ) {
         super();
+
+        // Manage the plugin configuration.
+        const { menu, ...rest } = merge(
+            {},
+            defaultPluginConfig,
+            this._config
+        );
+        if (menu) {
+            this._configService.setConfig('menu', menu, { merge: true });
+        }
+        this._configService.setConfig(DOCS_THREAD_COMMENT_UI_PLUGIN_CONFIG_KEY, rest);
     }
 
     override onStarting(): void {
         ([
-            [
-                DocThreadCommentUIController,
-                {
-                    useFactory: () => this._injector.createInstance(DocThreadCommentUIController, this._config),
-                },
-            ],
+            [DocThreadCommentUIController],
             [DocThreadCommentSelectionController],
-
             [DocThreadCommentService],
         ] as Dependency[]).forEach((dep) => {
             this._injector.add(dep);
@@ -56,6 +63,9 @@ export class UniverDocsThreadCommentUIPlugin extends Plugin {
 
     override onRendered(): void {
         this._initRenderModule();
+
+        this._injector.get(DocThreadCommentSelectionController);
+        this._injector.get(DocThreadCommentUIController);
     }
 
     private _initRenderModule() {

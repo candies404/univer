@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -89,11 +89,14 @@ export function Scrollbar(props: IScrollbarProps) {
     const [thumbTop, setThumbTop] = useState(0);
     useEffect(() => {
         function resize() {
-            const { height: containerHeight } = containerRef.current!.parentElement!.getBoundingClientRect();
+            if (!containerRef.current) {
+                return;
+            }
+            const { height: containerHeight } = containerRef.current.parentElement!.getBoundingClientRect();
 
             const { scrollHeight } = contentRef.current!;
             setThumbHeight((containerHeight / scrollHeight) * 100);
-            containerRef.current!.style.height = `${containerHeight}px`;
+            containerRef.current!.style.height = `${Math.floor(containerHeight)}px`;
         }
 
         function handleScroll(e: Event) {
@@ -112,6 +115,7 @@ export function Scrollbar(props: IScrollbarProps) {
 
         return () => {
             contentRef.current?.removeEventListener('scroll', handleScroll);
+            observer.disconnect();
         };
     }, []);
 

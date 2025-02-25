@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,19 +14,21 @@
  * limitations under the License.
  */
 
-import type { DocumentDataModel } from '@univerjs/core';
-import { BooleanNumber, Disposable, DocumentFlavor, ICommandService, Inject, IUniverInstanceService, LocaleService, toDisposable, Tools } from '@univerjs/core';
+import type { DocumentDataModel, ICommandInfo } from '@univerjs/core';
 import type { Documents, DocumentViewModel, IMouseEvent, IPageRenderConfig, IPathProps, IPointerEvent, IRenderContext, IRenderModule, RenderComponentType } from '@univerjs/engine-render';
-import { DocumentEditArea, IRenderManagerService, ITextSelectionRenderManager, PageLayoutType, Path, Rect, Vector2 } from '@univerjs/engine-render';
-
-import { ComponentManager, IEditorService } from '@univerjs/ui';
-import { DocSkeletonManagerService, neoGetDocObject } from '@univerjs/docs';
 import type { Nullable } from 'vitest';
-import { TextBubbleShape } from '../views/header-footer/text-bubble';
-import { CoreHeaderFooterCommand, OpenHeaderFooterPanelCommand } from '../commands/commands/doc-header-footer.command';
+import { BooleanNumber, Disposable, DocumentFlavor, ICommandService, Inject, IUniverInstanceService, LocaleService, toDisposable, Tools } from '@univerjs/core';
+
+import { DocSkeletonManagerService, RichTextEditingMutation } from '@univerjs/docs';
+import { DocumentEditArea, IRenderManagerService, PageLayoutType, Path, Rect, Vector2 } from '@univerjs/engine-render';
+import { ComponentManager } from '@univerjs/ui';
+import { neoGetDocObject } from '../basics/component-tools';
+import { CloseHeaderFooterCommand, CoreHeaderFooterCommand } from '../commands/commands/doc-header-footer.command';
+import { IEditorService } from '../services/editor/editor-manager.service';
+import { DocSelectionRenderService } from '../services/selection/doc-selection-render.service';
 import { COMPONENT_DOC_HEADER_FOOTER_PANEL } from '../views/header-footer/panel/component-name';
 import { DocHeaderFooterPanel } from '../views/header-footer/panel/DocHeaderFooterPanel';
-import { SidebarDocHeaderFooterPanelOperation } from '../commands/operations/doc-header-footer-panel.operation';
+import { TextBubbleShape } from '../views/header-footer/text-bubble';
 
 const HEADER_FOOTER_STROKE_COLOR = 'rgba(58, 96, 247, 1)';
 const HEADER_FOOTER_FILL_COLOR = 'rgba(58, 96, 247, 0.08)';
@@ -130,7 +132,7 @@ export class DocHeaderFooterController extends Disposable implements IRenderModu
         @IUniverInstanceService private readonly _instanceSrv: IUniverInstanceService,
         @IRenderManagerService private readonly _renderManagerService: IRenderManagerService,
         @Inject(DocSkeletonManagerService) private readonly _docSkeletonManagerService: DocSkeletonManagerService,
-        @ITextSelectionRenderManager private readonly _textSelectionRenderManager: ITextSelectionRenderManager,
+        @Inject(DocSelectionRenderService) private readonly _docSelectionRenderService: DocSelectionRenderService,
         @Inject(LocaleService) private readonly _localeService: LocaleService,
         @Inject(ComponentManager) private readonly _componentManager: ComponentManager
     ) {
@@ -140,28 +142,47 @@ export class DocHeaderFooterController extends Disposable implements IRenderModu
     }
 
     private _initialize() {
-        // FIXME: @Jocs, NO need to register this controller in Modern Document???
-        const docDataModel = this._context.unit;
-
-        const documentFlavor = docDataModel.getSnapshot().documentStyle.documentFlavor;
-
-        // Only traditional document support header/footer.
-        if (documentFlavor !== DocumentFlavor.TRADITIONAL) {
-            return;
-        }
-
         this._init();
         this._drawHeaderFooterLabel();
-        this._registerCommands();
         this._initCustomComponents();
+        this._listenSwitchMode();
     }
 
-    private _registerCommands() {
-        [
-            CoreHeaderFooterCommand,
-            OpenHeaderFooterPanelCommand,
-            SidebarDocHeaderFooterPanelOperation,
-        ].forEach((command) => this.disposeWithMe(this._commandService.registerCommand(command)));
+    // Close header footer panel when switch mode.
+    private _listenSwitchMode() {
+        // this.disposeWithMe(
+        //     this._commandService.beforeCommandExecuted((command: ICommandInfo) => {
+        //         if (SwitchDocModeCommand.id === command.id) {
+        //             const viewModel = this._docSkeletonManagerService.getViewModel();
+        //             const editArea = viewModel.getEditArea();
+
+        //             if (editArea !== DocumentEditArea.BODY) {
+        //                 this._commandService.executeCommand(CloseHeaderFooterCommand.id, {
+        //                     unitId: this._context.unitId,
+        //                 });
+        //             }
+        //         }
+        //     })
+        // );
+
+        this.disposeWithMe(
+            this._commandService.onCommandExecuted((command: ICommandInfo) => {
+                if (RichTextEditingMutation.id === command.id) {
+                    const docDataModel = this._context.unit;
+
+                    const viewModel = this._docSkeletonManagerService.getViewModel();
+                    const editArea = viewModel.getEditArea();
+
+                    const documentFlavor = docDataModel.getSnapshot().documentStyle.documentFlavor;
+
+                    if (editArea !== DocumentEditArea.BODY && documentFlavor === DocumentFlavor.MODERN) {
+                        this._commandService.executeCommand(CloseHeaderFooterCommand.id, {
+                            unitId: this._context.unitId,
+                        });
+                    }
+                }
+            })
+        );
     }
 
     private _initCustomComponents(): void {
@@ -188,6 +209,10 @@ export class DocHeaderFooterController extends Disposable implements IRenderModu
 
         this.disposeWithMe(document.onDblclick$.subscribeEvent(async (evt: IPointerEvent | IMouseEvent) => {
             if (this._isEditorReadOnly(unitId)) {
+                return;
+            }
+
+            if (!this._isTraditionalMode()) {
                 return;
             }
 
@@ -224,15 +249,15 @@ export class DocHeaderFooterController extends Disposable implements IRenderModu
             const { createType, headerFooterId } = checkCreateHeaderFooterType(viewModel, editArea, pageNumber);
 
             if (editArea === DocumentEditArea.BODY) {
-                this._textSelectionRenderManager.setSegment('');
-                this._textSelectionRenderManager.setSegmentPage(-1);
-                this._textSelectionRenderManager.setCursorManually(offsetX, offsetY);
+                this._docSelectionRenderService.setSegment('');
+                this._docSelectionRenderService.setSegmentPage(-1);
+                this._docSelectionRenderService.setCursorManually(offsetX, offsetY);
             } else {
                 if (createType != null) {
                     const SEGMENT_ID_LEN = 6;
                     const segmentId = Tools.generateRandomId(SEGMENT_ID_LEN);
-                    this._textSelectionRenderManager.setSegment(segmentId);
-                    this._textSelectionRenderManager.setSegmentPage(pageNumber);
+                    this._docSelectionRenderService.setSegment(segmentId);
+                    this._docSelectionRenderService.setSegmentPage(pageNumber);
 
                     await this._commandService.executeCommand(CoreHeaderFooterCommand.id, {
                         unitId,
@@ -240,9 +265,9 @@ export class DocHeaderFooterController extends Disposable implements IRenderModu
                         segmentId,
                     });
                 } else if (headerFooterId != null) {
-                    this._textSelectionRenderManager.setSegment(headerFooterId);
-                    this._textSelectionRenderManager.setSegmentPage(pageNumber);
-                    this._textSelectionRenderManager.setCursorManually(offsetX, offsetY);
+                    this._docSelectionRenderService.setSegment(headerFooterId);
+                    this._docSelectionRenderService.setSegmentPage(pageNumber);
+                    this._docSelectionRenderService.setCursorManually(offsetX, offsetY);
                 }
             }
         }));
@@ -293,6 +318,11 @@ export class DocHeaderFooterController extends Disposable implements IRenderModu
                         if (this._editorService.isEditor(unitId)) {
                             return;
                         }
+
+                        if (!this._isTraditionalMode()) {
+                            return;
+                        }
+
                         const viewModel = this._docSkeletonManagerService.getViewModel();
                         const editArea = viewModel.getEditArea();
                         const isEditBody = editArea === DocumentEditArea.BODY;
@@ -390,7 +420,11 @@ export class DocHeaderFooterController extends Disposable implements IRenderModu
         return editor.isReadOnly();
     }
 
-    private _getDocDataModel() {
-        return this._context.unit;
+    private _isTraditionalMode() {
+        const docDataModel = this._context.unit;
+
+        const documentFlavor = docDataModel.getSnapshot().documentStyle.documentFlavor;
+
+        return documentFlavor === DocumentFlavor.TRADITIONAL;
     }
 }

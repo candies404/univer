@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,13 +26,12 @@ import {
     Univer,
     UniverInstanceType,
 } from '@univerjs/core';
-import enUS from '@univerjs/sheets-formula/locale/en-US';
-import zhCN from '@univerjs/sheets-formula/locale/zh-CN';
-import { DocSkeletonManagerService, DocStateChangeManagerService, IMEInputManagerService, TextSelectionManagerService } from '@univerjs/docs';
-import { IRenderManagerService, ITextSelectionRenderManager, RenderManagerService, TextSelectionRenderManager } from '@univerjs/engine-render';
-import { DocsRenderService } from '@univerjs/docs-ui';
-
-import { FUniver } from '../../facade';
+import { DocSelectionManagerService, DocSkeletonManagerService, DocStateEmitService } from '@univerjs/docs';
+import { DocIMEInputManagerService, DocsRenderService, DocStateChangeManagerService } from '@univerjs/docs-ui';
+import { IRenderManagerService, RenderManagerService } from '@univerjs/engine-render';
+import enUS from '@univerjs/sheets-formula-ui/locale/en-US';
+import zhCN from '@univerjs/sheets-formula-ui/locale/zh-CN';
+import { FUniver } from '../../everything';
 
 function getTestDocumentDataDemo(): IDocumentData {
     return {
@@ -77,16 +76,21 @@ export function createTestBed(documentConfig?: IDocumentData, dependencies?: Dep
         override onStarting(): void {
             const injector = this._injector;
             injector.add([IRenderManagerService, { useClass: RenderManagerService }]);
-            injector.add([TextSelectionManagerService]);
+            injector.add([DocSelectionManagerService]);
+            injector.add([DocStateEmitService]);
             injector.add([DocStateChangeManagerService]);
-            injector.add([IMEInputManagerService]);
             injector.add([DocsRenderService]);
-            injector.add([ITextSelectionRenderManager, { useClass: TextSelectionRenderManager }]);
 
             dependencies?.forEach((d) => injector.add(d));
 
             const renderManagerService = injector.get(IRenderManagerService);
             renderManagerService.registerRenderModule(UniverInstanceType.UNIVER_DOC, [DocSkeletonManagerService] as Dependency);
+            renderManagerService.registerRenderModule(UniverInstanceType.UNIVER_DOC, [DocIMEInputManagerService] as Dependency);
+        }
+
+        override onReady(): void {
+            this._injector.get(DocStateChangeManagerService);
+            this._injector.get(DocsRenderService);
         }
     }
 

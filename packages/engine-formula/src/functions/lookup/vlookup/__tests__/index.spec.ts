@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,9 +20,9 @@ import { ErrorType } from '../../../../basics/error-type';
 import { ArrayValueObject } from '../../../../engine/value-object/array-value-object';
 import { type BaseValueObject, ErrorValueObject } from '../../../../engine/value-object/base-value-object';
 import { NumberValueObject, StringValueObject } from '../../../../engine/value-object/primitive-object';
+import { getObjectValue } from '../../../__tests__/create-function-test-bed';
 import { FUNCTION_NAMES_LOOKUP } from '../../function-names';
 import { Vlookup } from '../index';
-import { getObjectValue } from '../../../__tests__/create-function-test-bed';
 
 const arrayValueObject1 = ArrayValueObject.create(/*ts*/ `{
     1, "First";
@@ -169,7 +169,7 @@ describe('Test vlookup', () => {
                 }`),
                 NumberValueObject.create(0)
             ) as BaseValueObject;
-            expect(getObjectValue(resultObject)).toStrictEqual(ErrorType.REF);
+            expect(getObjectValue(resultObject)).toStrictEqual(ErrorType.REF); // Excel reports #N/A
         });
 
         it('LookupValue is single cell, colIndexNum is array and gets rangeLookup error', async () => {
@@ -207,7 +207,10 @@ describe('Test vlookup', () => {
                     3, 1
                 }`)
             ) as BaseValueObject;
-            expect(getObjectValue(resultObject)).toStrictEqual([[ErrorType.REF], [ErrorType.REF]]);
+            expect(getObjectValue(resultObject)).toStrictEqual([
+                [ErrorType.REF],
+                [ErrorType.REF],
+            ]); // Excel reports [[ErrorType.NA], [ErrorType.REF]]
         });
 
         it('LookupValue is array and gets error, colIndexNum is array and gets error,rangeLookup gets error', async () => {
@@ -222,7 +225,10 @@ describe('Test vlookup', () => {
                 }`),
                 StringValueObject.create('rangeLookup')
             ) as BaseValueObject;
-            expect(getObjectValue(resultObject)).toStrictEqual([[ErrorType.VALUE], [ErrorType.VALUE]]);
+            expect(getObjectValue(resultObject)).toStrictEqual([
+                [ErrorType.VALUE],
+                [ErrorType.VALUE],
+            ]);
         });
 
         it('LookupValue is array, tableArray is error', async () => {
@@ -234,7 +240,7 @@ describe('Test vlookup', () => {
                 ErrorValueObject.create(ErrorType.NAME),
                 NumberValueObject.create(2)
             ) as BaseValueObject;
-            expect(getObjectValue(resultObject)).toStrictEqual(ErrorType.NAME);
+            expect(getObjectValue(resultObject)).toStrictEqual(ErrorType.NAME); // Excel reports [[ErrorType.NA], [ErrorType.NA]]
         });
 
         it('LookupValue is array, colIndexNum is array, rangeLookup is array', async () => {
@@ -244,7 +250,11 @@ describe('Test vlookup', () => {
                 colIndexNumArrayValueObject3.clone(),
                 rangeLookupArrayValueObject.clone()
             ) as BaseValueObject;
-            expect(getObjectValue(resultObject)).toStrictEqual([['First', 'First', 'First', 'First'], ['Fourth', 'Fourth', 'Fourth', 'Fourth'], ['Eighth', 'Eighth', 'Eighth', 'Eighth']]);
+            expect(getObjectValue(resultObject)).toStrictEqual([
+                ['First', 'First', 'First', 'First'],
+                ['Fourth', 'Fourth', 'Fourth', 'Fourth'],
+                ['Eighth', 'Eighth', 'Eighth', 'Eighth'],
+            ]);
         });
 
         it('LookupValue is string, case sensitive', async () => {
@@ -254,7 +264,9 @@ describe('Test vlookup', () => {
                 NumberValueObject.create(2),
                 NumberValueObject.create(0)
             ) as BaseValueObject;
-            expect(getObjectValue(resultObject)).toStrictEqual([[2]]);
+            expect(getObjectValue(resultObject)).toStrictEqual([
+                [2],
+            ]);
         });
     });
 
@@ -266,7 +278,9 @@ describe('Test vlookup', () => {
                 NumberValueObject.create(2),
                 NumberValueObject.create(1)
             ) as BaseValueObject;
-            expect(getObjectValue(resultObject)).toStrictEqual([['Second']]);
+            expect(getObjectValue(resultObject)).toStrictEqual([
+                ['Second'],
+            ]);
         });
 
         it('Approximate search eight', async () => {
@@ -275,7 +289,9 @@ describe('Test vlookup', () => {
                 arrayValueObject1.clone(),
                 NumberValueObject.create(2)
             ) as BaseValueObject;
-            expect(getObjectValue(resultObject)).toStrictEqual([['Eighth']]);
+            expect(getObjectValue(resultObject)).toStrictEqual([
+                ['Eighth'],
+            ]);
         });
 
         it('Approximate exceeding columns', async () => {
@@ -284,7 +300,9 @@ describe('Test vlookup', () => {
                 arrayValueObject1.clone(),
                 NumberValueObject.create(3)
             ) as BaseValueObject;
-            expect(getObjectValue(resultObject)).toStrictEqual([[ErrorType.REF]]);
+            expect(getObjectValue(resultObject)).toStrictEqual([
+                [ErrorType.REF],
+            ]);
         });
 
         it('Approximate not match', async () => {
@@ -294,7 +312,9 @@ describe('Test vlookup', () => {
                 NumberValueObject.create(2),
                 NumberValueObject.create(1)
             ) as BaseValueObject;
-            expect(getObjectValue(resultObject)).toStrictEqual([['First']]);
+            expect(getObjectValue(resultObject)).toStrictEqual([
+                ['Eighth'],
+            ]);
         });
 
         it('Approximate not order data', async () => {
@@ -304,7 +324,9 @@ describe('Test vlookup', () => {
                 NumberValueObject.create(2),
                 NumberValueObject.create(1)
             ) as BaseValueObject;
-            expect(getObjectValue(resultObject)).toStrictEqual([[ErrorType.NA]]);
+            expect(getObjectValue(resultObject)).toStrictEqual([
+                [ErrorType.NA],
+            ]);
         });
 
         it('Approximate not order data match', async () => {
@@ -313,7 +335,37 @@ describe('Test vlookup', () => {
                 arrayValueObject2.clone(),
                 NumberValueObject.create(2)
             ) as BaseValueObject;
-            expect(getObjectValue(resultObject)).toStrictEqual([['Third']]);
+            expect(getObjectValue(resultObject)).toStrictEqual([
+                ['Third'],
+            ]);
+        });
+
+        it('Approximate order data match', async () => {
+            let resultObject = testFunction.calculate(
+                NumberValueObject.create(100),
+                ArrayValueObject.create(/*ts*/ `{
+                    -1;
+                    0;
+                    2
+            }`),
+                NumberValueObject.create(1)
+            ) as BaseValueObject;
+            expect(getObjectValue(resultObject)).toStrictEqual([
+                [2],
+            ]);
+
+            resultObject = testFunction.calculate(
+                NumberValueObject.create(3),
+                ArrayValueObject.create(/*ts*/ `{
+                    -1;
+                    0;
+                    2
+            }`),
+                NumberValueObject.create(1)
+            ) as BaseValueObject;
+            expect(getObjectValue(resultObject)).toStrictEqual([
+                [2],
+            ]);
         });
     });
 });

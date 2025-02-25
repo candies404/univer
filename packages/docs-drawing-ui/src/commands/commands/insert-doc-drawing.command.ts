@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,10 @@
  */
 
 import type { IAccessor, ICommand, IMutationInfo, JSONXActions } from '@univerjs/core';
+import type { IRichTextEditingMutationParams } from '@univerjs/docs';
+import type { IInsertDrawingCommandParams } from './interfaces';
 import {
+    BuildTextUtils,
     CommandType,
     ICommandService,
     IUniverInstanceService,
@@ -23,9 +26,8 @@ import {
     TextX,
     TextXActionType,
 } from '@univerjs/core';
-import type { IRichTextEditingMutationParams } from '@univerjs/docs';
-import { getRetainAndDeleteFromReplace, getRichTextEditPath, RichTextEditingMutation, TextSelectionManagerService } from '@univerjs/docs';
-import type { IInsertDrawingCommandParams } from './interfaces';
+import { DocSelectionManagerService, RichTextEditingMutation } from '@univerjs/docs';
+import { getCustomBlockIdsInSelections, getRichTextEditPath } from '@univerjs/docs-ui';
 
 /**
  * The command to insert new drawings
@@ -42,10 +44,10 @@ export const InsertDocDrawingCommand: ICommand = {
         }
 
         const commandService = accessor.get(ICommandService);
-        const textSelectionManagerService = accessor.get(TextSelectionManagerService);
+        const docSelectionManagerService = accessor.get(DocSelectionManagerService);
         const univerInstanceService = accessor.get(IUniverInstanceService);
 
-        const activeTextRange = textSelectionManagerService.getActiveRange();
+        const activeTextRange = docSelectionManagerService.getActiveTextRange();
         const documentDataModel = univerInstanceService.getCurrentUniverDocInstance();
         if (activeTextRange == null || documentDataModel == null) {
             return false;
@@ -64,6 +66,7 @@ export const InsertDocDrawingCommand: ICommand = {
         const jsonX = JSONX.getInstance();
         const rawActions: JSONXActions = [];
         const drawingOrderLength = documentDataModel.getSnapshot().drawingsOrder?.length ?? 0;
+        let removeDrawingLen = 0;
 
         // Step 1: Insert placeholder `\b` in dataStream and add drawing to customBlocks.
         if (collapsed) {
@@ -71,12 +74,42 @@ export const InsertDocDrawingCommand: ICommand = {
                 textX.push({
                     t: TextXActionType.RETAIN,
                     len: startOffset,
-                    segmentId,
                 });
             }
         } else {
-            const { dos } = getRetainAndDeleteFromReplace(activeTextRange, segmentId, 0, body);
+            const dos = BuildTextUtils.selection.delete([activeTextRange], body, 0, null, false);
             textX.push(...dos);
+
+            const removedCustomBlockIds = getCustomBlockIdsInSelections(body, [activeTextRange]);
+            const drawings = documentDataModel.getDrawings() ?? {};
+            const drawingOrder = documentDataModel.getDrawingsOrder() ?? [];
+            const sortedRemovedCustomBlockIds = removedCustomBlockIds.sort((a, b) => {
+                if (drawingOrder.indexOf(a) > drawingOrder.indexOf(b)) {
+                    return -1;
+                } else if (drawingOrder.indexOf(a) < drawingOrder.indexOf(b)) {
+                    return 1;
+                }
+
+                return 0;
+            });
+
+            if (sortedRemovedCustomBlockIds.length > 0) {
+                for (const blockId of sortedRemovedCustomBlockIds) {
+                    const drawing = drawings[blockId];
+                    const drawingIndex = drawingOrder.indexOf(blockId);
+                    if (drawing == null || drawingIndex < 0) {
+                        continue;
+                    }
+
+                    const removeDrawingAction = jsonX.removeOp(['drawings', blockId], drawing);
+                    const removeDrawingOrderAction = jsonX.removeOp(['drawingsOrder', drawingIndex], blockId);
+
+                    rawActions.push(removeDrawingAction!);
+                    rawActions.push(removeDrawingOrderAction!);
+
+                    removeDrawingLen++;
+                }
+            }
         }
 
         textX.push({
@@ -89,8 +122,6 @@ export const InsertDocDrawingCommand: ICommand = {
                 })),
             },
             len: drawings.length,
-            line: 0,
-            segmentId,
         });
 
         const path = getRichTextEditPath(documentDataModel, segmentId);
@@ -102,7 +133,7 @@ export const InsertDocDrawingCommand: ICommand = {
         for (const drawing of drawings) {
             const { drawingId } = drawing;
             const addDrawingAction = jsonX.insertOp(['drawings', drawingId], drawing);
-            const addDrawingOrderAction = jsonX.insertOp(['drawingsOrder', drawingOrderLength], drawingId);
+            const addDrawingOrderAction = jsonX.insertOp(['drawingsOrder', drawingOrderLength - removeDrawingLen], drawingId);
 
             rawActions.push(addDrawingAction!);
             rawActions.push(addDrawingOrderAction!);

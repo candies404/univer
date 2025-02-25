@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-import { LocaleService, useDependency } from '@univerjs/core';
-import { MessageType, Tooltip } from '@univerjs/design';
 import type { IFunctionNames } from '@univerjs/engine-formula';
+import { LocaleService, numfmt } from '@univerjs/core';
+import { MessageType, Tooltip } from '@univerjs/design';
 import { FUNCTION_NAMES_MATH, FUNCTION_NAMES_STATISTICAL, FUNCTION_NAMES_TEXT } from '@univerjs/engine-formula';
-import { numfmt } from '@univerjs/engine-numfmt';
-import { IClipboardInterfaceService, IMessageService } from '@univerjs/ui';
+import { IClipboardInterfaceService, IMessageService, useDependency } from '@univerjs/ui';
 import React from 'react';
 
 import styles from './index.module.less';
@@ -90,7 +89,7 @@ export function formatNumber(item: IStatisticItem) {
     }
 
     if (pattern && allowPatternFunctions.includes(item.name)) {
-        return numfmt.format(pattern, num);
+        return numfmt.format(pattern, num, { throws: false });
     }
 
     return num.toLocaleString();

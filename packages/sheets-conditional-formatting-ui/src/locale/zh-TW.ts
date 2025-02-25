@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -171,6 +171,7 @@ const locale: typeof zhCN = {
             },
             errorMessage: {
                 notBlank: '條件不能為空',
+                rangeError: '選區錯誤',
                 formulaError: '公式錯誤',
             },
         },

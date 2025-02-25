@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-import { DependentOn, IContextService, ILocalStorageService, Inject, Injector, mergeOverrideWithDependencies, Plugin, Tools } from '@univerjs/core';
-import { UniverRenderEnginePlugin } from '@univerjs/engine-render';
 import type { Dependency } from '@univerjs/core';
 import type { IUniverUIConfig } from '@univerjs/ui';
+import { DependentOn, ICommandService, IContextService, ILocalStorageService, Inject, Injector, merge, mergeOverrideWithDependencies, Plugin } from '@univerjs/core';
+import { UniverRenderEnginePlugin } from '@univerjs/engine-render';
 import {
     BrowserClipboardService,
     CanvasFloatDomService,
@@ -29,13 +29,13 @@ import {
     DesktopDialogService,
     DesktopGlobalZoneService,
     DesktopLayoutService,
+    DesktopLocalFileService,
     DesktopLocalStorageService,
     DesktopMessageService,
     DesktopNotificationService,
     DesktopSidebarService,
     DesktopZenZoneService,
     DISABLE_AUTO_FOCUS_KEY,
-    EditorService,
     ErrorController,
     IBeforeCloseService,
     ICanvasPopupService,
@@ -43,24 +43,21 @@ import {
     IConfirmService,
     IContextMenuService,
     IDialogService,
-    IEditorService,
     IGlobalZoneService,
     ILayoutService,
-    IMenuService,
+    ILeftSidebarService,
+    ILocalFileService,
+    IMenuManagerService,
     IMessageService,
     INotificationService,
     IPlatformService,
-    IProgressService,
-    IRangeSelectorService,
     IShortcutService,
     ISidebarService,
     IUIController,
     IUIPartsService,
     IZenZoneService,
-    MenuService,
+    MenuManagerService,
     PlatformService,
-    ProgressService,
-    RangeSelectorService,
     SharedController,
     ShortcutPanelController,
     ShortcutPanelService,
@@ -70,9 +67,12 @@ import {
     ZIndexManager,
 } from '@univerjs/ui';
 import { UniverUniUIController } from './controllers/uniui-desktop.controller';
-import { UnitGridService } from './services/unit-grid/unit-grid.service';
-
-const UI_BOOTSTRAP_DELAY = 16;
+import { UniuiFlowController } from './controllers/uniui-flow.controller';
+import { UniuiLeftSidebarController } from './controllers/uniui-leftsidebar.controller';
+import { UniuiToolbarController } from './controllers/uniui-toolbar.controller';
+import { FlowManagerService } from './services/flow/flow-manager.service';
+import { UniToolbarService } from './services/toolbar/uni-toolbar-service';
+import { IUnitGridService, UnitGridService } from './services/unit-grid/unit-grid.service';
 
 /**
  * This plugin enables the Uni Mode of Univer. It should replace
@@ -83,13 +83,14 @@ export class UniverUniUIPlugin extends Plugin {
     static override pluginName: string = UNIVER_UI_PLUGIN_NAME;
 
     constructor(
-        private _config: Partial<IUniverUIConfig> = {},
+        private readonly _config: Partial<IUniverUIConfig> = {},
         @Inject(Injector) protected readonly _injector: Injector,
-        @IContextService private readonly _contextService: IContextService
+        @IContextService private readonly _contextService: IContextService,
+        @ICommandService private readonly _commandService: ICommandService
     ) {
         super();
 
-        this._config = Tools.deepMerge({}, this._config);
+        this._config = merge({}, this._config);
         if (this._config.disableAutoFocus) {
             this._contextService.setContextValue(DISABLE_AUTO_FOCUS_KEY, true);
         }
@@ -100,39 +101,46 @@ export class UniverUniUIPlugin extends Plugin {
             [ComponentManager],
             [ZIndexManager],
             [ShortcutPanelService],
-            [UnitGridService],
+            [FlowManagerService],
+            [UniToolbarService],
+            [IUnitGridService, { useClass: UnitGridService }],
             [IUIPartsService, { useClass: UIPartsService }],
             [ILayoutService, { useClass: DesktopLayoutService }],
             [IShortcutService, { useClass: ShortcutService }],
             [IPlatformService, { useClass: PlatformService }],
-            [IMenuService, { useClass: MenuService }],
+            [IMenuManagerService, { useClass: MenuManagerService }],
             [IContextMenuService, { useClass: ContextMenuService }],
             [IClipboardInterfaceService, { useClass: BrowserClipboardService, lazy: true }],
             [INotificationService, { useClass: DesktopNotificationService, lazy: true }],
             [IDialogService, { useClass: DesktopDialogService, lazy: true }],
             [IConfirmService, { useClass: DesktopConfirmService, lazy: true }],
             [ISidebarService, { useClass: DesktopSidebarService, lazy: true }],
+            [ILeftSidebarService, { useClass: DesktopSidebarService, lazy: true }],
             [IZenZoneService, { useClass: DesktopZenZoneService, lazy: true }],
             [IGlobalZoneService, { useClass: DesktopGlobalZoneService, lazy: true }],
             [IMessageService, { useClass: DesktopMessageService, lazy: true }],
             [ILocalStorageService, { useClass: DesktopLocalStorageService, lazy: true }],
             [IBeforeCloseService, { useClass: DesktopBeforeCloseService }],
-            [IEditorService, { useClass: EditorService }],
-            [IRangeSelectorService, { useClass: RangeSelectorService }],
+            [ILocalFileService, { useClass: DesktopLocalFileService }],
             [ICanvasPopupService, { useClass: CanvasPopupService }],
-            [IProgressService, { useClass: ProgressService }],
             [CanvasFloatDomService],
             [IUIController, {
                 useFactory: () => this._injector.createInstance(UniverUniUIController, this._config),
             }],
-            [SharedController, {
-                useFactory: () => this._injector.createInstance(SharedController, this._config),
-            }],
+            [SharedController],
             [ErrorController],
-            [ShortcutPanelController, {
-                useFactory: () => this._injector.createInstance(ShortcutPanelController, this._config),
-            }],
+            [ShortcutPanelController],
+            [UniuiLeftSidebarController],
+            [UniuiToolbarController],
+            [UniuiFlowController],
         ], this._config.override);
         dependencies.forEach((dependency) => this._injector.add(dependency));
+    }
+
+    override onReady(): void {
+        this._injector.get(IUIController); // Do not move it to onStarting, otherwise the univer instance may not be mounted.
+        this._injector.get(UniuiFlowController);
+        this._injector.get(UniuiLeftSidebarController);
+        this._injector.get(UniuiToolbarController);
     }
 }

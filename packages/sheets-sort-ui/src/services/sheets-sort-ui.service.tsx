@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,26 +15,23 @@
  */
 
 import type { IRange, Nullable, Workbook, Worksheet } from '@univerjs/core';
+import type { ISheetRangeLocation } from '@univerjs/sheets';
+
+import type { ISortOption } from '@univerjs/sheets-sort';
 import {
     Disposable,
     ICommandService,
     ILogService,
     Inject,
     IUniverInstanceService,
-    LifecycleStages,
     LocaleService,
     LocaleType,
-    OnLifecycle,
     Tools,
     UniverInstanceType,
 } from '@univerjs/core';
 
 import { expandToContinuousRange, getPrimaryForRange, SetSelectionsOperation, SheetsSelectionsService } from '@univerjs/sheets';
-import type { ISheetRangeLocation } from '@univerjs/sheets';
-
-import type { ISortOption } from '@univerjs/sheets-sort';
 import { SheetsSortService, SortType } from '@univerjs/sheets-sort';
-import React from 'react';
 import { IConfirmService } from '@univerjs/ui';
 import { BehaviorSubject } from 'rxjs';
 import { ExtendConfirm } from '../views/ExtendConfirm';
@@ -61,7 +58,6 @@ const SORT_ERROR_MESSAGE = {
     FORMULA_ARRAY: 'sheets-sort.error.formula-array',
 };
 
-@OnLifecycle(LifecycleStages.Ready, SheetsSortService)
 export class SheetsSortUIService extends Disposable {
     private readonly _customSortState$ = new BehaviorSubject<Nullable<ICustomSortState>>(null);
     readonly customSortState$ = this._customSortState$.asObservable();
@@ -231,7 +227,7 @@ export class SheetsSortUIService extends Disposable {
         return true;
     }
 
-    private async _detectSortLocation(extend?: boolean): Promise<Nullable<ISheetSortLocation >> {
+    private async _detectSortLocation(extend?: boolean): Promise<Nullable<ISheetSortLocation>> {
         const workbook = this._univerInstanceService.getCurrentUnitForType(UniverInstanceType.UNIVER_SHEET) as Workbook;
         const worksheet = workbook.getActiveSheet() as Worksheet;
         const unitId = workbook.getUnitId();
@@ -258,16 +254,12 @@ export class SheetsSortUIService extends Disposable {
                 this.setSelection(unitId, subUnitId, range);
             }
         }
-        const primary = this._selectionManagerService.getCurrentLastSelection()?.primary;
-        if (!primary) {
-            return null;
-        }
 
         return {
             range,
             unitId,
             subUnitId,
-            colIndex: primary.actualColumn,
+            colIndex: selection.primary.actualColumn,
         };
     }
 }

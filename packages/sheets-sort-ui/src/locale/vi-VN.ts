@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,7 +39,7 @@ const locale: typeof zhCN = {
             'sort-reminder-desc': 'Hiện tại chỉ sắp xếp vùng được chọn, có muốn mở rộng phạm vi sắp xếp không?',
             'sort-reminder-ext': 'Mở rộng phạm vi sắp xếp',
             'sort-reminder-no': 'Giữ nguyên phạm vi sắp xếp được chọn',
-            'first-row-check': 'Không sắp xếp tiêu đề',
+            'first-row-check': 'Hàng đầu tiên không tham gia sắp xếp',
             'add-condition': 'Thêm điều kiện sắp xếp',
             cancel: 'Hủy bỏ',
             confirm: 'Xác nhận',

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -242,8 +242,11 @@ export class ImageCropperObject<T extends IImageCropperObjectProps = IImageCropp
         if (this._cacheCanvas != null) {
             return;
         }
+        const scene = this.getScene();
+        if (scene == null) return;
+
         this._cacheCanvas = new Canvas();
-        const engine = this.getScene().getEngine() as Engine;
+        const engine = scene.getEngine() as Engine;
         this._cacheCanvas.setSize(engine.width, engine.height);
 
         engine.onTransformChange$.subscribeEvent(() => {

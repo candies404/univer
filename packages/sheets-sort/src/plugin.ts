@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,23 +14,34 @@
  * limitations under the License.
  */
 
-import { Inject, Injector, Plugin, UniverInstanceType } from '@univerjs/core';
 import type { Dependency } from '@univerjs/core';
+import type { IUniverSheetsSortConfig } from './controllers/config.schema';
 
+import { IConfigService, Inject, Injector, merge, Plugin, UniverInstanceType } from '@univerjs/core';
+import { defaultPluginConfig, SHEETS_SORT_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
 import { SheetsSortController } from './controllers/sheets-sort.controller';
 import { SheetsSortService } from './services/sheets-sort.service';
 
-const NAME = 'UNIVER_SHEETS_SORT_PLUGIN';
+const NAME = 'SHEET_SORT_PLUGIN';
 
 export class UniverSheetsSortPlugin extends Plugin {
     static override type = UniverInstanceType.UNIVER_SHEET;
     static override pluginName = NAME;
 
     constructor(
-        _config: unknown,
-        @Inject(Injector) protected readonly _injector: Injector
+        private readonly _config: Partial<IUniverSheetsSortConfig> = defaultPluginConfig,
+        @Inject(Injector) protected readonly _injector: Injector,
+        @IConfigService private readonly _configService: IConfigService
     ) {
         super();
+
+        // Manage the plugin configuration.
+        const { ...rest } = merge(
+            {},
+            defaultPluginConfig,
+            this._config
+        );
+        this._configService.setConfig(SHEETS_SORT_PLUGIN_CONFIG_KEY, rest);
     }
 
     override onStarting(): void {
@@ -38,5 +49,9 @@ export class UniverSheetsSortPlugin extends Plugin {
             [SheetsSortController],
             [SheetsSortService],
         ] as Dependency[]).forEach((d) => this._injector.add(d));
+    }
+
+    override onReady(): void {
+        this._injector.get(SheetsSortController);
     }
 }

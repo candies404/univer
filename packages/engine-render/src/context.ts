@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,19 +14,41 @@
  * limitations under the License.
  */
 
+import type { Nullable } from '@univerjs/core';
+import type { IRenderConfig } from './services/render-config';
 import { Tools } from '@univerjs/core';
 import { fixLineWidthByScale, getColor } from './basics/tools';
-import { Transform } from './basics';
 
 export class UniverRenderingContext2D implements CanvasRenderingContext2D {
     __mode = 'rendering';
+
+    private _transformCache: Nullable<DOMMatrix>;
     readonly canvas: HTMLCanvasElement;
 
     _context: CanvasRenderingContext2D;
+    private _systemType: string;
+    private _browserType: string;
+
+    renderConfig: Readonly<IRenderConfig> = {};
 
     constructor(context: CanvasRenderingContext2D) {
-        this._context = context;
         this.canvas = context.canvas;
+        this._context = context;
+    }
+
+    private _id: string;
+
+    getId() {
+        return this._id;
+    }
+
+    setId(id: string) {
+        this._id = id;
+    }
+
+    isContextLost(): boolean {
+        // @ts-ignore
+        return this._context.isContextLost();
     }
 
     // globalAlpha: number;
@@ -279,10 +301,17 @@ export class UniverRenderingContext2D implements CanvasRenderingContext2D {
         this._context.textBaseline = val;
     }
 
-    private _getScale() {
-        const m = this.getTransform();
-        const transformer = Transform.create([m.a, m.b, m.c, m.d, m.e, m.f]);
-        const { scaleX, scaleY } = transformer.decompose();
+    /**
+     * Get scale from ctx.
+     * DOMMatrix.a DOMMatrix.d would affect by ctx.rotate()
+     */
+    protected _getScale() {
+        const transform = this.getTransform();
+        const { a, b, c, d } = transform;
+
+        const scaleX = Math.sqrt(a * a + b * b);
+        const scaleY = Math.sqrt(c * c + d * d);
+        // const angle = Math.atan2(b, a);
 
         return {
             scaleX,
@@ -337,10 +366,12 @@ export class UniverRenderingContext2D implements CanvasRenderingContext2D {
     }
 
     getTransform() {
-        return this._context.getTransform();
+        const m = this._transformCache || this._context.getTransform();
+        return m;
     }
 
     resetTransform() {
+        this._transformCache = null;
         this._context.resetTransform();
     }
 
@@ -355,6 +386,7 @@ export class UniverRenderingContext2D implements CanvasRenderingContext2D {
      * @method
      */
     reset() {
+        this._transformCache = null;
         this._context.reset();
     }
 
@@ -418,10 +450,10 @@ export class UniverRenderingContext2D implements CanvasRenderingContext2D {
         this._context.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x, y);
     }
 
-     /**
-      * bezierCurveTo function precision.
-      * @method
-      */
+    /**
+     * bezierCurveTo function precision.
+     * @method
+     */
     bezierCurveToByPrecision(cp1x: number, cp1y: number, cp2x: number, cp2y: number, x: number, y: number) {
         const { scaleX, scaleY } = this._getScale();
         x = fixLineWidthByScale(x, scaleX);
@@ -480,13 +512,27 @@ export class UniverRenderingContext2D implements CanvasRenderingContext2D {
         this._context.closePath();
     }
 
+    getSystemType() {
+        if (!this._systemType) {
+            this._systemType = Tools.getSystemType();
+        }
+        return this._systemType;
+    }
+
+    getBrowserType() {
+        if (!this._browserType) {
+            this._browserType = Tools.getBrowserType();
+        }
+        return this._browserType;
+    }
+
     /**
      * Chrome hardware acceleration causes canvas stroke to fail to draw lines on Mac.
      */
     closePathByEnv() {
-        const system = Tools.getSystemType();
+        const system = this.getSystemType();
         const isMac = system === 'Mac';
-        const browser = Tools.getBrowserType();
+        const browser = this.getBrowserType();
         const isChrome = browser === 'Chrome';
 
         if (isMac && isChrome) {
@@ -639,10 +685,10 @@ export class UniverRenderingContext2D implements CanvasRenderingContext2D {
         this._context.fillRect(x, y, width, height);
     }
 
-     /**
-      * fillRect function precision.
-      * @method
-      */
+    /**
+     * fillRect function precision.
+     * @method
+     */
     fillRectByPrecision(x: number, y: number, width: number, height: number) {
         const { scaleX, scaleY } = this._getScale();
         x = fixLineWidthByScale(x, scaleX);
@@ -763,8 +809,14 @@ export class UniverRenderingContext2D implements CanvasRenderingContext2D {
         const { scaleX, scaleY } = this._getScale();
         x = fixLineWidthByScale(x, scaleX);
         y = fixLineWidthByScale(y, scaleY);
-
         this.moveTo(x, y);
+    }
+
+    moveToByPrecisionLog(x: number, y: number) {
+        const { scaleX, scaleY } = this._getScale();
+        const afterX = fixLineWidthByScale(x, scaleX);
+        const afterY = fixLineWidthByScale(y, scaleY);
+        this.moveTo(afterX, afterY);
     }
 
     /**
@@ -818,6 +870,7 @@ export class UniverRenderingContext2D implements CanvasRenderingContext2D {
      * @method
      */
     rotate(angle: number) {
+        this._transformCache = null;
         this._context.rotate(angle);
     }
 
@@ -834,6 +887,7 @@ export class UniverRenderingContext2D implements CanvasRenderingContext2D {
      * @method
      */
     scale(x: number, y: number) {
+        this._transformCache = null;
         this._context.scale(x, y);
     }
 
@@ -848,7 +902,6 @@ export class UniverRenderingContext2D implements CanvasRenderingContext2D {
             this._context.setLineDash(segments);
         } else if ('mozDash' in this._context) {
             // verified that this works in firefox
-
             (<any> this._context.mozDash) = segments;
         } else if ('webkitLineDash' in this._context) {
             // does not currently work for Safari
@@ -876,6 +929,7 @@ export class UniverRenderingContext2D implements CanvasRenderingContext2D {
     setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void;
 
     setTransform(...args: [any]) {
+        this._transformCache = null;
         this._context.setTransform(...args);
     }
 
@@ -919,6 +973,7 @@ export class UniverRenderingContext2D implements CanvasRenderingContext2D {
      * @method
      */
     transform(a: number, b: number, c: number, d: number, e: number, f: number) {
+        this._transformCache = null;
         this._context.transform(a, b, c, d, e, f);
     }
 
@@ -927,10 +982,7 @@ export class UniverRenderingContext2D implements CanvasRenderingContext2D {
      * @method
      */
     translate(x: number, y: number) {
-        // const { scaleX, scaleY } = this._getScale();
-        // x = fixLineWidthByScale(x, scaleX);
-        // y = fixLineWidthByScale(y, scaleY);
-
+        this._transformCache = null;
         this._context.translate(x, y);
     }
 
@@ -938,11 +990,12 @@ export class UniverRenderingContext2D implements CanvasRenderingContext2D {
         const { scaleX, scaleY } = this._getScale();
         x = fixLineWidthByScale(x, scaleX);
         y = fixLineWidthByScale(y, scaleY);
-
+        this._transformCache = null;
         this._context.translate(x, y);
     }
 
     translateWithPrecisionRatio(x: number, y: number) {
+        this._transformCache = null;
         const { scaleX, scaleY } = this._getScale();
         this._context.translate(x / scaleX, y / scaleY);
     }
@@ -956,32 +1009,13 @@ export class UniverRenderingContext2D implements CanvasRenderingContext2D {
     }
 }
 
-/**
- * TODO
- */
-export class UniverRenderingContextWebGL { }
-
-/**
- * TODO
- */
-export class UniverRenderingContextWebGPU { }
-
-export class UniverRenderingContext extends UniverRenderingContext2D {
-}
+export class UniverRenderingContext extends UniverRenderingContext2D { }
 
 export class UniverPrintingContext extends UniverRenderingContext2D {
     override __mode = 'printing';
 
-    private __getScale() {
-        const m = this.getTransform();
-        return {
-            scaleX: m.a,
-            scaleY: m.d,
-        };
-    }
-
     override clearRect(x: number, y: number, width: number, height: number): void {
-        const { scaleX, scaleY } = this.__getScale();
+        const { scaleX, scaleY } = this._getScale();
         x = fixLineWidthByScale(x, scaleX);
         y = fixLineWidthByScale(y, scaleY);
         width = fixLineWidthByScale(width, scaleX);

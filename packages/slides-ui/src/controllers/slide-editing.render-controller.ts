@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,71 +20,62 @@ import type {
     IDocumentBody,
     IPosition,
     Nullable,
-    Workbook,
-} from '@univerjs/core';
-import {
-    DEFAULT_EMPTY_DOCUMENT_VALUE,
-    Direction,
-    Disposable,
-    DisposableCollection,
-    DOCS_FORMULA_BAR_EDITOR_UNIT_ID_KEY,
-    EDITOR_ACTIVATED,
-    FOCUSING_EDITOR_BUT_HIDDEN,
-    FOCUSING_EDITOR_INPUT_FORMULA,
-    FOCUSING_EDITOR_STANDALONE,
-    FOCUSING_FORMULA_EDITOR,
-    FOCUSING_SHEET,
-    FOCUSING_UNIVER_EDITOR_STANDALONE_SINGLE_MODE,
-    HorizontalAlign,
-    ICommandService,
-    IContextService,
-    Inject,
-    IResourceLoaderService,
-    IUndoRedoService,
-    IUniverInstanceService,
-    LocaleService,
-    toDisposable,
-    VerticalAlign,
-    WrapStrategy,
-} from '@univerjs/core';
-import type { IDocObjectParam } from '@univerjs/docs';
-import {
-    VIEWPORT_KEY as DOC_VIEWPORT_KEY,
-    DOCS_COMPONENT_MAIN_LAYER_INDEX,
-    DOCS_VIEW_KEY,
-    DocSkeletonManagerService,
-    MoveCursorOperation,
-    MoveSelectionOperation,
-    TextSelectionManagerService,
-} from '@univerjs/docs';
-// import { IFunctionService, LexerTreeBuilder } from '@univerjs/engine-formula';
+    SlideDataModel,
+    UnitModel } from '@univerjs/core';
+import type { IDocObjectParam, IEditorInputConfig } from '@univerjs/docs-ui';
 import type {
     DocBackground,
     Documents,
     DocumentSkeleton,
     IDocumentLayoutObject,
-    IEditorInputConfig,
     IRenderContext,
     IRenderModule,
     Scene,
 } from '@univerjs/engine-render';
+import type { IEditorBridgeServiceVisibleParam } from '../services/slide-editor-bridge.service';
+import {
+    DEFAULT_EMPTY_DOCUMENT_VALUE,
+    Direction,
+    Disposable,
+    DisposableCollection,
+    EDITOR_ACTIVATED,
+    FOCUSING_EDITOR_BUT_HIDDEN,
+    FOCUSING_EDITOR_STANDALONE,
+    FOCUSING_UNIVER_EDITOR_STANDALONE_SINGLE_MODE,
+    HorizontalAlign,
+    ICommandService,
+    IContextService,
+    Inject,
+    IUndoRedoService,
+    IUniverInstanceService,
+    LocaleService,
+    toDisposable,
+    UniverInstanceType,
+    VerticalAlign,
+    WrapStrategy,
+} from '@univerjs/core';
+import {
+    DocSelectionManagerService,
+    DocSkeletonManagerService,
+    RichTextEditingMutation,
+} from '@univerjs/docs';
+import { VIEWPORT_KEY as DOC_VIEWPORT_KEY, DOCS_COMPONENT_MAIN_LAYER_INDEX, DOCS_VIEW_KEY, DocSelectionRenderService, IEditorService, MoveCursorOperation, MoveSelectionOperation } from '@univerjs/docs-ui';
 import {
     convertTextRotation,
     DeviceInputEventType,
     FIX_ONE_PIXEL_BLUR_OFFSET,
     fixLineWidthByScale,
     IRenderManagerService,
-    ITextSelectionRenderManager,
     Rect,
     ScrollBar,
 } from '@univerjs/engine-render';
-import { IEditorService, KeyCode } from '@univerjs/ui';
+import { ILayoutService, KeyCode } from '@univerjs/ui';
 import { filter } from 'rxjs';
-import type { IEditorBridgeServiceVisibleParam } from '../services/slide-editor-bridge.service';
+import { SetTextEditArrowOperation } from '../commands/operations/text-edit.operation';
+import { SLIDE_EDITOR_ID } from '../const';
 import { ISlideEditorBridgeService } from '../services/slide-editor-bridge.service';
 import { ISlideEditorManagerService } from '../services/slide-editor-manager.service';
-
-import { SetTextEditArrowOperation } from '../commands/operations/text-edit.operation';
+import { CursorChange } from '../type';
 
 const HIDDEN_EDITOR_POSITION = -1000;
 
@@ -97,12 +88,6 @@ interface ICanvasOffset {
     top: number;
 }
 
-enum CursorChange {
-    InitialState,
-    StartEditor,
-    CursorChange,
-}
-
 export class SlideEditingRenderController extends Disposable implements IRenderModule {
     /**
      * It is used to distinguish whether the user has actively moved the cursor in the editor, mainly through mouse clicks.
@@ -112,60 +97,50 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
     /** If the corresponding unit is active and prepared for editing. */
     private _isUnitEditing = false;
 
-    // private _workbookSelections: WorkbookSelections;
-
     private _d: Nullable<IDisposable>;
 
     constructor(
-        private readonly _context: IRenderContext<Workbook>,
-        // @Inject(SheetsSelectionsService) selectionManagerService: SheetsSelectionsService,
+        private readonly _renderContext: IRenderContext<UnitModel>,
+        @ILayoutService private readonly _layoutService: ILayoutService,
         @IUndoRedoService private readonly _undoRedoService: IUndoRedoService,
         @IContextService private readonly _contextService: IContextService,
         @IUniverInstanceService private readonly _instanceSrv: IUniverInstanceService,
         @IRenderManagerService private readonly _renderManagerService: IRenderManagerService,
         @ISlideEditorBridgeService private readonly _editorBridgeService: ISlideEditorBridgeService,
         @ISlideEditorManagerService private readonly _cellEditorManagerService: ISlideEditorManagerService,
-        @ITextSelectionRenderManager private readonly _textSelectionRenderManager: ITextSelectionRenderManager,
-        // @Inject(LexerTreeBuilder) private readonly _lexerTreeBuilder: LexerTreeBuilder,
-        // @IFunctionService private readonly _functionService: IFunctionService,
-        @Inject(TextSelectionManagerService) private readonly _textSelectionManagerService: TextSelectionManagerService,
+        @Inject(DocSelectionManagerService) private readonly _textSelectionManagerService: DocSelectionManagerService,
         @ICommandService private readonly _commandService: ICommandService,
         @Inject(LocaleService) protected readonly _localService: LocaleService,
-        @IEditorService private readonly _editorService: IEditorService,
-        @IResourceLoaderService private readonly _resourceLoaderService: IResourceLoaderService
+        @IEditorService private readonly _editorService: IEditorService
     ) {
         super();
 
-        // this._workbookSelections = selectionManagerService.getWorkbookSelections(this._context.unitId);
-
         // EditingRenderController is per unit. It should only handle keyboard events when the unit is
         // the current of its type.
-        // this.disposeWithMe(this._instanceSrv.getCurrentTypeOfUnit$(UniverInstanceType.UNIVER_SHEET).subscribe((workbook) => {
-        //     if (workbook?.getUnitId() === this._context.unitId) {
-        //         this._d = this._init();
-        //     } else {
-        //         this._disposeCurrent();
+        this.disposeWithMe(this._instanceSrv.getCurrentTypeOfUnit$<SlideDataModel>(UniverInstanceType.UNIVER_SLIDE).subscribe((slideDataModel) => {
+            if (slideDataModel && slideDataModel.getUnitId() === this._renderContext.unitId) {
+                this._d = this._init();
+            } else {
+                this._disposeCurrent();
 
-        //         // Force ending editor when he switch to another workbook.
-        //         if (this._isUnitEditing) {
-        //             this._handleEditorInvisible({
-        //                 visible: false,
-        //                 eventType: DeviceInputEventType.Keyboard,
-        //                 keycode: KeyCode.ESC,
-        //                 unitId: this._context.unitId,
-        //             });
+                // Force ending editor when he switch to another workbook.
+                if (this._isUnitEditing) {
+                    this._handleEditorInvisible({
+                        visible: false,
+                        eventType: DeviceInputEventType.Keyboard,
+                        keycode: KeyCode.ESC,
+                        unitId: this._renderContext.unitId,
+                    });
 
-        //             this._isUnitEditing = false;
-        //         }
-        //     }
-        // }));
-        this._d = this._init();
+                    this._isUnitEditing = false;
+                }
+            }
+        }));
         this._initEditorVisibilityListener();
     }
 
     override dispose(): void {
         super.dispose();
-
         this._disposeCurrent();
     }
 
@@ -181,7 +156,13 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
         this._initialCursorSync(d);
         this._listenEditorFocus(d);
         this._commandExecutedListener(d);
-        this._cursorStateListener(d);
+
+        // FIXME: we should not use React component to create editor render, it would make the control
+        // flow not controllable.
+        setTimeout(() => {
+            this._cursorStateListener(d);
+        }, 1000);
+
         return d;
     }
 
@@ -204,22 +185,7 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
         if (!renderConfig) return;
 
         d.add(renderConfig.document.onPointerDown$.subscribeEvent(() => {
-            // fix https://github.com/dream-num/univer/issues/628, need to recalculate the cell editor size after
-            // it acquire focus.
-            // if (this._isUnitEditing && this._editorBridgeService.isVisible()) {
-            //     const param = this._editorBridgeService.getEditRectState();
-            //     const editorId = this._editorBridgeService.getCurrentEditorId();
-
-            //     if (!param || !editorId || !this._editorService.isSheetEditor(editorId)) {
-            //         return;
-            //     }
-
-            //     const skeleton = this._getEditorSkeleton(editorId);
-            //     if (!skeleton) return;
-
-            //     const { position, documentLayoutObject, canvasOffset, scaleX, scaleY } = param;
-            //     this._fitTextSize(position, canvasOffset, skeleton, documentLayoutObject, scaleX, scaleY);
-            // }
+            // ...
         }));
     }
 
@@ -233,22 +199,27 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
 
     private _initialCursorSync(d: DisposableCollection) {
         d.add(this._cellEditorManagerService.focus$.pipe(filter((f) => !!f)).subscribe(() => {
-            this._textSelectionRenderManager.sync();
+            const docSelectionRenderManager = this._renderManagerService.getCurrentTypeOfRenderer(UniverInstanceType.UNIVER_DOC)?.with(DocSelectionRenderService);
+
+            if (docSelectionRenderManager) {
+                docSelectionRenderManager.sync();
+            }
         }));
     }
 
     /**
-     * Should update current editing cell info when selection is changed.
+     * Set editorUnitId to curr doc.
      * @param d DisposableCollection
      */
     private _subscribeToCurrentCell(d: DisposableCollection) {
-        // invoked by slide-editor-bridge.service.ts@setEditorRectn---> currentEditRectState$.next
+        // first part of editing.
+        // startEditing --> _updateEditor --> slide-editor-bridge.service.ts@setEditorRect---> currentEditRectState$.next(editCellState)
+        // 2nd part is startEditing --> changeVisible
         d.add(this._editorBridgeService.currentEditRectState$.subscribe((editCellState) => {
             if (editCellState == null) {
                 return;
             }
 
-            const { position, documentLayoutObject, scaleX, editorUnitId } = editCellState;
             if (
                 this._contextService.getContextValue(FOCUSING_EDITOR_STANDALONE) ||
                 this._contextService.getContextValue(FOCUSING_UNIVER_EDITOR_STANDALONE_SINGLE_MODE)
@@ -256,8 +227,12 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
                 return;
             }
 
-            const { startX, endX } = position;
-            const { textRotation, wrapStrategy, documentModel } = documentLayoutObject;
+            const {
+                position: { startX, endX },
+                documentLayoutObject: { textRotation, wrapStrategy, documentModel },
+                scaleX,
+                editorUnitId,
+            } = editCellState;
             const { vertexAngle: angle } = convertTextRotation(textRotation);
             documentModel!.updateDocumentId(editorUnitId);
 
@@ -272,24 +247,38 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
                 endOffset: 0,
             }]);
 
-            // hide the editor, but the editor is still exist.
-            // the last active, calling stack trace:
-            // EditorContainer.tsx cellEditorManagerService.state$.subscribe -->
+            // the valid pos of activate:
             // EditorContainer.tsx cellEditorManagerService.setFocus(true) -->
-            // _textSelectionRenderManager.sync() --> _updateInputPosition --> activate
-            this._textSelectionRenderManager.activate(HIDDEN_EDITOR_POSITION, HIDDEN_EDITOR_POSITION);
+            // ---> _focus$.next --> editingRenderController
+            // _textSelectionRenderManager.sync() --> _updateInputPosition --> activate(left, top)
+
+            const docSelectionRenderManager = this._renderManagerService.getCurrentTypeOfRenderer(UniverInstanceType.UNIVER_DOC)?.with(DocSelectionRenderService);
+
+            if (docSelectionRenderManager) {
+                docSelectionRenderManager.activate(HIDDEN_EDITOR_POSITION, HIDDEN_EDITOR_POSITION);
+            }
         }));
     }
 
+    /**
+     * Set size and pos of editing area.
+     * @param positionFromEditRectState
+     * @param canvasOffset
+     * @param documentSkeleton
+     * @param documentLayoutObject
+     * @param scaleX
+     * @param scaleY
+     */
     private _fitTextSize(
-        actualRangeWithCoord: IPosition,
+        positionFromEditRectState: IPosition,
         canvasOffset: ICanvasOffset,
         documentSkeleton: DocumentSkeleton,
         documentLayoutObject: IDocumentLayoutObject,
         scaleX: number = 1,
         scaleY: number = 1
     ) {
-        const { startX, startY, endX, endY } = actualRangeWithCoord;
+        //size & pos derives from slide-editor-bridge.service.ts@getEditRectState.position
+        const { startX, startY, endX, endY } = positionFromEditRectState;
         const documentDataModel = documentLayoutObject.documentModel;
 
         if (documentDataModel == null) {
@@ -297,7 +286,7 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
         }
 
         const { actualWidth, actualHeight } = this._predictingSize(
-            actualRangeWithCoord,
+            positionFromEditRectState,
             canvasOffset,
             documentSkeleton,
             documentLayoutObject,
@@ -341,7 +330,7 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
         // re-calculate skeleton(viewModel for component)
         documentSkeleton.calculate();
 
-        this._editAreaProcessing(editorWidth, editorHeight, actualRangeWithCoord, canvasOffset, fill, scaleX, scaleY);
+        this._editAreaProcessing(editorWidth, editorHeight, positionFromEditRectState, canvasOffset, fill, scaleX, scaleY);
     }
 
     /**
@@ -405,15 +394,13 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
     }
 
     /**
-     * Mainly used to calculate the volume of scenes and objects,
-     * determine whether a scrollbar appears,
-     * and calculate the editor's boundaries relative to the browser.
+     * control the size of editing area
      */
     // eslint-disable-next-line max-lines-per-function
     private _editAreaProcessing(
         editorWidth: number,
         editorHeight: number,
-        actualRangeWithCoord: IPosition,
+        positionFromEditRectState: IPosition,
         canvasOffset: ICanvasOffset,
         fill: Nullable<string>,
         scaleX: number = 1,
@@ -425,11 +412,27 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
             return;
         }
 
-        let { startX, startY } = actualRangeWithCoord;
+        function pxToNum(width: string): number {
+            return Number.parseInt(width.replace('px', ''));
+        }
 
-        const { document: documentComponent, scene, engine: docEngine } = editorObject;
+        const engine = this._renderContext.engine;
+        const canvasElement = engine.getCanvasElement();
+        const canvasClientRect = canvasElement.getBoundingClientRect();
 
-        const viewportMain = scene.getViewport(DOC_VIEWPORT_KEY.VIEW_MAIN);
+        // We should take the scale into account when canvas is scaled by CSS.
+        const widthOfCanvas = pxToNum(canvasElement.style.width); // declared width
+        const { top, left, width } = canvasClientRect; // real width affected by scale
+        const scaleAdjust = width / widthOfCanvas;
+
+        let { startX, startY } = positionFromEditRectState;
+
+        startX += canvasOffset.left;
+        startY += canvasOffset.top;
+
+        const { document: documentComponent, scene: editorScene, engine: docEngine } = editorObject;
+
+        const viewportMain = editorScene.getViewport(DOC_VIEWPORT_KEY.VIEW_MAIN);
 
         const clientHeight =
             document.body.clientHeight -
@@ -447,7 +450,9 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
             physicHeight = clientHeight;
 
             if (scrollBar == null) {
-                viewportMain && new ScrollBar(viewportMain, { enableHorizontal: false, barSize: 8 });
+                if (viewportMain) {
+                    const sb = new ScrollBar(viewportMain, { enableHorizontal: false, barSize: 8 });
+                }
             } else {
                 viewportMain?.resetCanvasSizeAndUpdateScroll();
             }
@@ -458,9 +463,7 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
 
         editorWidth += scrollBar?.barSize || 0;
 
-        if (editorWidth > clientWidth) {
-            editorWidth = clientWidth;
-        }
+        editorWidth = Math.min(editorWidth, clientWidth);
 
         startX -= FIX_ONE_PIXEL_BLUR_OFFSET;
 
@@ -468,15 +471,15 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
 
         // physicHeight = editorHeight;
 
-        this._addBackground(scene, editorWidth / scaleX, editorHeight / scaleY, fill);
+        this._addBackground(editorScene, editorWidth / scaleX, editorHeight / scaleY, fill);
 
-        const { scaleX: precisionScaleX, scaleY: precisionScaleY } = scene.getPrecisionScale();
+        const { scaleX: precisionScaleX, scaleY: precisionScaleY } = editorScene.getPrecisionScale();
 
-        scene.transformByState({
-            width: editorWidth / scaleX,
-            height: editorHeight / scaleY,
-            scaleX,
-            scaleY,
+        editorScene.transformByState({
+            width: editorWidth * scaleAdjust / scaleX,
+            height: editorHeight * scaleAdjust / scaleY,
+            scaleX: scaleX * scaleAdjust,
+            scaleY: scaleY * scaleAdjust,
         });
 
         documentComponent.resize(editorWidth / scaleX, editorHeight / scaleY);
@@ -493,17 +496,17 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
             );
         }, 0);
 
-        // const canvasElement = this._context.engine.getCanvasElement();
-        // const canvasBoundingRect = canvasElement.getBoundingClientRect();
-        // startX += canvasBoundingRect.left;
-        // startY += canvasBoundingRect.top;
+        const contentBoundingRect = this._layoutService.getContentElement().getBoundingClientRect();
+        const canvasBoundingRect = canvasElement.getBoundingClientRect();
+        startX = startX * scaleAdjust + (canvasBoundingRect.left - contentBoundingRect.left);
+        startY = startY * scaleAdjust + (canvasBoundingRect.top - contentBoundingRect.top);
 
         // Update cell editor container position and size.
         this._cellEditorManagerService.setState({
             startX,
             startY,
-            endX: editorWidth + startX,
-            endY: physicHeight + startY,
+            endX: editorWidth * scaleAdjust + startX,
+            endY: physicHeight * scaleAdjust + startY,
             show: true,
         });
     }
@@ -546,16 +549,19 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
     }
 
     /**
-     * invoked when this._editorBridgeService.visible$ param.visible = true
+     * Show input area, resize input area and then place input to right place.
+     * @TODO why do resize in show input area?
      * @param param
      */
-
+    // handleVisible is the 2nd part of editing.
+    // first part: startEditing --> _updateEditor
+    // 2nd part: startEditing --> changeVisible --> slide-editor-bridge.render-controller.ts@changeVisible --> _editorBridgeService.changeVisible
     private _handleEditorVisible(param: IEditorBridgeServiceVisibleParam) {
-        const { eventType, keycode } = param;
+        const { eventType } = param;
 
         // Change `CursorChange` to changed status, when formula bar clicked.
         this._cursorChange =
-            eventType === DeviceInputEventType.PointerDown
+            [DeviceInputEventType.PointerDown, DeviceInputEventType.Dblclick].includes(eventType)
                 ? CursorChange.CursorChange
                 : CursorChange.StartEditor;
 
@@ -567,13 +573,11 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
         const {
             position,
             documentLayoutObject,
-            canvasOffset,
+            slideCardOffset: canvasOffset,
             scaleX,
             scaleY,
             editorUnitId,
             unitId,
-            // sheetId,
-            // isInArrayFormulaRange = false,
         } = editCellState;
 
         const editorObject = this._getEditorObject();
@@ -582,9 +586,7 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
             return;
         }
 
-        // this._setOpenForCurrent(unitId, sheetId);
-
-        const { document, scene } = editorObject;
+        const { scene } = editorObject;
 
         this._contextService.setContextValue(EDITOR_ACTIVATED, true);
 
@@ -594,6 +596,7 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
             return;
         }
 
+        // core function! set editing area size and pos
         this._fitTextSize(position, canvasOffset, skeleton, documentLayoutObject, scaleX, scaleY);
 
         // TODO: @JOCS, Get the position close to the cursor after clicking on the cell.
@@ -659,16 +662,16 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
      * @param d DisposableCollection
      */
     private _initialKeyboardListener(d: DisposableCollection) {
-        d.add(this._textSelectionRenderManager.onInputBefore$.subscribe((config) => {
-            const isFocusFormulaEditor = this._contextService.getContextValue(FOCUSING_FORMULA_EDITOR);
-            const isFocusSheets = this._contextService.getContextValue(FOCUSING_SHEET);
+        // d.add(this._textSelectionRenderManager.onInputBefore$.subscribe((config) => {
+        //     // const isFocusFormulaEditor = this._contextService.getContextValue(FORMULA_EDITOR_ACTIVATED);
+        //     // const isFocusSheets = this._contextService.getContextValue(FOCUSING_SHEET);
 
-            // TODO@Jocs: should get editor instead of current doc
-            const unitId = this._instanceSrv.getCurrentUniverDocInstance()?.getUnitId();
-            if (unitId && isFocusSheets && !isFocusFormulaEditor && this._editorService.isSheetEditor(unitId)) {
-                this._showEditorByKeyboard(config);
-            }
-        }));
+        //     // // TODO@Jocs: should get editor instead of current doc
+        //     // const unitId = this._instanceSrv.getCurrentUniverDocInstance()?.getUnitId();
+        //     // if (unitId && isFocusSheets && !isFocusFormulaEditor && this._editorService.isSheetEditor(unitId)) {
+        //     //     this._showEditorByKeyboard(config);
+        //     // }
+        // }));
     }
 
     private _showEditorByKeyboard(config: Nullable<IEditorInputConfig>) {
@@ -686,50 +689,60 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
         // });
     }
 
-    /**
-     * Listen to document edits to refresh the size of the sheet editor, not for normal editor.
-     */
     private _commandExecutedListener(d: DisposableCollection) {
         const moveCursorOP = [SetTextEditArrowOperation.id];
+        const editedMutations = [RichTextEditingMutation.id];
 
         d.add(this._commandService.onCommandExecuted((command: ICommandInfo) => {
-            if (moveCursorOP.includes(command.id)) {
-                const params = command.params as IEditorBridgeServiceVisibleParam & { isShift: boolean };
-                const { keycode, isShift } = params;
-
-                /**
-                 * After the user enters the editor and actively moves the editor selection area with the mouse,
-                 * the up, down, left, and right keys can no longer switch editing cells,
-                 * but move the cursor within the editor instead.
-                 */
-                if (keycode != null &&
-                    (this._cursorChange === CursorChange.CursorChange || this._contextService.getContextValue(FOCUSING_FORMULA_EDITOR))
-                ) {
-                    this._moveInEditor(keycode, isShift);
-                    return;
-                }
-
-                // TODO@Jocs: After we merging editor related controllers, this seems verbose.
-                // We can directly call SetRangeValues here.
-                this._editorBridgeService.changeVisible(params);
+            // Only should do something when it is the current editor.
+            // FIXME: listen to command execution is pretty expensive. We should
+            // have multi editor instances and only handle event from a single editor.
+            if (this._editorService.getFocusId() !== SLIDE_EDITOR_ID) {
+            // if (this._editorService.getFocusId() !== this._renderContext.unitId) {
+                return;
             }
 
-            // if (command.id === SetCellEditVisibleWithF2Operation.id) {
-            //     this._cursorChange = CursorChange.CursorChange;
-            // }
+            if (moveCursorOP.includes(command.id)) {
+                this._moveCursorCmdHandler(command);
+            }
+
+            if (editedMutations.includes(command.id)) {
+                if (this._editorBridgeService.isVisible()) {
+                    this._editingChangedHandler();
+                }
+            }
         }));
     }
 
-    private _setOpenForCurrent(unitId: Nullable<string>, sheetId: Nullable<string>) {
-        const sheetEditors = this._editorService.getAllEditor();
-        for (const [_, sheetEditor] of sheetEditors) {
-            if (!sheetEditor.isSheetEditor()) {
-                continue;
-            }
+    private _moveCursorCmdHandler(command: ICommandInfo) {
+        const params = command.params as IEditorBridgeServiceVisibleParam & { isShift: boolean };
+        const { keycode, isShift } = params;
 
-            sheetEditor.setOpenForSheetUnitId(unitId);
-            sheetEditor.setOpenForSheetSubUnitId(sheetId);
+        /**
+         * After the user enters the editor and actively moves the editor selection area with the mouse,
+         * the up, down, left, and right keys can no longer switch editing cells,
+         * but move the cursor within the editor instead.
+         */
+        if (keycode != null && this._cursorChange === CursorChange.CursorChange
+        ) {
+            this._moveInEditor(keycode, isShift);
+        } else {
+            // TODO @Jocs: After we merging editor related controllers, this seems verbose.
+            this._editorBridgeService.changeVisible(params);
         }
+    }
+
+    private _editingChangedHandler() {
+        const editRect = this._editorBridgeService.getEditorRect();
+        if (!editRect) {
+            return;
+        }
+        const editingRichText = editRect.richTextObj;
+        editingRichText.refreshDocumentByDocData();
+        editingRichText.resizeToContentSize();
+
+        const { unitId } = this._renderContext;
+        this._handleEditorVisible({ visible: true, eventType: 3, unitId });
     }
 
     private _getEditorObject() {
@@ -738,8 +751,6 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
 
     private async _handleEditorInvisible(param: IEditorBridgeServiceVisibleParam) {
         const { keycode } = param;
-
-        this._setOpenForCurrent(null, null);
 
         this._cursorChange = CursorChange.InitialState;
 
@@ -750,7 +761,7 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
             return;
         }
 
-        const { unitId, documentLayoutObject } = editCellState;
+        // const { unitId, documentLayoutObject } = editCellState;
 
         // If neither the formula bar editor nor the cell editor has been edited,
         // it is considered that the content has not changed and returns directly.
@@ -760,30 +771,21 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
             return;
         }
 
-        // const workbook = this._context.unit;
-        // const worksheet = workbook.getActiveSheet();
-        // const workbookId = this._context.unitId;
-        // const worksheetId = worksheet.getSheetId();
-
         // moveCursor need to put behind of SetRangeValuesCommand, fix https://github.com/dream-num/univer/issues/1155
         this._moveCursor(keycode);
     }
 
     private _exitInput(param: IEditorBridgeServiceVisibleParam) {
-        this._contextService.setContextValue(FOCUSING_EDITOR_INPUT_FORMULA, false);
         this._contextService.setContextValue(EDITOR_ACTIVATED, false);
-        this._contextService.setContextValue(FOCUSING_EDITOR_BUT_HIDDEN, false);
-        this._contextService.setContextValue(FOCUSING_FORMULA_EDITOR, false);
 
         this._cellEditorManagerService.setState({
             show: param.visible,
         });
         const editorUnitId = this._editorBridgeService.getCurrentEditorId();
-        if (editorUnitId == null || !this._editorService.isSheetEditor(editorUnitId)) {
+        if (editorUnitId == null) {
             return;
         }
         this._undoRedoService.clearUndoRedo(editorUnitId);
-        this._undoRedoService.clearUndoRedo(DOCS_FORMULA_BAR_EDITOR_UNIT_ID_KEY);
     }
 
     private _moveCursor(keycode?: KeyCode) {
@@ -820,7 +822,10 @@ export class SlideEditingRenderController extends Disposable implements IRenderM
      * The logic here predicts the user's first cursor movement behavior based on this rule
      */
     private _cursorStateListener(d: DisposableCollection) {
-        const editorObject = this._getEditorObject()!;
+        const editorObject = this._getEditorObject();
+        if (!editorObject) {
+            return;
+        }
         const { document: documentComponent } = editorObject;
 
         d.add(toDisposable(documentComponent.onPointerDown$.subscribeEvent(() => {

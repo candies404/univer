@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +14,14 @@
  * limitations under the License.
  */
 
+import type { Dependency } from '@univerjs/core';
+import type { IUniverThreadCommentUIConfig } from './controllers/config.schema';
+import { DependentOn, ICommandService, IConfigService, Inject, Injector, merge, mergeOverrideWithDependencies, Plugin, UniverInstanceType } from '@univerjs/core';
 import { UniverThreadCommentPlugin } from '@univerjs/thread-comment';
-import type { Dependency, DependencyOverride } from '@univerjs/core';
-import { DependentOn, ICommandService, Inject, Injector, mergeOverrideWithDependencies, Plugin, UniverInstanceType } from '@univerjs/core';
-import { PLUGIN_NAME } from './types/const';
-import { ThreadCommentPanelService } from './services/thread-comment-panel.service';
 import { SetActiveCommentOperation, ToggleSheetCommentPanelOperation } from './commands/operations/comment.operations';
-import { IThreadCommentMentionDataService, ThreadCommentMentionDataService } from './services/thread-comment-mention-data.service';
-
-export interface IUniverThreadCommentUIConfig {
-    overrides?: DependencyOverride;
-}
+import { defaultPluginConfig, THREAD_COMMENT_UI_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
+import { ThreadCommentPanelService } from './services/thread-comment-panel.service';
+import { PLUGIN_NAME } from './types/const';
 
 @DependentOn(UniverThreadCommentPlugin)
 export class UniverThreadCommentUIPlugin extends Plugin {
@@ -32,17 +29,28 @@ export class UniverThreadCommentUIPlugin extends Plugin {
     static override type = UniverInstanceType.UNIVER_UNKNOWN;
 
     constructor(
-        private readonly _config: IUniverThreadCommentUIConfig | undefined,
+        private readonly _config: Partial<IUniverThreadCommentUIConfig> = defaultPluginConfig,
         @Inject(Injector) protected override _injector: Injector,
-        @ICommandService protected _commandService: ICommandService
+        @ICommandService protected _commandService: ICommandService,
+        @IConfigService private readonly _configService: IConfigService
     ) {
         super();
+
+        // Manage the plugin configuration.
+        const { menu, ...rest } = merge(
+            {},
+            defaultPluginConfig,
+            this._config
+        );
+        if (menu) {
+            this._configService.setConfig('menu', menu, { merge: true });
+        }
+        this._configService.setConfig(THREAD_COMMENT_UI_PLUGIN_CONFIG_KEY, rest);
     }
 
     override onStarting(): void {
         (mergeOverrideWithDependencies([
             [ThreadCommentPanelService],
-            [IThreadCommentMentionDataService, { useClass: ThreadCommentMentionDataService }],
         ], this._config?.overrides) as Dependency[]).forEach((dep) => {
             this._injector.add(dep);
         });

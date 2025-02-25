@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,13 +20,21 @@ import { Observable } from 'rxjs';
 
 export function getMenuHiddenObservable(
     accessor: IAccessor,
-    targetUniverType: UniverInstanceType
+    targetUniverType: UniverInstanceType,
+    matchUnitId?: string,
+    needHideUnitId?: string | string[]
 ): Observable<boolean> {
     const univerInstanceService = accessor.get(IUniverInstanceService);
 
     return new Observable((subscriber) => {
         const subscription = univerInstanceService.focused$.subscribe((unitId) => {
             if (unitId == null) {
+                return subscriber.next(true);
+            }
+            if (matchUnitId && matchUnitId !== unitId) {
+                return subscriber.next(true);
+            }
+            if (needHideUnitId && (Array.isArray(needHideUnitId) ? needHideUnitId.includes(unitId) : needHideUnitId === unitId)) {
                 return subscriber.next(true);
             }
             const univerType = univerInstanceService.getUnitType(unitId);

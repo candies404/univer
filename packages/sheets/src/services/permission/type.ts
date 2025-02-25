@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,16 @@
  */
 
 import type { UnitObject } from '@univerjs/protocol';
+import type { EditStateEnum, ViewStateEnum } from '../../model/range-protection-rule.model';
 
 export interface IWorksheetProtectionRule {
     permissionId: string;
-    name: string;
     description?: string;
     unitType: UnitObject;
     unitId: string;
     subUnitId: string;
+    viewState: ViewStateEnum;
+    editState: EditStateEnum;
 }
 
 export interface IWorksheetProtectionPointRule {
@@ -36,4 +38,3 @@ export type IModel = Map<string, Map<string, IWorksheetProtectionRule>>;
 
 export type IObjectPointModel = Record<string, IWorksheetProtectionPointRule[]>;
 export type IPointRuleModel = Map<string, Map<string, IWorksheetProtectionPointRule>>;
-

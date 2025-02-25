@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,24 +14,24 @@
  * limitations under the License.
  */
 
-import type { Nullable } from '../../common/type-util';
-import type { IAbsoluteTransform, ISize } from '../../shared/shape';
+import type { ISize } from '../../shared/shape';
 import type { BooleanNumber, CellValueType, HorizontalAlign, LocaleType, TextDirection, VerticalAlign, WrapStrategy } from '../enum';
-import type { IExtraModelData } from './i-extra-model-data';
+import type { IDrawingParam } from './i-drawing';
+import type { IMention } from './i-mention';
 import type { IColorStyle, IStyleBase } from './i-style-data';
 
 // Attention: all dimensional units, unless otherwise stated, refer to pt，1 pt = 1 / 72 in
 /**
  * Properties of document
  */
-export interface IDocumentData extends IReferenceSource, IExtraModelData {
+export interface IDocumentData extends IReferenceSource {
     /** unit ID */
     id: string;
     /** Revision of this document. Would be used in collaborated editing. Starts with zero. */
     rev?: number;
     locale?: LocaleType;
     title?: string;
-    body?: IDocumentBody;
+    body?: IDocumentBody; // Rich text.
     documentStyle: IDocumentStyle;
     settings?: IDocumentSettings;
     // The type of data depends on how the plug-in is defined
@@ -40,6 +40,7 @@ export interface IDocumentData extends IReferenceSource, IExtraModelData {
 }
 
 export interface IReferenceSource {
+    tableSource?: ITables; // Table
     footers?: IFooters;
     headers?: IHeaders;
     lists?: ILists;
@@ -64,6 +65,10 @@ export interface IHeaders {
  */
 export interface IFooters {
     [footerId: string]: IFooterData;
+}
+
+export interface ITables {
+    [tableId: string]: ITable;
 }
 
 /**
@@ -124,12 +129,13 @@ export interface IDocumentBody {
 
     customBlocks?: ICustomBlock[]; // customBlock user-defined block through plug-in
 
-    tables?: ITable[]; // Table
+    tables?: ICustomTable[]; // Table
 
     // tableOfContents?: { [index: number]: ITableOfContent }; // tableOfContents
     // links?: { [index: number]: IHyperlink }; // links
 
     customRanges?: ICustomRange[]; // plugin register，implement special logic for streams， hyperlink, field，structured document tags， bookmark，comment
+
     customDecorations?: ICustomDecoration[];
 
     /**
@@ -182,10 +188,8 @@ export interface IListData {
  * Contains properties describing the look and feel of a list bullet at a given level of nesting.
  */
 export interface INestingLevel {
-    paragraphProperties?: IParagraphProperties;
-
+    paragraphProperties?: IParagraphStyle;
     bulletAlignment: BulletAlignment; // ordered list support lvlJc
-
     // The glyph format contains one or more placeholders, and these placeholder are replaced with the appropriate values depending on the glyphType or glyphSymbol. The placeholders follow the pattern %[nestingLevel]. Furthermore, placeholders can have prefixes and suffixes. Thus, the glyph format follows the pattern <prefix>%[nestingLevel]<suffix>. Note that the prefix and suffix are optional and can be arbitrary strings.
     //  <prefix>%[nestingLevel]<suffix>
     glyphFormat: string; // https://developers.google.com/docs/api/reference/rest/v1/documents#nestinglevel，ms word lvlText
@@ -193,7 +197,7 @@ export interface INestingLevel {
     startNumber: number;
 
     // Union field glyph_kind can be only one of the following:
-    glyphType?: GlyphType; // ordered list string is to support custom rules https://developers.google.com/docs/api/reference/rest/v1/documents#glyphtype， ms numFmt: GlyphType
+    glyphType?: ListGlyphType; // ordered list string is to support custom rules https://developers.google.com/docs/api/reference/rest/v1/documents#glyphtype， ms numFmt: GlyphType
     glyphSymbol?: string; // the tag of the unordered list
     // End of list of possible types for union field glyph_kind.
 }
@@ -210,15 +214,15 @@ export enum FollowNumberWithType {
 /**
  * An enumeration of the supported glyph types.
  */
-export enum GlyphType {
+export enum ListGlyphType {
     BULLET, // The glyph type is unspecified or unsupported.
-    NONE, // 	An empty string.
-    DECIMAL, // 	A number, like 1, 2, or 3.
-    DECIMAL_ZERO, // 	A number where single digit numbers are prefixed with a zero, like 01, 02, or 03. Numbers with more than one digit are not prefixed with a zero.
-    UPPER_LETTER, // 	An uppercase letter, like A, B, or C.
-    LOWER_LETTER, // 	A lowercase letter, like a, b, or c.
+    NONE, // An empty string.
+    DECIMAL, // A number, like 1, 2, or 3.
+    DECIMAL_ZERO, // A number where single digit numbers are prefixed with a zero, like 01, 02, or 03. Numbers with more than one digit are not prefixed with a zero.
+    UPPER_LETTER, // An uppercase letter, like A, B, or C.
+    LOWER_LETTER, // A lowercase letter, like a, b, or c.
     UPPER_ROMAN, // An uppercase Roman numeral, like I, II, or III.
-    LOWER_ROMAN, // 	A lowercase Roman numeral, like i, ii, or iii.
+    LOWER_ROMAN, // A lowercase Roman numeral, like i, ii, or iii.
 
     /**
      * Not yet achieved, aligned with Excel's standards.
@@ -283,13 +287,13 @@ export enum GlyphType {
  * The types of alignment for a bullet.
  */
 export enum BulletAlignment {
-    BULLET_ALIGNMENT_UNSPECIFIED, //	The bullet alignment is unspecified.
-    START, //	The bullet is aligned to the start of the space allotted for rendering the bullet. Left-aligned for LTR text, right-aligned otherwise.
-    CENTER, //	The bullet is aligned to the center of the space allotted for rendering the bullet.
-    END, //	The bullet is aligned to the end of the space allotted for rendering the bullet. Right-aligned for LTR text, left-aligned otherwise.
+    BULLET_ALIGNMENT_UNSPECIFIED, // The bullet alignment is unspecified.
+    START, // bullet is aligned to the start of the space allotted for rendering the bullet. Left-aligned for LTR text, right-aligned otherwise.
+    CENTER, // The bullet is aligned to the center of the space allotted for rendering the bullet.
+    END, // The bullet is aligned to the end of the space allotted for rendering the bullet. Right-aligned for LTR text, left-aligned otherwise.
 
     //Not achieved, aligned with Excel's standards.
-    BOTH, //	The bullet is aligned such that it is equidistant from both the start and end of the space allotted for rendering the bullet.
+    BOTH, // The bullet is aligned such that it is equidistant from both the start and end of the space allotted for rendering the bullet.
 }
 
 // /**
@@ -336,23 +340,29 @@ export interface ITextRun {
     // tab?: BooleanNumber; // if tab，default is false
 }
 
-export interface ICustomRange {
+/**
+ * Block element, link like, disabled to self nested
+ */
+export interface ICustomRange<T extends Record<string, any> = Record<string, any>> {
     startIndex: number;
     endIndex: number;
     rangeId: string;
-    rangeType: CustomRangeType;
+    rangeType: CustomRangeType | number;
     /**
      * display as a whole-entity
      */
     wholeEntity?: boolean;
+    /**
+     * properties of custom range,
+     * for example, hyperlink: `{ url: string }`
+     */
+    properties?: T;
 }
 
-// TODO: @weird94 this range should not be built-in. It makes custom ranges not
-// extensible for community users.
+export type IHyperLinkCustomRange = ICustomRange<{ url: string }>;
 
-/**
- * @deprecated
- */
+export type IMentionCustomRange = ICustomRange<IMention>;
+
 export enum CustomRangeType {
     HYPERLINK,
     FIELD, // 17.16 Fields and Hyperlinks
@@ -362,6 +372,8 @@ export enum CustomRangeType {
     CUSTOM,
     MENTION,
     UNI_FORMULA,
+
+    DELTED = 9999,
 }
 
 /**
@@ -376,6 +388,7 @@ export interface ICustomBlock {
 
 export enum CustomDecorationType {
     COMMENT,
+    DELETED = 9999,
 }
 
 export interface ICustomDecoration {
@@ -405,6 +418,7 @@ export interface IHeaderAndFooterBase {
 }
 
 export enum DocumentFlavor {
+    UNSPECIFIED,
     TRADITIONAL,
     MODERN,
 }
@@ -475,6 +489,7 @@ export interface IDocumentRenderConfig {
     wrapStrategy?: WrapStrategy; // wrap to the next line, for sheet cell
     cellValueType?: CellValueType; // sheet cell type, In a spreadsheet cell, without any alignment settings applied, text should be left-aligned, numbers should be right-aligned, and Boolean values should be center-aligned.
     isRenderStyle?: BooleanNumber; // Whether to render the style(textRuns), used in formula bar editor. the default value is TRUE.
+    zeroWidthParagraphBreak?: BooleanNumber; // Whether to render the paragraph \r to zero width. the default value is false.
 }
 
 export interface ISectionBreakBase {
@@ -694,11 +709,11 @@ export interface ITextStyle extends IStyleBase {
 }
 
 export interface IIndentStart {
-    indentFirstLine?: INumberUnit ; // indentFirstLine，17.3.1.12 ind (Paragraph Indentation)
-    hanging?: INumberUnit ; // hanging，offset of first word except first line
-    indentStart?: INumberUnit ; // indentStart
+    indentFirstLine?: INumberUnit; // indentFirstLine，17.3.1.12 ind (Paragraph Indentation)
+    hanging?: INumberUnit; // hanging，offset of first word except first line
+    indentStart?: INumberUnit; // indentStart
     tabStops?: ITabStop[]; // tabStops
-    indentEnd?: INumberUnit ; // indentEnd
+    indentEnd?: INumberUnit; // indentEnd
 }
 
 /**
@@ -717,8 +732,8 @@ export interface IParagraphProperties extends IIndentStart {
     direction?: TextDirection; // direction
     spacingRule?: SpacingRule; // SpacingRule
     snapToGrid?: BooleanNumber; // snapToGrid 17.3.2.34 snapToGrid (Use Document Grid Settings For Inter-Character Spacing)
-    spaceAbove?: INumberUnit ; // spaceAbove before beforeLines (Spacing Above Paragraph)
-    spaceBelow?: INumberUnit ; // spaceBelow after afterLines (Spacing Below Paragraph)
+    spaceAbove?: INumberUnit; // spaceAbove before beforeLines (Spacing Above Paragraph)
+    spaceBelow?: INumberUnit; // spaceBelow after afterLines (Spacing Below Paragraph)
     borderBetween?: IParagraphBorder; // borderBetween
     borderTop?: IParagraphBorder; // borderTop
     borderBottom?: IParagraphBorder; // borderBottom
@@ -740,27 +755,37 @@ export enum NamedStyleType {
     NORMAL_TEXT, // Normal text.
     TITLE, // Title.
     SUBTITLE, // Subtitle.
-    HEADING_1, //	Heading 1.
+    HEADING_1, // Heading 1.
     HEADING_2, // Heading 2.
-    HEADING_3, //	Heading 3.
-    HEADING_4, //	Heading 4.
-    HEADING_5, //	Heading 5.
-    HEADING_6, //	Heading 6.
+    HEADING_3, // Heading 3.
+    HEADING_4, // Heading 4.
+    HEADING_5, // Heading 5.
+    HEADING_6, // Heading 6.
 }
 
 // export enum Alignment {
 //     ALIGNMENT_UNSPECIFIED, //The paragraph alignment is inherited from the parent.
 //     START, //The paragraph is aligned to the start of the line. Left-aligned for LTR text, right-aligned otherwise.
-//     CENTER, //	The paragraph is centered.
+//     CENTER, // The paragraph is centered.
 //     END, //The paragraph is aligned to the end of the line. Right-aligned for LTR text, left-aligned otherwise.
-//     JUSTIFIED, //	The paragraph is justified.
+//     JUSTIFIED, // The paragraph is justified.
 // }
 
 export enum SpacingRule {
     // 17.18.48 ST_LineSpacingRule (Line Spacing Rule)
-    AUTO, // Specifies that the line spacing of the parent object shall be automatically determined by the size of its contents, with no predetermined minimum or maximum size.
-    AT_LEAST, // Specifies that the height of the line shall be at least the value specified, but might be expanded to fit its content as needed.
-    EXACT, // Specifies that the height of the line shall be exactly the value specified, regardless of the size of the contents of the contents.
+
+    /**
+     * Specifies that the line spacing of the parent object shall be automatically determined by the size of its contents, with no predetermined minimum or maximum size.
+     */
+    AUTO,
+    /**
+     * Specifies that the height of the line shall be at least the value specified, but might be expanded to fit its content as needed.
+     */
+    AT_LEAST,
+    /**
+     * Specifies that the height of the line shall be exactly the value specified, regardless of the size of the contents of the contents.
+     */
+    EXACT,
 }
 
 /**
@@ -814,70 +839,131 @@ export interface IShading {
     backgroundColor: IColorStyle; // backgroundColor
 }
 
-/**
- * Type of width
- */
-export enum WidthType {
-    EVENLY_DISTRIBUTED = '0',
-    FIXED_WIDTH = '1',
+export interface IDistFromText {
+    distT: number; // distance between top text and table.
+    distB: number; // distance between bottom text and table.
+    distL: number; // distance between left text and table.
+    distR: number; // distance between right text and table.
+}
+
+export interface ITableAnchor {
+    positionH: IObjectPositionH; // horizontal Anchor (Table Horizontal Anchor)
+    positionV: IObjectPositionV;
+}
+
+export enum TableSizeType {
+    UNSPECIFIED,
+    SPECIFIED,
+}
+export interface IWidthInTableSize {
+    type: TableSizeType;
+    width: INumberUnit;
+}
+
+// 17.18.45 ST_JcTable (Table Alignment Type)
+export enum TableAlignmentType {
+    START,
+    CENTER,
+    END,
+}
+
+// 17.18.87 ST_TblLayoutType (Table Layout Type)
+export enum TableLayoutType {
+    AUTO_FIT,
+    FIXED,
+}
+
+export enum TableTextWrapType {
+    NONE,
+    WRAP,
+}
+
+export interface ICustomTable {
+    startIndex: number;
+    endIndex: number;
+    // A unique ID associated with a table.
+    tableId: string;
 }
 
 /**
  * Properties of table
  */
 export interface ITable {
-    startIndex: number;
-    endIndex: number;
-    rows: number; // rows
-    columns: number; // columns
     tableRows: ITableRow[]; // tableRows
-    tableStyle: WidthType; // tableStyle
-    width: number; // width
+    tableColumns: ITableColumn[]; // tableColumns
+    align: TableAlignmentType; // 17.4.28 jc (Table Alignment)
+    indent: INumberUnit; // left align only. leftIndent
+    textWrap: TableTextWrapType; // 17.4.57 tblpPr (Floating Table Positioning)
+    position: ITableAnchor; // 17.4.57 tblpPr (Floating Table Positioning)
+    dist: IDistFromText; // 17.4.57 tblpPr (Floating Table Positioning)
+    size: IWidthInTableSize;
+    tableId: string;
+    cellMargin?: ITableCellMargin; // cellMargin
+    layout?: TableLayoutType; // 17.4.52 tblLayout (Table Layout)
+    overlap?: BooleanNumber; // 17.4.56 tblOverlap (Floating Table Allows Other Tables to Overlap)
+    description?: string; // 17.4.46 tblDescription (Table Description)
+}
+
+// Specifies the meaning of the height specified for this table row
+// The meaning of the value of the val attribute is defined based on the value of the hRule
+// attribute for this table row as follows:
+//  If the value of hRule is auto, then the table row's height should be automatically
+// determined based on the height of its contents. The h value is ignored.
+//  If the value of hRule is atLeast, then the table row's height should be at least
+// the value the h attribute.
+//  If the value of hRule is exact, then the table row's height should be exactly the
+// value of the h attribute.
+export enum TableRowHeightRule {
+    AUTO,
+    AT_LEAST,
+    EXACT,
+}
+
+export interface ITableColumn { // 合并拆分列，HTML 合并单元格
+    size: IWidthInTableSize;
+}
+
+export interface ITableRowSize {
+    val: INumberUnit;
+    hRule: TableRowHeightRule;
 }
 
 /**
  * Properties of row of table
  */
 export interface ITableRow {
-    st: number; // startIndex
-    ed: number; // endIndex
     tableCells: ITableCell[]; // tableCells
-    tableRowStyle: ITableRowStyle; // tableRowStyle
-}
-
-/**
- * Properties of style table row
- */
-export interface ITableRowStyle {
-    minRowHeight: number; // minRowHeight
+    // If omitted, then the table row shall automatically resize its height to the height required by its contents
+    // (the equivalent of an hRule value of auto)
+    trHeight: ITableRowSize; // 17.4.80 trHeight (Table Row Height)
+    cantSplit?: BooleanNumber; // allowBreakAcrossPages, the default is true.
+    isFirstRow?: BooleanNumber; // isFirstRow.
+    repeatHeaderRow?: BooleanNumber; // Show header row in different pages. only for the first row.
 }
 
 /**
  * Properties of table cell
  */
 export interface ITableCell {
-    // st: number; // startIndex
-    // ed: number; // endIndex
-    // content: IBlockElement[]; // content
-    tableCellStyle: ITableCellStyle; // tableCellStyle
+    margin?: ITableCellMargin; // margin
+    rowSpan?: number; // rowSpan
+    columnSpan?: number; // columnSpan
+    backgroundColor?: IColorStyle; // backgroundColor
+    borderLeft?: ITableCellBorder; // borderLeft
+    borderRight?: ITableCellBorder; // borderRight
+    borderTop?: ITableCellBorder; // borderTop
+    borderBottom?: ITableCellBorder; // borderBottom
+    size?: IWidthInTableSize; // size
+    tcFitText?: BooleanNumber; // 17.4.67 tcFitText (Fit Text Within Cell)
+    // hAlign: use paragraph align to instead.
+    vAlign?: VerticalAlignmentType; // 17.4.83 vAlign (Table Cell Vertical Alignment)
 }
 
-/**
- * Properties of style of table cell
- */
-export interface ITableCellStyle {
-    rowSpan: number; // rowSpan
-    columnSpan: number; // columnSpan
-    backgroundColor: IColorStyle; // backgroundColor
-    borderLeft: ITableCellBorder; // borderLeft
-    borderRight: ITableCellBorder; // borderRight
-    borderTop: ITableCellBorder; // borderTop
-    borderBottom: ITableCellBorder; // borderBottom
-    paddingLeft: number; // paddingLeft
-    paddingRight: number; // paddingRight
-    paddingTop: number; // paddingTop
-    paddingBottom: number; // paddingBottom
-    contentAlignment: ContentAlignment; // contentAlignment
+export interface ITableCellMargin {
+    start: INumberUnit; // start
+    end: INumberUnit; // end
+    top: INumberUnit; // top
+    bottom: INumberUnit; // bottom
 }
 
 /**
@@ -885,17 +971,19 @@ export interface ITableCellStyle {
  */
 export interface ITableCellBorder {
     color: IColorStyle; // color
-    width: number; // width
+    width: INumberUnit; // width
     dashStyle: DashStyleType; // dashStyle
 }
+
+// 17.18.101ST_VerticalJc (Vertical Alignment Type)
 /**
  * The content alignments for a Shape or TableCell. The supported alignments correspond to predefined text anchoring types from the ECMA-376 standard.
  */
-export enum ContentAlignment {
+export enum VerticalAlignmentType {
     CONTENT_ALIGNMENT_UNSPECIFIED, // An unspecified content alignment. The content alignment is inherited from the parent if one exists.
-    CONTENT_ALIGNMENT_UNSUPPORTED, // An unsupported content alignment.
+    BOTH,
     TOP, // An alignment that aligns the content to the top of the content holder. Corresponds to ECMA-376 ST_TextAnchoringType 't'.
-    MIDDLE, // An alignment that aligns the content to the middle of the content holder. Corresponds to ECMA-376 ST_TextAnchoringType 'ctr'.
+    CENTER, // An alignment that aligns the content to the middle of the content holder. Corresponds to ECMA-376 ST_TextAnchoringType 'ctr'.
     BOTTOM, // An alignment that aligns the content to the bottom of the content holder. Corresponds to ECMA-376 ST_TextAnchoringType 'b'.
 }
 
@@ -957,6 +1045,7 @@ export enum NumberUnitType {
     LINE,
     CHARACTER,
     PIXEL,
+    PERCENT,
 }
 
 // 20.4.3.1 ST_AlignH (Relative Horizontal Alignment Positions)
@@ -994,67 +1083,3 @@ export enum PageOrientType {
 }
 
 // #region - tech dept
-
-// TODO@Jocs: these types are here because of drawing coupled into the core of the document's model, which
-// is an anti-pattern. After fixing the problem, these types should be removed.
-
-/** @deprecated */
-export enum ArrangeTypeEnum {
-    forward,
-    backward,
-    front,
-    back,
-}
-
-/** @deprecated */
-export enum DrawingTypeEnum {
-    UNRECOGNIZED = -1,
-    DRAWING_IMAGE = 0,
-    DRAWING_SHAPE = 1,
-    DRAWING_CHART = 2,
-    DRAWING_TABLE = 3,
-    DRAWING_SMART_ART = 4,
-    DRAWING_VIDEO = 5,
-    DRAWING_GROUP = 6,
-    DRAWING_UNIT = 7,
-    DRAWING_DOM = 8,
-}
-
-/** @deprecated */
-export type DrawingType = DrawingTypeEnum | number;
-
-/** @deprecated */
-export interface IDrawingSpace {
-    unitId: string;
-    subUnitId: string; //sheetId, pageId and so on, it has a default name in doc business
-}
-
-/** @deprecated */
-export interface IDrawingSearch extends IDrawingSpace {
-    drawingId: string;
-}
-
-/** @deprecated */
-export interface IRotationSkewFlipTransform {
-    angle?: number;
-    skewX?: number;
-    skewY?: number;
-    flipX?: boolean;
-    flipY?: boolean;
-}
-
-/** @deprecated */
-export interface ITransformState extends IAbsoluteTransform, IRotationSkewFlipTransform {}
-
-/** @deprecated */
-export interface IDrawingParam extends IDrawingSearch {
-    drawingType: DrawingType;
-    transform?: Nullable<ITransformState>;
-    transforms?: Nullable<ITransformState[]>;
-    // The same drawing render in different place, like image in header and footer.
-    // The default value is BooleanNumber.FALSE. if it's true, Please use transforms.
-    isMultiTransform?: BooleanNumber;
-    groupId?: string;
-}
-
-// #endregion

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-import PickerRuRU from 'rc-picker/lib/locale/ru_RU';
-import dajsRuRU from 'dayjs/locale/ru';
 import type { ILocale } from './interface';
+import dajsRuRU from 'dayjs/locale/ru';
+import PickerRuRU from 'rc-picker/lib/locale/ru_RU';
 
 const locale: ILocale = {
     design: {
@@ -24,14 +24,14 @@ const locale: ILocale = {
             cancel: 'отмена',
             confirm: 'ок',
         },
-        Slider: {
-            resetTo: 'Сбросить до',
-        },
         Picker: {
             ...dajsRuRU,
             ...PickerRuRU,
         },
         CascaderList: {
+            empty: 'Нет',
+        },
+        Select: {
             empty: 'Нет',
         },
     },

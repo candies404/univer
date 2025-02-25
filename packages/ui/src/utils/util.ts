@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,28 +20,4 @@ export function textTrim(x: string): string {
         return x;
     }
     return x.replace(/^\s+|\s+$/gm, '');
-}
-
-export function isElementVisible(element: HTMLElement | null) {
-    if (!element) return false;
-
-    const style = window.getComputedStyle(element);
-
-    if (style.display === 'none' ||
-        style.visibility === 'hidden' ||
-        style.opacity === '0') {
-        return false;
-    }
-
-    const rect = element.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) {
-        return false;
-    }
-
-    if (rect.bottom < 0 || rect.top > window.innerHeight ||
-        rect.right < 0 || rect.left > window.innerWidth) {
-        return false;
-    }
-
-    return true;
 }

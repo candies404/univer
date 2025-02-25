@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,5 +24,10 @@ export const IDialogService = createIdentifier<IDialogService>('univer.ui.dialog
 export interface IDialogService {
     open(params: IDialogPartMethodOptions): IDisposable;
     close(id: string): void;
+    /**
+     * @description close all dialogs except the specified ones
+     * @param {string[]} [expectIds] The specified dialog ids
+     */
+    closeAll(expectIds?: string[]): void;
     getDialogs$(): Observable<IDialogPartMethodOptions[]>;
 }

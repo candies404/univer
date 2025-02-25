@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-import { ErrorType } from '../../../basics/error-type';
 import type { BaseReferenceObject, FunctionVariantType } from '../../../engine/reference-object/base-reference-object';
-import { expandArrayValueObject } from '../../../engine/utils/array-object';
 import type { ArrayValueObject } from '../../../engine/value-object/array-value-object';
+import { ErrorType } from '../../../basics/error-type';
+import { expandArrayValueObject } from '../../../engine/utils/array-object';
 import { type BaseValueObject, ErrorValueObject } from '../../../engine/value-object/base-value-object';
 import { NullValueObject, NumberValueObject } from '../../../engine/value-object/primitive-object';
 import { BaseFunction } from '../../base-function';
@@ -62,7 +62,7 @@ export class Index extends BaseFunction {
             referenceRowCount = 1;
             referenceColumnCount = 1;
         } else if (reference.isReferenceObject()) {
-            const { startRow, endRow, startColumn, endColumn } = (reference as BaseReferenceObject).getRangeData();
+            const { startRow, endRow, startColumn, endColumn } = (reference as BaseReferenceObject).getRangePosition();
             referenceRowCount = endRow - startRow + 1;
             referenceColumnCount = endColumn - startColumn + 1;
         } else {
@@ -224,7 +224,7 @@ export class Index extends BaseFunction {
     }
 
     private _getReferenceObject(reference: BaseReferenceObject, rowNumberValue: number, columnNumberValue: number, areaNumberValue: number) {
-        const { startRow, endRow, startColumn, endColumn } = reference.getRangeData();
+        const { startRow, endRow, startColumn, endColumn } = reference.getRangePosition();
 
         let referenceStartRow = 0;
         let referenceEndRow = 0;

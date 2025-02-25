@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,86 +14,121 @@
  * limitations under the License.
  */
 
-import { connectInjector, Disposable, IConfigService, Inject, Injector, isInternalEditorID, LifecycleService, LifecycleStages, OnLifecycle, Optional, toDisposable } from '@univerjs/core';
+import type { IDisposable, UnitModel } from '@univerjs/core';
 import type { RenderUnit } from '@univerjs/engine-render';
+import type { IUniverUIConfig } from '../config.schema';
+import type { IWorkbenchOptions } from './ui.controller';
+import { Disposable, Inject, Injector, isInternalEditorID, IUniverInstanceService, LifecycleService, LifecycleStages, Optional, toDisposable } from '@univerjs/core';
+import { render as createRoot, unmount } from '@univerjs/design';
 import { IRenderManagerService } from '@univerjs/engine-render';
-import type { IDisposable } from '@univerjs/core';
-import { render as createRoot, unmount } from 'rc-util/lib/React/render';
-import React from 'react';
-
+import { filter, take } from 'rxjs';
 import { ILayoutService } from '../../services/layout/layout.service';
+import { IMenuManagerService } from '../../services/menu/menu-manager.service';
 import { BuiltInUIPart, IUIPartsService } from '../../services/parts/parts.service';
-import { CanvasPopup } from '../../views/components/popup/CanvasPopup';
+import { connectInjector } from '../../utils/di';
 import { FloatDom } from '../../views/components/dom/FloatDom';
+import { CanvasPopup } from '../../views/components/popup/CanvasPopup';
+import { Ribbon } from '../../views/components/ribbon/Ribbon';
 import { DesktopWorkbench } from '../../views/workbench/Workbench';
-import { type IUniverUIConfig, type IWorkbenchOptions, UI_CONFIG_KEY } from './ui.controller';
+import { menuSchema } from '../menus/menu.schema';
 
 const STEADY_TIMEOUT = 3000;
 
-@OnLifecycle(LifecycleStages.Ready, DesktopUIController)
 export class DesktopUIController extends Disposable {
+    private _steadyTimeout: NodeJS.Timeout;
+    private _renderTimeout: NodeJS.Timeout;
+
     constructor(
         private readonly _config: IUniverUIConfig,
         @IRenderManagerService private readonly _renderManagerService: IRenderManagerService,
+        @IUniverInstanceService private readonly _instanceSrv: IUniverInstanceService,
         @Inject(Injector) private readonly _injector: Injector,
         @Inject(LifecycleService) private readonly _lifecycleService: LifecycleService,
         @IUIPartsService private readonly _uiPartsService: IUIPartsService,
-        @IConfigService private readonly _configService: IConfigService,
+        @IMenuManagerService private readonly _menuManagerService: IMenuManagerService,
         @Optional(ILayoutService) private readonly _layoutService?: ILayoutService
     ) {
         super();
 
-        this._configService.setConfig(UI_CONFIG_KEY, this._config);
         this._initBuiltinComponents();
-
-        Promise.resolve().then(() => this._bootstrapWorkbench());
+        this._initMenus();
+        this._bootstrapWorkbench();
     }
 
+    private _initMenus(): void {
+        this._menuManagerService.mergeMenu(menuSchema);
+    }
+
+    private _currentRenderId: string | null = null;
+
     private _bootstrapWorkbench(): void {
+        this.disposeWithMe(this._instanceSrv.unitDisposed$.subscribe((_unit: UnitModel) => {
+            clearTimeout(this._steadyTimeout);
+        }));
+
         this.disposeWithMe(
-            bootstrap(this._injector, this._config, (canvasElement, containerElement) => {
+            bootstrap(this._injector, this._config, (contentElement, containerElement) => {
                 if (this._layoutService) {
                     this.disposeWithMe(this._layoutService.registerRootContainerElement(containerElement));
-                    this.disposeWithMe(this._layoutService.registerCanvasElement(canvasElement as HTMLCanvasElement));
+                    this.disposeWithMe(this._layoutService.registerContentElement(contentElement));
                 }
 
-                // TODO: this is subject to change in the future for Uni-mode
+                // When current render changes, we need to update the render unit.
                 this._renderManagerService.currentRender$.subscribe((renderId) => {
                     if (renderId) {
-                        const render = this._renderManagerService.getRenderById(renderId)!;
-                        if (!render.unitId) return;
-                        if (isInternalEditorID(render.unitId)) return;
-
-                        render.engine.setContainer(canvasElement);
+                        this._changeRenderUnit(renderId, contentElement);
                     }
                 });
 
-                setTimeout(() => {
-                    const allRenders = this._renderManagerService.getRenderAll();
+                // First render.
+                this.disposeWithMe(this._lifecycleService.lifecycle$.pipe(filter((stage) => stage === LifecycleStages.Ready), take(1)).subscribe(() => {
+                    this._renderTimeout = setTimeout(() => {
+                        const allRenders = this._renderManagerService.getRenderAll();
 
-                    for (const [key, render] of allRenders) {
-                        if (isInternalEditorID(key) || !((render) as RenderUnit).isRenderUnit) continue;
+                        for (const [key, render] of allRenders) {
+                            if (isInternalEditorID(key) || !((render) as RenderUnit).isRenderUnit) continue;
+                            this._changeRenderUnit(key, contentElement);
+                            break; // We only render the first renderer when bootstrapping.
+                        }
 
-                        render.engine.setContainer(canvasElement);
-                    }
-
-                    this._lifecycleService.stage = LifecycleStages.Rendered;
-                    setTimeout(() => this._lifecycleService.stage = LifecycleStages.Steady, STEADY_TIMEOUT);
-                }, 300);
+                        this._lifecycleService.stage = LifecycleStages.Rendered;
+                        this._steadyTimeout = setTimeout(() => {
+                            this._lifecycleService.stage = LifecycleStages.Steady;
+                        }, STEADY_TIMEOUT);
+                    }, 300);
+                }));
             })
         );
     }
 
-    private _initBuiltinComponents() {
+    private _changeRenderUnit(rendererId: string, contentElement: HTMLElement): void {
+        if (this._currentRenderId === rendererId) return;
+
+        const currentRenderer = this._currentRenderId ? this._renderManagerService.getRenderById(this._currentRenderId) : null;
+        const renderer = this._renderManagerService.getRenderById(rendererId)!;
+        if (!renderer.unitId || isInternalEditorID(renderer.unitId)) return;
+
+        currentRenderer?.deactivate();
+        currentRenderer?.engine.unmount();
+
+        renderer.engine.mount(contentElement);
+        renderer.activate();
+
+        this._currentRenderId = rendererId;
+    }
+
+    private _initBuiltinComponents(): void {
         this.disposeWithMe(this._uiPartsService.registerComponent(BuiltInUIPart.FLOATING, () => connectInjector(CanvasPopup, this._injector)));
+        // this.disposeWithMe(this._uiPartsService.registerComponent(BuiltInUIPart.CONTENT, () => connectInjector(ContentDOMPopup, this._injector)));
         this.disposeWithMe(this._uiPartsService.registerComponent(BuiltInUIPart.CONTENT, () => connectInjector(FloatDom, this._injector)));
+        this.disposeWithMe(this._uiPartsService.registerComponent(BuiltInUIPart.TOOLBAR, () => connectInjector(Ribbon, this._injector)));
     }
 }
 
 function bootstrap(
     injector: Injector,
     options: IWorkbenchOptions,
-    callback: (canvasEl: HTMLElement, containerElement: HTMLElement) => void
+    callback: (contentEl: HTMLElement, containerElement: HTMLElement) => void
 ): IDisposable {
     let mountContainer: HTMLElement;
 
@@ -112,7 +147,7 @@ function bootstrap(
     }
 
     const ConnectedApp = connectInjector(DesktopWorkbench, injector);
-    const onRendered = (canvasElement: HTMLElement) => callback(canvasElement, mountContainer);
+    const onRendered = (contentElement: HTMLElement) => callback(contentElement, mountContainer);
 
     function render() {
         createRoot(
@@ -129,8 +164,8 @@ function bootstrap(
 
     return toDisposable(() => {
         // https://github.com/facebook/react/issues/26031
-        createRoot(<div></div>, mountContainer);
-        setTimeout(() => createRoot(<div></div>, mountContainer), 200);
+        createRoot(<div />, mountContainer);
+        setTimeout(() => createRoot(<div />, mountContainer), 200);
         setTimeout(() => unmount(mountContainer), 500);
     });
 }

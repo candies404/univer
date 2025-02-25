@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+import './global.css';
+
 export { DrawingRenderService } from './services/drawing-render.service';
 export { getUpdateParams } from './utils/get-update-params';
 export { DrawingCommonPanel } from './views/panel/DrawingCommonPanel';
@@ -25,7 +27,7 @@ export { ImageCropperObject } from './views/crop/image-cropper-object';
 // #region - all commands
 
 export { SetDrawingAlignOperation } from './commands/operations/drawing-align.operation';
-export { OpenImageCropOperation, CloseImageCropOperation, AutoImageCropOperation } from './commands/operations/image-crop.operation';
+export { AutoImageCropOperation, CloseImageCropOperation, OpenImageCropOperation } from './commands/operations/image-crop.operation';
 export { ImageResetSizeOperation } from './commands/operations/image-reset-size.operation';
 
 // #endregion

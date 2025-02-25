@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,36 +14,33 @@
  * limitations under the License.
  */
 
-import { DEFAULT_EMPTY_DOCUMENT_VALUE, Disposable, DOCS_FORMULA_BAR_EDITOR_UNIT_ID_KEY, DOCS_NORMAL_EDITOR_UNIT_ID_KEY, fromEventSubject, Inject } from '@univerjs/core';
 import type { IRenderContext, IRenderModule } from '@univerjs/engine-render';
+import { Disposable, DOCS_ZEN_EDITOR_UNIT_ID_KEY, fromEventSubject, Inject, isInternalEditorID } from '@univerjs/core';
+import { DocSelectionManagerService } from '@univerjs/docs';
 import { TRANSFORM_CHANGE_OBSERVABLE_TYPE } from '@univerjs/engine-render';
-import { filter, throttleTime } from 'rxjs';
-import { TextSelectionManagerService } from '@univerjs/docs';
+import { animationFrameScheduler, filter, throttleTime } from 'rxjs';
 import { DocPageLayoutService } from '../../services/doc-page-layout.service';
 
-const SKIP_UNIT_IDS = [
-    DEFAULT_EMPTY_DOCUMENT_VALUE,
-    DOCS_FORMULA_BAR_EDITOR_UNIT_ID_KEY,
-    DOCS_NORMAL_EDITOR_UNIT_ID_KEY,
-];
-
+// REFACTOR: @JOCS, move to new-docs package.
 export class DocResizeRenderController extends Disposable implements IRenderModule {
     constructor(
         private _context: IRenderContext,
         @Inject(DocPageLayoutService) private readonly _docPageLayoutService: DocPageLayoutService,
-        @Inject(TextSelectionManagerService) private readonly _textSelectionManagerService: TextSelectionManagerService
+        @Inject(DocSelectionManagerService) private readonly _textSelectionManagerService: DocSelectionManagerService
     ) {
         super();
-        if (!SKIP_UNIT_IDS.includes(this._context.unitId)) {
-            this._initResize();
-        }
+
+        const unitId = this._context.unitId;
+        if (isInternalEditorID(unitId) && unitId !== DOCS_ZEN_EDITOR_UNIT_ID_KEY) return this;
+
+        this._initResize();
     }
 
     private _initResize() {
         this.disposeWithMe(
             fromEventSubject(this._context.engine.onTransformChange$).pipe(
                 filter((evt) => evt.type === TRANSFORM_CHANGE_OBSERVABLE_TYPE.resize),
-                throttleTime(16)
+                throttleTime(0, animationFrameScheduler)
             ).subscribe(() => {
                 this._docPageLayoutService.calculatePagePosition();
                 this._textSelectionManagerService.refreshSelection();

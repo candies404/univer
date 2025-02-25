@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,12 +20,13 @@ import type {
     Nullable,
     Workbook,
 } from '@univerjs/core';
+import type { IMouseEvent, IPointerEvent, IRenderContext, IRenderModule, SpreadsheetColumnHeader, SpreadsheetHeader } from '@univerjs/engine-render';
+import type { IMoveColsCommandParams, IMoveRowsCommandParams, ISelectionWithStyle, WorkbookSelectionModel } from '@univerjs/sheets';
 import {
     createInterceptorKey, Disposable, ICommandService,
     Inject,
     InterceptorManager,
     RANGE_TYPE } from '@univerjs/core';
-import type { IMouseEvent, IPointerEvent, IRenderContext, IRenderModule, SpreadsheetColumnHeader, SpreadsheetHeader } from '@univerjs/engine-render';
 import {
     CURSOR_TYPE,
     Rect,
@@ -34,7 +35,6 @@ import {
     SHEET_VIEWPORT_KEY,
     Vector2,
 } from '@univerjs/engine-render';
-import type { IMoveColsCommandParams, IMoveRowsCommandParams, ISelectionWithStyle, WorkbookSelections } from '@univerjs/sheets';
 import {
     MoveColsCommand,
     MoveRowsCommand,
@@ -45,18 +45,13 @@ import { Subscription } from 'rxjs';
 import { SHEET_COMPONENT_HEADER_LAYER_INDEX, SHEET_VIEW_KEY } from '../../common/keys';
 import { SheetSkeletonManagerService } from '../../services/sheet-skeleton-manager.service';
 import { getCoordByOffset } from '../utils/component-tools';
-import { checkInHeaderRanges } from '../utils/selections-tools';
+import { matchedSelectionByRowColIndex } from '../utils/selections-tools';
 
 const HEADER_MOVE_CONTROLLER_BACKGROUND = '__SpreadsheetHeaderMoveControllerBackground__';
-
 const HEADER_MOVE_CONTROLLER_LINE = '__SpreadsheetHeaderMoveControllerShapeLine__';
-
 const HEADER_MOVE_CONTROLLER_BACKGROUND_FILL = 'rgba(0, 0, 0, 0.1)';
-
 const HEADER_MOVE_CONTROLLER_LINE_FILL = 'rgb(119, 119, 119)';
-
 const HEADER_MOVE_CONTROLLER_LINE_SIZE = 4;
-
 export const HEADER_MOVE_PERMISSION_CHECK = createInterceptorKey<boolean, IRange>('headerMovePermissionCheck');
 
 export class HeaderMoveRenderController extends Disposable implements IRenderModule {
@@ -70,7 +65,7 @@ export class HeaderMoveRenderController extends Disposable implements IRenderMod
     private _headerPointerMoveSubs: Nullable<Subscription>;
     private _headerPointerLeaveSubs: Nullable<Subscription>;
 
-    private _scenePointerMoveSub: Nullable<Subscription>;
+    private _dragHeaderMoveSub: Nullable<Subscription>;
     private _scenePointerUpSub: Nullable<Subscription>;
 
     private _scrollTimer: Nullable<ScrollTimer>;
@@ -82,7 +77,7 @@ export class HeaderMoveRenderController extends Disposable implements IRenderMod
 
     public readonly interceptor = new InterceptorManager({ HEADER_MOVE_PERMISSION_CHECK });
 
-    private readonly _workbookSelections: WorkbookSelections;
+    private readonly _workbookSelections: WorkbookSelectionModel;
 
     constructor(
         private readonly _context: IRenderContext<Workbook>,
@@ -109,9 +104,9 @@ export class HeaderMoveRenderController extends Disposable implements IRenderMod
 
         // scene.onPointerMove$.remove(this._scenePointerMoveSub);
         // scene.onPointerUp$.remove(this._scenePointerUpSub);
-        this._scenePointerMoveSub?.unsubscribe();
+        this._dragHeaderMoveSub?.unsubscribe();
         this._scenePointerUpSub?.unsubscribe();
-        this._scenePointerMoveSub = null;
+        this._dragHeaderMoveSub = null;
         this._scenePointerUpSub = null;
         this._scrollTimer?.dispose();
     }
@@ -129,8 +124,9 @@ export class HeaderMoveRenderController extends Disposable implements IRenderMod
         const eventBindingObject =
             initialType === RANGE_TYPE.ROW ? spreadsheetRowHeader : spreadsheetColumnHeader;
 
+        // only style cursor style when pointer move
         const pointerMoveHandler = (evt: IPointerEvent | IMouseEvent) => {
-            const skeleton = this._sheetSkeletonManagerService.getCurrent()?.skeleton;
+            const skeleton = this._sheetSkeletonManagerService.getCurrentParam()?.skeleton;
             if (skeleton == null) {
                 return;
             }
@@ -146,13 +142,13 @@ export class HeaderMoveRenderController extends Disposable implements IRenderMod
 
             const currentSelections = this._workbookSelections.getCurrentSelections();
             const { row, column } = getCoordByOffset(evt.offsetX, evt.offsetY, scene, skeleton);
-            const matchSelectionData = checkInHeaderRanges(
+            const matchSelectionData = matchedSelectionByRowColIndex(
                 currentSelections,
                 initialType === RANGE_TYPE.ROW ? row : column,
                 initialType
             );
 
-            if (matchSelectionData === false) {
+            if (!matchSelectionData) {
                 scene.resetCursor();
                 return;
             }
@@ -170,7 +166,7 @@ export class HeaderMoveRenderController extends Disposable implements IRenderMod
         const pointerDownHandler = (evt: IPointerEvent | IMouseEvent, state: EventState) => {
             if (state.isStopPropagation) return;
 
-            const skeleton = this._sheetSkeletonManagerService.getCurrent()?.skeleton;
+            const skeleton = this._sheetSkeletonManagerService.getCurrentParam()?.skeleton;
             if (skeleton == null) {
                 return;
             }
@@ -185,7 +181,7 @@ export class HeaderMoveRenderController extends Disposable implements IRenderMod
 
             const { offsetX: evtOffsetX, offsetY: evtOffsetY } = evt;
 
-            const relativeCoords = scene.getRelativeToViewportCoord(Vector2.FromArray([evtOffsetX, evtOffsetY]));
+            const relativeCoords = scene.getCoordRelativeToViewport(Vector2.FromArray([evtOffsetX, evtOffsetY]));
 
             const { x: newEvtOffsetX, y: newEvtOffsetY } = relativeCoords;
 
@@ -206,17 +202,18 @@ export class HeaderMoveRenderController extends Disposable implements IRenderMod
             }
 
             const currentSelections = this._workbookSelections.getCurrentSelections();
-            const matchSelectionData = checkInHeaderRanges(
+            const matchSelectionData = matchedSelectionByRowColIndex(
                 currentSelections,
                 initialType === RANGE_TYPE.ROW ? row : column,
                 initialType
             );
 
-            if (matchSelectionData === false) {
+            if (!matchSelectionData) {
                 return;
             }
+            // if matchSelectionData true, then into grab header mode.
 
-            const startScrollXY = scene.getVpScrollXYInfoByPosToVp(
+            const startScrollXY = scene.getScrollXYInfoByViewport(
                 Vector2.FromArray([this._startOffsetX, this._startOffsetY])
             );
 
@@ -224,7 +221,7 @@ export class HeaderMoveRenderController extends Disposable implements IRenderMod
 
             scene.setCursor(CURSOR_TYPE.GRABBING);
 
-            scene.disableEvent();
+            scene.disableObjectsEvent();
 
             let scrollTimerInitd = false;
             let scrollTimer: ScrollTimer;
@@ -235,20 +232,17 @@ export class HeaderMoveRenderController extends Disposable implements IRenderMod
                 }
 
                 scrollTimer = ScrollTimer.create(scene, scrollType);
-
-                const mainViewport = scene.getViewport(SHEET_VIEWPORT_KEY.VIEW_MAIN);
-
-                scrollTimer.startScroll(newEvtOffsetX, newEvtOffsetY, mainViewport);
-
                 this._scrollTimer = scrollTimer;
+                const mainViewport = scene.getViewport(SHEET_VIEWPORT_KEY.VIEW_MAIN);
+                scrollTimer.startScroll(newEvtOffsetX, newEvtOffsetY, mainViewport);
                 scrollTimerInitd = true;
             };
 
-            this._scenePointerMoveSub = scene.onPointerMove$.subscribeEvent((moveEvt: IPointerEvent | IMouseEvent) => {
+            this._dragHeaderMoveSub = scene.onPointerMove$.subscribeEvent((moveEvt: IPointerEvent | IMouseEvent) => {
                 initScrollTimer();
                 const { offsetX: moveOffsetX, offsetY: moveOffsetY } = moveEvt;
 
-                const { x: newMoveOffsetX, y: newMoveOffsetY } = scene.getRelativeToViewportCoord(
+                const { x: newMoveOffsetX, y: newMoveOffsetY } = scene.getCoordRelativeToViewport(
                     Vector2.FromArray([moveOffsetX, moveOffsetY])
                 );
 
@@ -276,7 +270,7 @@ export class HeaderMoveRenderController extends Disposable implements IRenderMod
             this._scenePointerUpSub = scene.onPointerUp$.subscribeEvent(() => {
                 this._disposeBackgroundAndLine();
                 scene.resetCursor();
-                scene.enableEvent();
+                scene.enableObjectsEvent();
                 this._clearObserverEvent();
                 this._scrollTimer?.dispose();
 
@@ -362,7 +356,7 @@ export class HeaderMoveRenderController extends Disposable implements IRenderMod
         initialType: RANGE_TYPE.ROW | RANGE_TYPE.COLUMN
     ) {
         const scene = this._context.scene;
-        const skeleton = this._sheetSkeletonManagerService.getCurrent()?.skeleton;
+        const skeleton = this._sheetSkeletonManagerService.getCurrentParam()?.skeleton;
         if (skeleton == null) {
             return;
         }
@@ -373,7 +367,7 @@ export class HeaderMoveRenderController extends Disposable implements IRenderMod
         const scrollXY = scene.getViewportScrollXY(scene.getViewport(SHEET_VIEWPORT_KEY.VIEW_MAIN)!);
         const { scaleX, scaleY } = scene.getAncestorScale();
 
-        const moveActualSelection = skeleton.getCellPositionByOffset(
+        const moveActualSelection = skeleton.getCellIndexByOffset(
             moveOffsetX,
             moveOffsetY,
             scaleX,
@@ -383,7 +377,7 @@ export class HeaderMoveRenderController extends Disposable implements IRenderMod
 
         const { row, column } = moveActualSelection;
 
-        const startCell = skeleton.getNoMergeCellPositionByIndex(row, column);
+        const startCell = skeleton.getNoMergeCellWithCoordByIndex(row, column);
 
         const { startX: cellStartX, startY: cellStartY, endX: cellEndX, endY: cellEndY } = startCell;
 
@@ -472,9 +466,9 @@ export class HeaderMoveRenderController extends Disposable implements IRenderMod
         // const scene = this._context.scene;
         // scene.onPointerMove$.remove(this._scenePointerMoveSub);
         // scene.onPointerUp$.remove(this._scenePointerUpSub);
-        this._scenePointerMoveSub?.unsubscribe();
+        this._dragHeaderMoveSub?.unsubscribe();
         this._scenePointerUpSub?.unsubscribe();
-        this._scenePointerMoveSub = null;
+        this._dragHeaderMoveSub = null;
         this._scenePointerUpSub = null;
     }
 

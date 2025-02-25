@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 
 import type { Injector, Nullable, Univer, Workbook } from '@univerjs/core';
+import type { IDeltaRowHeightCommand, ISetRowHeightCommandParams } from '../set-worksheet-row-height.command';
 import {
     BooleanNumber,
     ICommandService,
@@ -24,14 +25,13 @@ import {
     UndoCommand,
     UniverInstanceType,
 } from '@univerjs/core';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { SheetsSelectionsService } from '../../../services/selections/selection-manager.service';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { SheetsSelectionsService } from '../../../services/selections/selection.service';
 import {
     SetWorksheetRowHeightMutation,
     SetWorksheetRowIsAutoHeightMutation,
 } from '../../mutations/set-worksheet-row-height.mutation';
-import type { IDeltaRowHeightCommand, ISetRowHeightCommandParams } from '../set-worksheet-row-height.command';
 import {
     DeltaRowHeightCommand,
     SetRowHeightCommand,
@@ -169,6 +169,15 @@ describe('Test set row height commands', () => {
         expect(getRowHeight(1)).toBe(77);
         expect(getRowHeight(2)).toBe(77);
         expect(getRowHeight(5)).toBe(77);
+    });
+
+    it('Direct change row heights with ranges', async () => {
+        await commandService.executeCommand<ISetRowHeightCommandParams>(SetRowHeightCommand.id, {
+            value: 88,
+            ranges: [{ startRow: 2, endRow: 2, startColumn: 0, endColumn: 0 }],
+        });
+        expect(getRowHeight(2)).toBe(88);
+        expect(getRowIsAutoHeight(2)).toBe(BooleanNumber.FALSE);
     });
 
     describe('Set fit content in ranges', () => {

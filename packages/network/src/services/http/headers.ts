@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,6 +48,10 @@ export class HTTPHeaders {
     get(key: string): string[] | null {
         const k = key.toLowerCase();
         return this._headers.has(k) ? this._headers.get(k)! : null;
+    }
+
+    set(key: string, value: string | number | boolean): void {
+        this._setHeader(key, value);
     }
 
     toHeadersInit(): HeadersInit {

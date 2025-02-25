@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,28 +18,37 @@ export { UniverSheetsFilterPlugin } from './plugin';
 export { FilterColumn, FilterModel } from './models/filter-model';
 export {
     equals,
-    notEquals,
     getCustomFilterFn,
     greaterThan,
     greaterThanOrEqualTo,
     lessThan,
     lessThanOrEqualTo,
+    notEquals,
 } from './models/custom-filters';
-export { SheetsFilterService, FILTER_MUTATIONS, SHEET_FILTER_SNAPSHOT_ID } from './services/sheet-filter.service';
-export type { IAutoFilter, IFilterColumn, IFilters, ICustomFilters, ICustomFilter } from './models/types';
+export { SHEET_FILTER_SNAPSHOT_ID, SheetsFilterService } from './services/sheet-filter.service';
+export type { IAutoFilter, ICustomFilter, ICustomFilters, IFilterColumn, IFilters } from './models/types';
 export { CustomFilterOperator } from './models/types';
+export { FILTER_MUTATIONS } from './common/const';
 
 // #region - all commands
 
 export {
-    type ISetSheetsFilterRangeMutationParams,
     type ISetSheetsFilterCriteriaMutationParams,
-    type IRemoveSheetsFilterMutationParams,
-    type IReCalcSheetsFilterMutationParams,
-    SetSheetsFilterRangeMutation,
-    SetSheetsFilterCriteriaMutation,
-    RemoveSheetsFilterMutation,
+    type ISetSheetsFilterRangeMutationParams,
     ReCalcSheetsFilterMutation,
+    RemoveSheetsFilterMutation,
+    SetSheetsFilterCriteriaMutation,
+    SetSheetsFilterRangeMutation,
 } from './commands/mutations/sheets-filter.mutation';
+export {
+    ClearSheetsFilterCriteriaCommand,
+    type ISetSheetFilterRangeCommandParams,
+    type ISetSheetsFilterCriteriaCommandParams,
+    ReCalcSheetsFilterCommand,
+    RemoveSheetFilterCommand,
+    SetSheetFilterRangeCommand,
+    SetSheetsFilterCriteriaCommand,
+    SmartToggleSheetsFilterCommand,
+} from './commands/commands/sheets-filter.command';
 
 // #endregion

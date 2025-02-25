@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,10 +14,9 @@
  * limitations under the License.
  */
 
-import type { IUnitRange, Nullable, Workbook } from '@univerjs/core';
-import { createIdentifier, Disposable, IUniverInstanceService, ObjectMatrix, UniverInstanceType } from '@univerjs/core';
-
+import type { IUnitRange, LocaleType, Nullable, Workbook } from '@univerjs/core';
 import type {
+    IArrayFormulaRangeType,
     IDirtyUnitFeatureMap,
     IDirtyUnitOtherFormulaMap,
     IDirtyUnitSheetDefinedNameMap,
@@ -32,6 +31,8 @@ import type {
     IUnitSheetNameMap,
     IUnitStylesData,
 } from '../basics/common';
+
+import { createIdentifier, Disposable, Inject, IUniverInstanceService, LocaleService, ObjectMatrix, UniverInstanceType } from '@univerjs/core';
 import { convertUnitDataToRuntime } from '../basics/runtime';
 
 export interface IFormulaDirtyData {
@@ -41,6 +42,8 @@ export interface IFormulaDirtyData {
     dirtyDefinedNameMap: IDirtyUnitSheetDefinedNameMap;
     dirtyUnitFeatureMap: IDirtyUnitFeatureMap;
     dirtyUnitOtherFormulaMap: IDirtyUnitOtherFormulaMap;
+    clearDependencyTreeCache: IDirtyUnitSheetNameMap; // unitId -> sheetId
+    maxIteration?: number;
 }
 
 export interface IFormulaCurrentConfigService {
@@ -79,6 +82,8 @@ export interface IFormulaCurrentConfigService {
 
     getArrayFormulaCellData(): IRuntimeUnitDataType;
 
+    getArrayFormulaRange(): IArrayFormulaRangeType;
+
     getSheetName(unitId: string, sheetId: string): string;
 
     getDirtyUnitOtherFormulaMap(): IDirtyUnitOtherFormulaMap;
@@ -90,6 +95,17 @@ export interface IFormulaCurrentConfigService {
     setExecuteSubUnitId(subUnitId: string): void;
 
     getDirtyData(): IFormulaDirtyData;
+
+    getClearDependencyTreeCache(): IDirtyUnitSheetNameMap;
+
+    getLocale(): LocaleType;
+
+    getSheetsInfo(): {
+        sheetOrder: string[];
+        sheetNameMap: { [sheetId: string]: string };
+    };
+
+    getSheetRowColumnCount(unitId: string, sheetId: string): { rowCount: number; columnCount: number };
 }
 
 export class FormulaCurrentConfigService extends Disposable implements IFormulaCurrentConfigService {
@@ -99,11 +115,15 @@ export class FormulaCurrentConfigService extends Disposable implements IFormulaC
 
     private _arrayFormulaCellData: IRuntimeUnitDataType = {};
 
+    private _arrayFormulaRange: IArrayFormulaRangeType = {};
+
     private _formulaData: IFormulaData = {};
 
     private _sheetNameMap: IUnitSheetNameMap = {};
 
     private _forceCalculate: boolean = false;
+
+    private _clearDependencyTreeCache: IDirtyUnitSheetNameMap = {};
 
     private _dirtyRanges: IUnitRange[] = [];
 
@@ -122,23 +142,29 @@ export class FormulaCurrentConfigService extends Disposable implements IFormulaC
     private _executeUnitId: Nullable<string> = '';
     private _executeSubUnitId: Nullable<string> = '';
 
-    constructor(@IUniverInstanceService private readonly _univerInstanceService: IUniverInstanceService) {
+    constructor(
+        @IUniverInstanceService private readonly _univerInstanceService: IUniverInstanceService,
+        @Inject(LocaleService) private readonly _localeService: LocaleService
+    ) {
         super();
     }
 
     override dispose(): void {
+        super.dispose();
         this._unitData = {};
         this._unitStylesData = {};
-        this._formulaData = {};
         this._arrayFormulaCellData = {};
+        this._arrayFormulaRange = {};
+        this._formulaData = {};
         this._sheetNameMap = {};
+        this._clearDependencyTreeCache = {};
         this._dirtyRanges = [];
         this._dirtyNameMap = {};
         this._dirtyDefinedNameMap = {};
         this._dirtyUnitFeatureMap = {};
+        this._dirtyUnitOtherFormulaMap = {};
         this._excludedCell = {};
         this._sheetIdToNameMap = {};
-        this._dirtyUnitOtherFormulaMap = {};
     }
 
     getExecuteUnitId() {
@@ -177,6 +203,10 @@ export class FormulaCurrentConfigService extends Disposable implements IFormulaC
         return this._arrayFormulaCellData;
     }
 
+    getArrayFormulaRange() {
+        return this._arrayFormulaRange;
+    }
+
     getSheetNameMap() {
         return this._sheetNameMap;
     }
@@ -213,6 +243,38 @@ export class FormulaCurrentConfigService extends Disposable implements IFormulaC
         return this._sheetIdToNameMap[unitId]![sheetId] || '';
     }
 
+    getClearDependencyTreeCache() {
+        return this._clearDependencyTreeCache;
+    }
+
+    getLocale() {
+        return this._localeService.getCurrentLocale();
+    }
+
+    getSheetsInfo() {
+        const workbook = this._univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+        const { id, sheetOrder } = workbook.getSnapshot();
+
+        return {
+            sheetOrder,
+            sheetNameMap: this._sheetIdToNameMap[id] as { [sheetId: string]: string },
+        };
+    }
+
+    getSheetRowColumnCount(unitId: string, sheetId: string) {
+        const workbook = this._univerInstanceService.getUnit<Workbook>(unitId);
+        const worksheet = workbook?.getSheetBySheetId(sheetId);
+        const snapshot = worksheet?.getSnapshot();
+
+        if (!snapshot) {
+            return { rowCount: 0, columnCount: 0 };
+        }
+
+        const { rowCount, columnCount } = snapshot;
+
+        return { rowCount, columnCount };
+    }
+
     load(config: IFormulaDatasetConfig) {
         if (config.allUnitData && config.unitSheetNameMap && config.unitStylesData) {
             this._unitData = config.allUnitData;
@@ -232,7 +294,11 @@ export class FormulaCurrentConfigService extends Disposable implements IFormulaC
 
         this._arrayFormulaCellData = convertUnitDataToRuntime(config.arrayFormulaCellData);
 
+        this._arrayFormulaRange = config.arrayFormulaRange;
+
         this._forceCalculate = config.forceCalculate;
+
+        this._clearDependencyTreeCache = config.clearDependencyTreeCache || {};
 
         this._dirtyRanges = config.dirtyRanges;
 
@@ -257,6 +323,7 @@ export class FormulaCurrentConfigService extends Disposable implements IFormulaC
             dirtyDefinedNameMap: this._dirtyDefinedNameMap,
             dirtyUnitFeatureMap: this._dirtyUnitFeatureMap,
             dirtyUnitOtherFormulaMap: this._dirtyUnitOtherFormulaMap,
+            clearDependencyTreeCache: this._clearDependencyTreeCache,
         };
     }
 

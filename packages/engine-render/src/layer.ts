@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,14 @@
  */
 
 import type { Nullable } from '@univerjs/core';
-import { Disposable, requestImmediateMacroTask, sortRules, toDisposable } from '@univerjs/core';
+import type { UniverRenderingContext } from './context';
 
+import type { Scene } from './scene';
+import type { SceneViewer } from './scene-viewer';
+import { Disposable, requestImmediateMacroTask, sortRules, toDisposable } from '@univerjs/core';
 import { BaseObject } from './base-object';
 import { RENDER_CLASS_TYPE } from './basics/const';
 import { Canvas } from './canvas';
-import type { UniverRenderingContext } from './context';
-import type { Scene } from './scene';
-import type { SceneViewer } from './scene-viewer';
 
 export class Layer extends Disposable {
     private _objects: BaseObject[] = [];
@@ -61,17 +61,21 @@ export class Layer extends Disposable {
         this._initialCacheCanvas();
     }
 
-    disableCache() {
+    disableCache(): void {
         this._allowCache = false;
         this._cacheCanvas?.dispose();
         this._cacheCanvas = null;
     }
 
-    isAllowCache() {
+    isAllowCache(): boolean {
         return this._allowCache;
     }
 
-    getObjectsByOrder() {
+    /**
+     * Get direct visible children in order. (direct means object is not in group), default order is ascending by z-index.
+     * @returns {BaseObject[]} objects
+     */
+    getObjectsByOrder(): BaseObject[] {
         const objects: BaseObject[] = [];
         this._objects.sort(sortRules);
         for (const o of this._objects) {
@@ -82,11 +86,14 @@ export class Layer extends Disposable {
         return objects;
     }
 
-    getObjectsByOrderForPick() {
+    /**
+     * Get visible and evented objects.
+     * @returns {BaseObject[]} objects
+     */
+    getObjectsByOrderForPick(): BaseObject[] {
         const objects: BaseObject[] = [];
         this._objects.sort(sortRules);
         for (const o of this._objects) {
-            // TODO @lumixraku
             if (!(o.classType === RENDER_CLASS_TYPE.GROUP) && o.visible && o.evented) {
                 objects.push(o);
             }
@@ -94,17 +101,16 @@ export class Layer extends Disposable {
         return objects;
     }
 
-    getObjects() {
+    getObjects(): BaseObject[] {
         return this._objects;
     }
 
     /**
-     * insert o to _objects[]
-     * if o is a group, insert all its children and group itself to _objects[]
+     * Insert object to this._objects, if object is a group, insert all its children and group itself to _objects[]
      * @param o
-     * @returns this
+     * @returns {Layer} this
      */
-    addObject(o: BaseObject) {
+    addObject(o: BaseObject): Layer {
         if (o.classType === RENDER_CLASS_TYPE.GROUP) {
             const objects = (o as BaseObject).getObjects();
             for (const object of objects) {
@@ -119,7 +125,7 @@ export class Layer extends Disposable {
         this._objects.push(o);
         this.scene.setObjectBehavior(o);
         this._layerBehavior(o);
-
+        this.makeDirty(true);
         return this;
     }
 
@@ -147,7 +153,12 @@ export class Layer extends Disposable {
         }
     }
 
-    addObjects(objects: BaseObject[]) {
+    /**
+     * Insert objects to this._objects, if object is a group, insert all its children and group itself to _objects[]
+     * @param objects
+     * @returns {Layer} this
+     */
+    addObjects(objects: BaseObject[]): Layer {
         objects.forEach((o: BaseObject) => {
             this.addObject(o);
         });
@@ -178,7 +189,6 @@ export class Layer extends Disposable {
 
     makeDirty(state: boolean = true) {
         this._dirty = state;
-
         /**
          * parent is SceneViewer, make it dirty
          */

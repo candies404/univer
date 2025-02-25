@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 
 import type { IAccessor, ICommand, IRange } from '@univerjs/core';
+import type { ISetWorksheetColWidthMutationParams } from '../mutations/set-worksheet-col-width.mutation';
+
 import {
     CommandType,
     ICommandService,
@@ -24,10 +26,8 @@ import {
     Rectangle,
     sequenceExecute,
 } from '@univerjs/core';
-
-import { SheetsSelectionsService } from '../../services/selections/selection-manager.service';
+import { SheetsSelectionsService } from '../../services/selections/selection.service';
 import { SheetInterceptorService } from '../../services/sheet-interceptor/sheet-interceptor.service';
-import type { ISetWorksheetColWidthMutationParams } from '../mutations/set-worksheet-col-width.mutation';
 import {
     SetWorksheetColWidthMutation,
     SetWorksheetColWidthMutationFactory,
@@ -46,7 +46,6 @@ export const DeltaColumnWidthCommand: ICommand<IDeltaColumnWidthCommandParams> =
     handler: async (accessor: IAccessor, params: IDeltaColumnWidthCommandParams) => {
         const selectionManagerService = accessor.get(SheetsSelectionsService);
         const selections = selectionManagerService.getCurrentSelections();
-        const sheetInterceptorService = accessor.get(SheetInterceptorService);
 
         if (!selections?.length) {
             return false;
@@ -120,8 +119,8 @@ export const DeltaColumnWidthCommand: ICommand<IDeltaColumnWidthCommandParams> =
         });
 
         const undoMutationParams: ISetWorksheetColWidthMutationParams = SetWorksheetColWidthMutationFactory(
-            accessor,
-            redoMutationParams
+            redoMutationParams,
+            worksheet
         );
 
         const setColWidthResult = commandService.syncExecuteCommand(
@@ -146,39 +145,38 @@ export const DeltaColumnWidthCommand: ICommand<IDeltaColumnWidthCommandParams> =
 };
 
 export interface ISetColWidthCommandParams {
+    unitId?: string;
+    subUnitId?: string;
+    ranges?: IRange[];
     value: number;
 }
 
 export const SetColWidthCommand: ICommand = {
     type: CommandType.COMMAND,
     id: 'sheet.command.set-worksheet-col-width',
-    handler: async (accessor: IAccessor, params: ISetColWidthCommandParams) => {
+    handler: (accessor: IAccessor, params: ISetColWidthCommandParams) => {
         const selectionManagerService = accessor.get(SheetsSelectionsService);
         const commandService = accessor.get(ICommandService);
         const undoRedoService = accessor.get(IUndoRedoService);
         const sheetInterceptorService = accessor.get(SheetInterceptorService);
 
-        const selections = selectionManagerService.getCurrentSelections()?.map((s) => s.range);
+        // user can specify the ranges to set col width, if not, use current selections
+        const selections = params?.ranges?.length ? params.ranges : selectionManagerService.getCurrentSelections()?.map((s) => s.range);
         if (!selections?.length) return false;
 
-        const target = getSheetCommandTarget(accessor.get(IUniverInstanceService));
+        const target = getSheetCommandTarget(accessor.get(IUniverInstanceService), params);
         if (!target) return false;
 
-        const { subUnitId, unitId } = target;
+        const { subUnitId, unitId, worksheet } = target;
         const redoMutationParams: ISetWorksheetColWidthMutationParams = {
             subUnitId,
             unitId,
             ranges: selections,
             colWidth: params.value,
         };
-        const undoMutationParams: ISetWorksheetColWidthMutationParams = SetWorksheetColWidthMutationFactory(
-            accessor,
-            redoMutationParams
-        );
-        const setColWidthResult = commandService.syncExecuteCommand(
-            SetWorksheetColWidthMutation.id,
-            redoMutationParams
-        );
+
+        const undoMutationParams = SetWorksheetColWidthMutationFactory(redoMutationParams, worksheet);
+        const setColWidthResult = commandService.syncExecuteCommand(SetWorksheetColWidthMutation.id, redoMutationParams);
 
         const { undos, redos } = accessor.get(SheetInterceptorService).onCommandExecute({
             id: SetColWidthCommand.id,
@@ -197,6 +195,68 @@ export const SetColWidthCommand: ICommand = {
                 unitID: unitId,
                 undoMutations: [...(intercepted.preUndos ?? []), { id: SetWorksheetColWidthMutation.id, params: undoMutationParams }, ...undos],
                 redoMutations: [...(intercepted.preRedos ?? []), { id: SetWorksheetColWidthMutation.id, params: redoMutationParams }, ...redos],
+            });
+
+            return true;
+        }
+
+        return false;
+    },
+};
+
+export interface ISetWorksheetColIsAutoWidthCommandParams {
+    unitId?: string;
+    subUnitId?: string;
+    ranges?: IRange[]; // For Facade API
+}
+
+export const SetWorksheetColIsAutoWidthCommand: ICommand = {
+    type: CommandType.COMMAND,
+    id: 'sheet.command.set-col-is-auto-width',
+    handler: async (accessor: IAccessor, params?: ISetWorksheetColIsAutoWidthCommandParams) => {
+        const commandService = accessor.get(ICommandService);
+        const undoRedoService = accessor.get(IUndoRedoService);
+        const selectionManagerService = accessor.get(SheetsSelectionsService);
+        const univerInstanceService = accessor.get(IUniverInstanceService);
+
+        const target = getSheetCommandTarget(univerInstanceService, params);
+        if (!target) return false;
+
+        const { unitId, subUnitId } = target;
+
+        let ranges = [];
+        if (params?.ranges) {
+            ranges = [...params.ranges];
+        } else {
+            const selections = selectionManagerService.getCurrentSelections();
+            for (let i = 0; i < selections.length; i++) {
+                ranges.push(selections[i].range);
+            }
+        }
+
+        if (!ranges?.length) {
+            return false;
+        }
+
+        const redoMutationParams: Required<ISetWorksheetColIsAutoWidthCommandParams> = {
+            unitId,
+            subUnitId,
+            ranges,
+        };
+
+        // undos redos comes from auto-width.controller
+        // for intercept 'sheet.command.set-col-is-auto-width' command.
+        const { undos, redos } = accessor.get(SheetInterceptorService).onCommandExecute({
+            id: SetWorksheetColIsAutoWidthCommand.id,
+            params: redoMutationParams,
+        });
+
+        const result = sequenceExecute([...redos], commandService);
+        if (result.result) {
+            undoRedoService.pushUndoRedo({
+                unitID: unitId,
+                undoMutations: [...undos],
+                redoMutations: [...redos],
             });
 
             return true;

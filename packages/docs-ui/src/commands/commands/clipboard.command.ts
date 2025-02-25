@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,10 @@ import { IDocClipboardService } from '../../services/clipboard/clipboard.service
 
 export function whenDocOrEditor(contextService: IContextService): boolean {
     return contextService.getContextValue(FOCUSING_DOC) || contextService.getContextValue(EDITOR_ACTIVATED);
+}
+
+export function whenFocusEditor(contextService: IContextService): boolean {
+    return contextService.getContextValue(EDITOR_ACTIVATED);
 }
 
 const DOC_CLIPBOARD_PRIORITY = 999;
@@ -64,7 +68,6 @@ export const DocPasteCommand: IMultiCommand = {
     handler: async (accessor: IAccessor) => {
         const docClipboardService = accessor.get(IDocClipboardService);
         const clipboardInterfaceService = accessor.get(IClipboardInterfaceService);
-
         const clipboardItems = await clipboardInterfaceService.read();
         if (clipboardItems.length === 0) {
             return false;

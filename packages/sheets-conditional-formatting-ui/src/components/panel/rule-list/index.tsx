@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,33 +14,31 @@
  * limitations under the License.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
-import { Select, Tooltip } from '@univerjs/design';
-import { useObservable } from '@univerjs/ui';
-import { useHighlightRange } from '@univerjs/sheets-ui';
+import type { IRange, Workbook } from '@univerjs/core';
+import type { IConditionFormattingRule } from '@univerjs/sheets-conditional-formatting';
+import type { IDeleteCfCommandParams } from '../../../commands/commands/delete-cf.command';
+import type { IMoveCfCommand } from '../../../commands/commands/move-cf.command';
 
-import { ICommandService, IUniverInstanceService, LocaleService, Rectangle, UniverInstanceType, useDependency } from '@univerjs/core';
-import type { ICellDataForSheetInterceptor, IRange, Workbook } from '@univerjs/core';
-import type { ICellPermission } from '@univerjs/sheets';
-import { SetSelectionsOperation, SetWorksheetActiveOperation, SheetsSelectionsService } from '@univerjs/sheets';
+import { ICommandService, Injector, IUniverInstanceService, LocaleService, Rectangle, UniverInstanceType } from '@univerjs/core';
+import { Select, Tooltip } from '@univerjs/design';
 import { serializeRange } from '@univerjs/engine-formula';
 import { DeleteSingle, IncreaseSingle, SequenceSingle } from '@univerjs/icons';
+import { checkRangesEditablePermission, SetSelectionsOperation, SetWorksheetActiveOperation, SheetsSelectionsService } from '@univerjs/sheets';
+import { AddConditionalRuleMutation, CFRuleType, CFSubRuleType, ConditionalFormattingRuleModel, DeleteConditionalRuleMutation, MoveConditionalRuleMutation, SetConditionalRuleMutation } from '@univerjs/sheets-conditional-formatting';
+import { useHighlightRange } from '@univerjs/sheets-ui';
+import { useDependency, useObservable } from '@univerjs/ui';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import GridLayout from 'react-grid-layout';
 import { debounceTime, Observable } from 'rxjs';
-import { UnitAction } from '@univerjs/protocol';
-import { AddConditionalRuleMutation, CFRuleType, CFSubRuleType, ConditionalFormattingRuleModel, DeleteConditionalRuleMutation, MoveConditionalRuleMutation, SetConditionalRuleMutation } from '@univerjs/sheets-conditional-formatting';
-import type { IConditionalFormattingRuleConfig, IConditionFormattingRule } from '@univerjs/sheets-conditional-formatting';
-import type { IDeleteCfCommandParams } from '../../../commands/commands/delete-cf.command';
-import { DeleteCfCommand } from '../../../commands/commands/delete-cf.command';
-import type { IMoveCfCommand } from '../../../commands/commands/move-cf.command';
-import { MoveCfCommand } from '../../../commands/commands/move-cf.command';
-import 'react-grid-layout/css/styles.css';
-import 'react-resizable/css/styles.css';
-import { Preview } from '../../preview';
-import { ConditionalFormattingI18nController } from '../../../controllers/cf.i18n.controller';
 import { ClearWorksheetCfCommand } from '../../../commands/commands/clear-worksheet-cf.command';
-
+import { DeleteCfCommand } from '../../../commands/commands/delete-cf.command';
+import { MoveCfCommand } from '../../../commands/commands/move-cf.command';
+import { ConditionalFormattingI18nController } from '../../../controllers/cf.i18n.controller';
+import { Preview } from '../../preview';
 import styles from './index.module.less';
+import 'react-grid-layout/css/styles.css';
+
+import 'react-resizable/css/styles.css';
 
 interface IRuleListProps {
     onClick: (rule: IConditionFormattingRule) => void;
@@ -113,6 +111,8 @@ export const RuleList = (props: IRuleListProps) => {
     const selectionManagerService = useDependency(SheetsSelectionsService);
     const commandService = useDependency(ICommandService);
     const localeService = useDependency(LocaleService);
+    const injector = useDependency(Injector);
+
     const conditionalFormattingI18nController = useDependency(ConditionalFormattingI18nController);
 
     const workbook = useObservable(() => univerInstanceService.getCurrentTypeOfUnit$<Workbook>(UniverInstanceType.UNIVER_SHEET), undefined, undefined, [])!;
@@ -152,35 +152,9 @@ export const RuleList = (props: IRuleListProps) => {
             });
             return _ruleList;
         } else if (selectValue === '2') {
-            return ruleList;
+            return [...ruleList];
         }
         return [];
-    };
-
-    const getConditionalFormattingRulesByPermissionCorrect = (rules: (IConditionFormattingRule<IConditionalFormattingRuleConfig>)[]): ((IConditionFormattingRule<IConditionalFormattingRuleConfig> & { disable?: boolean }))[] => {
-        const workbook = univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
-        const worksheet = workbook.getActiveSheet();
-        const rulesByPermissionCheck = rules.map((rule) => {
-            const ranges = rule.ranges;
-            const haveNotPermission = ranges?.some((range: IRange) => {
-                const { startRow, startColumn, endRow, endColumn } = range;
-                for (let row = startRow; row <= endRow; row++) {
-                    for (let col = startColumn; col <= endColumn; col++) {
-                        const permission = (worksheet?.getCell(row, col) as (ICellDataForSheetInterceptor & { selectionProtection: ICellPermission[] }))?.selectionProtection?.[0];
-                        if (permission?.[UnitAction.Edit] === false || permission?.[UnitAction.View] === false) {
-                            return true;
-                        }
-                    }
-                }
-                return false;
-            });
-            if (haveNotPermission) {
-                return { ...rule, disable: true };
-            } else {
-                return { ...rule };
-            }
-        });
-        return rulesByPermissionCheck;
     };
 
     const [ruleList, ruleListSet] = useState(getRuleList);
@@ -215,10 +189,9 @@ export const RuleList = (props: IRuleListProps) => {
                     }
                 });
                 return () => disposable.dispose();
-            }).pipe(debounceTime(16))
-                .subscribe(() => {
-                    ruleListSet(getRuleList);
-                });
+            }).pipe(debounceTime(16)).subscribe(() => {
+                ruleListSet(getRuleList);
+            });
         return () => {
             subscription.unsubscribe();
         };
@@ -317,11 +290,27 @@ export const RuleList = (props: IRuleListProps) => {
             });
         }
     };
+    const ruleListByPermissionCheck = useMemo(() => {
+        const workbook = univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+        const worksheet = workbook.getActiveSheet();
+        return ruleList.filter((rule) => {
+            const ranges = rule.ranges;
+            const hasPermission = checkRangesEditablePermission(injector, workbook.getUnitId(), worksheet.getSheetId(), ranges);
+            return hasPermission;
+        });
+    }, [ruleList]);
 
-    const layout = ruleList.map((rule, index) => ({ i: rule.cfId, x: 0, w: 12, y: index, h: 1, isResizable: false }));
+    const layout = ruleListByPermissionCheck.map((rule, index) => ({ i: rule.cfId, x: 0, w: 12, y: index, h: 1, isResizable: false }));
 
-    const ruleListByPermissionCheck = getConditionalFormattingRulesByPermissionCorrect(ruleList);
-    const hasDisableRule = ruleListByPermissionCheck?.some((rule) => rule.disable);
+    const isHasAllRuleEditPermission = useMemo(() => {
+        const workbook = univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
+        const worksheet = workbook.getActiveSheet();
+        return ruleList.every((rule) => {
+            const ranges = rule.ranges;
+            const hasPermission = checkRangesEditablePermission(injector, workbook.getUnitId(), worksheet.getSheetId(), ranges);
+            return hasPermission;
+        });
+    }, [ruleList]);
 
     return (
         <div className={styles.cfRuleList}>
@@ -334,20 +323,35 @@ export const RuleList = (props: IRuleListProps) => {
                 </div>
                 <div className={styles.btnList}>
                     <Tooltip title={localeService.t('sheet.cf.panel.createRule')} placement="bottom">
-                        <div className={`${styles.icon}`} onClick={handleCreate}>
+                        <div
+                            className={`
+                              ${styles.icon}
+                            `}
+                            onClick={handleCreate}
+                        >
                             <IncreaseSingle />
                         </div>
                     </Tooltip>
-                    {(ruleList.length && !hasDisableRule)
+                    {(ruleList.length && isHasAllRuleEditPermission)
                         ? (
                             <Tooltip title={localeService.t('sheet.cf.panel.clear')} placement="bottom">
-                                <div className={`${styles.gap} ${styles.icon}`} onClick={handleClear}>
+                                <div
+                                    className={`
+                                      ${styles.gap}
+                                      ${styles.icon}
+                                    `}
+                                    onClick={handleClear}
+                                >
                                     <DeleteSingle />
                                 </div>
                             </Tooltip>
                         )
                         : (
-                            <div className={`${styles.gap}  ${styles.disabled}`}>
+                            <div className={`
+                              ${styles.gap}
+                              ${styles.disabled}
+                            `}
+                            >
                                 <DeleteSingle />
                             </div>
                         )}
@@ -377,13 +381,18 @@ export const RuleList = (props: IRuleListProps) => {
                                             }}
                                             onMouseLeave={() => currentRuleRangesSet([])}
                                             onClick={() => {
-                                                if (rule.disable) return;
                                                 onClick(rule);
                                             }}
-                                            className={`${styles.ruleItem} ${draggingId === index ? styles.active : ''}`}
+                                            className={`
+                                              ${styles.ruleItem}
+                                              ${draggingId === index ? styles.active : ''}
+                                            `}
                                         >
                                             <div
-                                                className={`${styles.draggableHandle} draggableHandle`}
+                                                className={`
+                                                  ${styles.draggableHandle}
+                                                  draggableHandle
+                                                `}
                                                 onClick={(e) => e.stopPropagation()}
                                             >
                                                 <SequenceSingle />
@@ -393,17 +402,19 @@ export const RuleList = (props: IRuleListProps) => {
                                                 <div className={styles.ruleRange}>{rule.ranges.map((range) => serializeRange(range)).join(',')}</div>
                                             </div>
                                             <div className={styles.preview}><Preview rule={rule.rule} /></div>
-                                            {!rule.disable && (
-                                                <div
-                                                    className={`${styles.deleteItem} ${draggingId === index ? styles.active : ''}`}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleDelete(rule);
-                                                    }}
-                                                >
-                                                    <DeleteSingle />
-                                                </div>
-                                            )}
+                                            <div
+                                                className={`
+                                                  ${styles.deleteItem}
+                                                  ${draggingId === index ? styles.active : ''}
+                                                `}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleDelete(rule);
+                                                    currentRuleRangesSet([]);
+                                                }}
+                                            >
+                                                <DeleteSingle />
+                                            </div>
                                         </div>
                                     </div>
                                 );

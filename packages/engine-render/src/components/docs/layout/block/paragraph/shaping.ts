@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,26 +15,27 @@
  */
 
 import type { IParagraphStyle, Nullable } from '@univerjs/core';
-import { BooleanNumber, DataStreamTreeTokenType, GridType, PositionedObjectLayoutType } from '@univerjs/core';
 import type { IDocumentSkeletonGlyph } from '../../../../../basics/i-document-skeleton-cached';
-import { LineBreaker } from '../../line-breaker';
-import { tabLineBreakExtension } from '../../line-breaker/extensions/tab-linebreak-extension';
-import { createSkeletonCustomBlockGlyph, createSkeletonLetterGlyph, createSkeletonTabGlyph, glyphShrinkLeft, glyphShrinkRight } from '../../model/glyph';
-import type { ILayoutContext } from '../../tools';
-import { getCharSpaceApply, getFontCreateConfig } from '../../tools';
+import type { ISectionBreakConfig } from '../../../../../basics/interfaces';
 import type { DataStreamTreeNode } from '../../../view-model/data-stream-tree-node';
 import type { DocumentViewModel } from '../../../view-model/document-view-model';
-import type { ISectionBreakConfig } from '../../../../../basics/interfaces';
-import { hasArabic, hasCJK, hasCJKPunctuation, hasCJKText, hasTibetan, startWithEmoji } from '../../../../../basics/tools';
 import type { IOpenTypeGlyphInfo } from '../../shaping-engine/text-shaping';
-import { textShape } from '../../shaping-engine/text-shaping';
-import { fontLibrary } from '../../shaping-engine/font-library';
-import { prepareParagraphBody } from '../../shaping-engine/utils';
-import { LineBreakerHyphenEnhancer } from '../../line-breaker/enhancers/hyphen-enhancer';
+import type { ILayoutContext } from '../../tools';
+import { BooleanNumber, DataStreamTreeTokenType, GridType, PositionedObjectLayoutType } from '@univerjs/core';
+import { hasArabic, hasCJK, hasCJKPunctuation, hasCJKText, hasTibetan, startWithEmoji } from '../../../../../basics/tools';
 import { Lang } from '../../hyphenation/lang';
+import { LineBreaker } from '../../line-breaker';
 import { BreakPointType } from '../../line-breaker/break';
-import { getBoundingBox } from '../../model/line';
+import { LineBreakerHyphenEnhancer } from '../../line-breaker/enhancers/hyphen-enhancer';
+import { LineBreakerLinkEnhancer } from '../../line-breaker/enhancers/link-enhancer';
 import { customBlockLineBreakExtension } from '../../line-breaker/extensions/custom-block-linebreak-extension';
+import { tabLineBreakExtension } from '../../line-breaker/extensions/tab-linebreak-extension';
+import { createSkeletonCustomBlockGlyph, createSkeletonLetterGlyph, createSkeletonTabGlyph, glyphShrinkLeft, glyphShrinkRight } from '../../model/glyph';
+import { getBoundingBox } from '../../model/line';
+import { fontLibrary } from '../../shaping-engine/font-library';
+import { textShape } from '../../shaping-engine/text-shaping';
+import { prepareParagraphBody } from '../../shaping-engine/utils';
+import { getCharSpaceApply, getFontCreateConfig } from '../../tools';
 import { ArabicHandler, emojiHandler, otherHandler, TibetanHandler } from './language-ruler';
 
 // Now we apply consecutive punctuation adjustment, specified in Chinese Layout
@@ -122,7 +123,8 @@ export function shaping(
     const shapedTextList: IShapedText[] = [];
     let breaker = new LineBreaker(content);
     const { endIndex } = paragraphNode;
-    const { paragraphStyle = {} } = viewModel.getParagraph(endIndex) || { startIndex: 0 };
+    const paragraph = viewModel.getParagraph(endIndex) || { startIndex: 0 };
+    const { paragraphStyle = {} } = paragraph;
     const { snapToGrid = BooleanNumber.TRUE } = paragraphStyle;
     let last = 0;
     let bk;
@@ -143,6 +145,8 @@ export function shaping(
     // Add custom extension for linebreak.
     tabLineBreakExtension(breaker);
     customBlockLineBreakExtension(breaker);
+
+    breaker = new LineBreakerLinkEnhancer(breaker) as unknown as LineBreaker;
 
     const lang = languageDetector.detect(content);
 
@@ -182,7 +186,7 @@ export function shaping(
 
             for (const glyphInfo of glyphInfosInWord) {
                 const { start, char } = glyphInfo;
-                const config = getFontCreateConfig(start, viewModel, paragraphNode, sectionBreakConfig, paragraphStyle);
+                const config = getFontCreateConfig(start, viewModel, paragraphNode, sectionBreakConfig, paragraph);
 
                 if (char === DataStreamTreeTokenType.TAB) {
                     const charSpaceApply = getCharSpaceApply(charSpace, defaultTabStop, gridType, snapToGrid);
@@ -207,7 +211,7 @@ export function shaping(
                 }
 
                 if (char === DataStreamTreeTokenType.CUSTOM_BLOCK) {
-                    const config = getFontCreateConfig(i, viewModel, paragraphNode, sectionBreakConfig, paragraphStyle);
+                    const config = getFontCreateConfig(i, viewModel, paragraphNode, sectionBreakConfig, paragraph);
                     let newGlyph: Nullable<IDocumentSkeletonGlyph> = null;
                     const customBlock = viewModel.getCustomBlockWithoutSetCurrentIndex(paragraphNode.startIndex + i);
 
@@ -235,12 +239,20 @@ export function shaping(
                     i += char.length;
                     src = src.substring(char.length);
                 } else if (/\s/.test(char) || hasCJK(char)) {
-                    const config = getFontCreateConfig(i, viewModel, paragraphNode, sectionBreakConfig, paragraphStyle);
+                    const config = getFontCreateConfig(i, viewModel, paragraphNode, sectionBreakConfig, paragraph);
                     let newGlyph: Nullable<IDocumentSkeletonGlyph> = null;
 
                     if (char === DataStreamTreeTokenType.TAB) {
                         const charSpaceApply = getCharSpaceApply(charSpace, defaultTabStop, gridType, snapToGrid);
                         newGlyph = createSkeletonTabGlyph(config, charSpaceApply);
+                    } else if (char === DataStreamTreeTokenType.PARAGRAPH) {
+                        const zeroWidthParagraphBreak = sectionBreakConfig.renderConfig?.zeroWidthParagraphBreak;
+
+                        if (zeroWidthParagraphBreak === BooleanNumber.TRUE) {
+                            newGlyph = createSkeletonLetterGlyph(char, config, 0);
+                        } else {
+                            newGlyph = createSkeletonLetterGlyph(char, config);
+                        }
                     } else {
                         newGlyph = createSkeletonLetterGlyph(char, config);
                     }
@@ -255,7 +267,7 @@ export function shaping(
                         viewModel,
                         paragraphNode,
                         sectionBreakConfig,
-                        paragraphStyle
+                        paragraph
                     );
                     shapedGlyphs.push(...glyphGroup);
                     i += step;
@@ -268,7 +280,7 @@ export function shaping(
                         viewModel,
                         paragraphNode,
                         sectionBreakConfig,
-                        paragraphStyle
+                        paragraph
                     );
                     shapedGlyphs.push(...glyphGroup);
                     i += step;
@@ -281,21 +293,20 @@ export function shaping(
                         viewModel,
                         paragraphNode,
                         sectionBreakConfig,
-                        paragraphStyle
+                        paragraph
                     );
                     shapedGlyphs.push(...glyphGroup);
                     i += step;
 
                     src = src.substring(step);
                 } else {
-                    // TODO: 处理一个单词超过 page width 情况
                     const { step, glyphGroup } = otherHandler(
                         i,
                         src,
                         viewModel,
                         paragraphNode,
                         sectionBreakConfig,
-                        paragraphStyle
+                        paragraph
                     );
                     shapedGlyphs.push(...glyphGroup);
                     i += step;

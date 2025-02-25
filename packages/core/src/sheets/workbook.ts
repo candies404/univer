@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,21 +15,17 @@
  */
 
 import type { Observable } from 'rxjs';
-import { BehaviorSubject, Subject } from 'rxjs';
-
-import { ILogService } from '../services/log/log.service';
 import type { Nullable } from '../shared';
+
+import type { CustomData, IRangeType, IWorkbookData, IWorksheetData } from './typedef';
+import { BehaviorSubject, Subject } from 'rxjs';
+import { UnitModel, UniverInstanceType } from '../common/unit';
+import { ILogService } from '../services/log/log.service';
 import { Tools } from '../shared';
 import { BooleanNumber } from '../types/enum';
-import type {
-    IRangeType,
-    IWorkbookData,
-    IWorksheetData,
-} from '../types/interfaces';
-import { UnitModel, UniverInstanceType } from '../common/unit';
+import { getEmptySnapshot } from './empty-snapshot';
 import { Styles } from './styles';
 import { Worksheet } from './worksheet';
-import { getEmptySnapshot } from './empty-snapshot';
 
 export function getWorksheetUID(workbook: Workbook, worksheet: Worksheet): string {
     return `${workbook.getUnitId()}|${worksheet.getSheetId()}`;
@@ -81,6 +77,10 @@ export class Workbook extends UnitModel<IWorkbookData, UniverInstanceType.UNIVER
         return this._name$.getValue();
     }
 
+    static isIRangeType(range: IRangeType | IRangeType[]): boolean {
+        return typeof range === 'string' || 'startRow' in range || 'row' in range;
+    }
+
     constructor(
         workbookData: Partial<IWorkbookData> = {},
         @ILogService private readonly _logService: ILogService
@@ -119,18 +119,26 @@ export class Workbook extends UnitModel<IWorkbookData, UniverInstanceType.UNIVER
         this._name$.complete();
     }
 
+    /**
+     * Create a clone of the current snapshot.
+     * Call resourceLoaderService.saveWorkbook to save the data associated with the current plugin if needed.
+     * @memberof Workbook
+     */
     save(): IWorkbookData {
         return Tools.deepClone(this._snapshot);
     }
 
-    static isIRangeType(range: IRangeType | IRangeType[]): boolean {
-        return typeof range === 'string' || 'startRow' in range || 'row' in range;
-    }
-
+    /**
+     * Get current snapshot reference.
+     * Call resourceLoaderService.saveWorkbook to save the data associated with the current plugin if needed.
+     * @return {*}  {IWorkbookData}
+     * @memberof Workbook
+     */
     getSnapshot(): IWorkbookData {
         return this._snapshot;
     }
 
+    /** @deprecated use use name property instead */
     getName(): string {
         return this._snapshot.name;
     }
@@ -144,21 +152,16 @@ export class Workbook extends UnitModel<IWorkbookData, UniverInstanceType.UNIVER
         return this._unitId;
     }
 
-    getRev(): number {
+    override getRev(): number {
         return this._snapshot.rev ?? 1; // the revision number should start with one
     }
 
-    incrementRev(): void {
+    override incrementRev(): void {
         this._snapshot.rev = this.getRev() + 1;
     }
 
-    getShouldRenderLoopImmediately() {
-        const should = this._snapshot.shouldStartRenderingImmediately;
-        return should !== false;
-    }
-
-    getContainer() {
-        return this._snapshot.container;
+    override setRev(rev: number): void {
+        this._snapshot.rev = rev;
     }
 
     /**
@@ -420,5 +423,21 @@ export class Workbook extends UnitModel<IWorkbookData, UniverInstanceType.UNIVER
 
         // Active the first sheet.
         this.ensureActiveSheet();
+    }
+
+    /**
+     * Get custom metadata of workbook
+     * @returns {CustomData | undefined} custom metadata
+     */
+    getCustomMetadata(): CustomData | undefined {
+        return this._snapshot.custom;
+    }
+
+    /**
+     * Set custom metadata of workbook
+     * @param {CustomData | undefined} custom custom metadata
+     */
+    setCustomMetadata(custom: CustomData | undefined) {
+        this._snapshot.custom = custom;
     }
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,70 +14,73 @@
  * limitations under the License.
  */
 
-import type { IDisposable, SlideDataModel, UnitModel } from '@univerjs/core';
-import { DisposableCollection, ICommandService, IContextService, Inject, IUniverInstanceService, RxDisposable, UniverInstanceType } from '@univerjs/core';
-import {
-    TextSelectionManagerService,
-} from '@univerjs/docs';
-import type { IChangeObserverConfig, IRenderContext, IRenderModule, RichText } from '@univerjs/engine-render';
-import { ITextSelectionRenderManager, ObjectType } from '@univerjs/engine-render';
-import { CanvasView } from '@univerjs/slides';
-import { Subject } from 'rxjs';
+import type { IDisposable, Nullable, SlideDataModel, UnitModel } from '@univerjs/core';
+import type { BaseObject, IRenderContext, IRenderModule, RichText, Scene, Slide } from '@univerjs/engine-render';
+
 import type { ISetEditorInfo } from '../services/slide-editor-bridge.service';
-import { ISlideEditorBridgeService } from '../services/slide-editor-bridge.service';
 import type { ISlideRichTextProps } from '../type';
+import { DisposableCollection, ICommandService, IUniverInstanceService, RxDisposable, UniverInstanceType } from '@univerjs/core';
+import { DeviceInputEventType, ObjectType } from '@univerjs/engine-render';
+import { Subject } from 'rxjs';
+import { UpdateSlideElementOperation } from '../commands/operations/update-element.operation';
+import { ISlideEditorBridgeService } from '../services/slide-editor-bridge.service';
 
 // interface ICanvasOffset {
 //     left: number;
 //     top: number;
 // }
 
-enum CursorChange {
-    InitialState,
-    StartEditor,
-    CursorChange,
-}
+// enum CursorChange {
+//     InitialState,
+//     StartEditor,
+//     CursorChange,
+// }
 
 export class SlideEditorBridgeRenderController extends RxDisposable implements IRenderModule {
     /**
      * It is used to distinguish whether the user has actively moved the cursor in the editor, mainly through mouse clicks.
      */
-    private _cursorChange: CursorChange = CursorChange.InitialState;
+    // private _cursorChange: CursorChange = CursorChange.InitialState;
 
     /** If the corresponding unit is active and prepared for editing. */
-    private _isUnitEditing = false;
+    // private _isUnitEditing = false;
 
     setSlideTextEditor$: Subject<ISlideRichTextProps> = new Subject();
 
     private _curRichText = null as RichText | null;
+
+    private _d: Nullable<IDisposable>;
+
     constructor(
         private readonly _renderContext: IRenderContext<UnitModel>,
-        @IContextService private readonly _contextService: IContextService,
         @IUniverInstanceService private readonly _instanceSrv: IUniverInstanceService,
         @ICommandService private readonly _commandService: ICommandService,
-        @Inject(ISlideEditorBridgeService) private readonly _editorBridgeService: ISlideEditorBridgeService,
-        @Inject(TextSelectionManagerService) private readonly _textSelectionManagerService: TextSelectionManagerService,
-        @ITextSelectionRenderManager private readonly _textSelectionRenderManager: ITextSelectionRenderManager,
-        @Inject(CanvasView) private readonly _canvasView: CanvasView
+        @ISlideEditorBridgeService private readonly _editorBridgeService: ISlideEditorBridgeService
     ) {
         super();
-        this._init();
+
+        this.disposeWithMe(this._instanceSrv.getCurrentTypeOfUnit$<SlideDataModel>(UniverInstanceType.UNIVER_SLIDE).subscribe((slideDataModel) => {
+            if (slideDataModel && slideDataModel.getUnitId() === this._renderContext.unitId) {
+                this._d = this._init();
+            } else {
+                this._disposeCurrent();
+            }
+        }));
     }
 
     private _init(): IDisposable {
         const d = new DisposableCollection();
-        this._initSubjectListener(d);
         this._initEventListener(d);
         return d;
     }
 
-    private _initSubjectListener(d: DisposableCollection) {
-        // d.add(this.setSlideTextEditor$.subscribe((param: ISlideTextEditorParam) => {
-        //     this._updateEditor(param);
-        // }));
+    private _disposeCurrent(): void {
+        this._d?.dispose();
+        this._d = null;
     }
 
-    private _updateEditor(targetObject: RichText) {
+    private _setEditorRect(pageId: string, targetObject: RichText) {
+        this._curRichText = targetObject as RichText;
         const { scene, engine } = this._renderContext;
         const unitId = this._renderContext.unitId;
 
@@ -85,50 +88,118 @@ export class SlideEditorBridgeRenderController extends RxDisposable implements I
             scene,
             engine,
             unitId,
-            pageId: '',
+            pageId,
             richTextObj: targetObject,
         };
 
-        // editorBridgeRenderController@startEditing ---> editorBridgeRenderController@_updateEditor
         this._editorBridgeService.setEditorRect(setEditorRect);
     }
 
     private _initEventListener(d: DisposableCollection) {
-        const model = this._instanceSrv.getCurrentUnitForType<SlideDataModel>(UniverInstanceType.UNIVER_SLIDE);
-        const pagesMap = model?.getPages() ?? {};
-        const pages = Object.values(pagesMap);
-        for (let i = 0; i < pages.length; i++) {
-            const page = pages[i];
-            const { scene } = this._canvasView.getRenderUnitByPageId(page.id);
-            const transformer = scene?.getTransformer();
-
+        const listenersForPageScene = (scene: Scene) => {
+            const transformer = scene.getTransformer();
             if (!transformer) return;
 
-            // calling twice when add an object.
-            d.add(transformer.changeStart$.subscribe((param: IChangeObserverConfig) => {
-                const target = param.target;
-                if (!target) return;
-                if (target.objectType !== ObjectType.RICH_TEXT) {
-                    this.saveCurrEditingState();
+            d.add(transformer.clearControl$.subscribe(() => {
+                this.setEditorVisible(false);
+                this.pickOtherObjects();
+            }));
+            d.add(transformer.createControl$.subscribe(() => {
+                this.setEditorVisible(false);
+            }));
 
-                    // rm other text editor
-                    this.changeVisible(false);
+            // d.add(transformer.changeStart$.subscribe((param: IChangeObserverConfig) => {
+            //     const target = param.target;
+            //     if (!target) return;
+            //     if (target === this._curRichText) {
+            //         // do nothing
+            //     } else {
+            //         this.pickOtherObjects();
+            //     }
+            // }));
+
+            d.add(scene.onDblclick$.subscribeEvent(() => {
+                transformer.clearControls();
+                const selectedObjects = transformer.getSelectedObjectMap();
+                const object = selectedObjects.values().next().value as Nullable<BaseObject>;
+                if (!object) return;
+
+                if (object.objectType !== ObjectType.RICH_TEXT) {
+                    this.pickOtherObjects();
                 } else {
-                    // const elementData = (target as RichText).toJson();
-                    this._curRichText = target as RichText;
-                    this.startEditing(target as RichText);
+                    this.startEditing(scene.sceneKey, object as RichText);
                 }
             }));
+
+            d.add(this._instanceSrv.focused$.subscribe((fc: Nullable<string>) => {
+                this.endEditing();
+            }));
+        };
+
+        // const model = this._instanceSrv.getCurrentUnitForType<SlideDataModel>(UniverInstanceType.UNIVER_SLIDE);
+        // const pagesMap = model?.getPages() ?? {};
+        // const pages = Object.values(pagesMap);
+
+        const { mainComponent } = this._renderContext;
+        const slide = mainComponent as Slide;
+
+        // for new pages created by user
+        // TODO: better only one pageScene listener. but how?
+        // TODO: this controller is in render stage. but default page created in ready stage.
+        slide.subSceneChanged$.subscribeEvent((pageScene: Scene) => {
+            listenersForPageScene(pageScene);
+        });
+
+        // for default pages that already exist
+        const pageSceneList = Array.from((mainComponent as Slide).getSubScenes().values());
+        for (let i = 0; i < pageSceneList.length; i++) {
+            const pageScene = pageSceneList[i] as Scene;
+            listenersForPageScene(pageScene);
         }
     }
 
-    saveCurrEditingState() {
+    pickOtherObjects() {
+        this.endEditing();
+    }
+
+    /**
+     * invoked when picking other object.
+     *
+     * save editing state to curr richText.
+     */
+    endEditing() {
         if (!this._curRichText) return;
+        this.setEditorVisible(false);
         const curRichText = this._curRichText;
 
         const slideData = this._instanceSrv.getCurrentUnitForType<SlideDataModel>(UniverInstanceType.UNIVER_SLIDE);
         if (!slideData) return false;
-        curRichText.updateDocumentByDocData();
+        curRichText.refreshDocumentByDocData();
+        curRichText.resizeToContentSize();
+
+        this._editorBridgeService.endEditing$.next(curRichText);
+
+        const richText: Record<string, any> = {
+            bl: 1,
+            fs: curRichText.fs,
+            text: curRichText.text,
+        };
+        const textRuns = curRichText.documentData.body?.textRuns;
+        if (textRuns && textRuns.length) {
+            const textRun = textRuns[0];
+            const ts = textRun.ts;
+
+            richText.cl = ts?.cl;
+        }
+
+        this._commandService.executeCommand(UpdateSlideElementOperation.id, {
+            unitId: this._renderContext.unitId,
+            oKey: curRichText?.oKey,
+            props: {
+                richText,
+            },
+        });
+        this._curRichText = null;
     }
 
     /**
@@ -136,16 +207,23 @@ export class SlideEditorBridgeRenderController extends RxDisposable implements I
      * editingParam derives from RichText object.
      *
      * TODO @lumixraku need scale param
-     * @param editingParam
+     * @param target
      */
-    startEditing(target: RichText) {
+    startEditing(pageId: string, target: RichText) {
         // this.setSlideTextEditor$.next({ content, rect });
-        this._updateEditor(target);
-        this.changeVisible(true);
+
+        this._setEditorRect(pageId, target);
+        this.setEditorVisible(true);
     }
 
-    changeVisible(visible: boolean) {
+    setEditorVisible(visible: boolean) {
+        // if editor is visible, hide curr RichTerxtObject
+        if (visible) {
+            this._curRichText?.hide();
+        } else {
+            this._curRichText?.show();
+        }
         const { unitId } = this._renderContext;
-        this._editorBridgeService.changeVisible({ visible, eventType: 3, unitId });
+        this._editorBridgeService.changeVisible({ visible, eventType: DeviceInputEventType.PointerDown, unitId });
     }
 }

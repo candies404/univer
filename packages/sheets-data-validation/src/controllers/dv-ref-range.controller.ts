@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,27 +14,28 @@
  * limitations under the License.
  */
 
-import type { IRange, ISheetDataValidationRule } from '@univerjs/core';
-import { DataValidationType, Disposable, Inject, Injector, isRangesEqual, LifecycleStages, OnLifecycle, toDisposable } from '@univerjs/core';
-import type { EffectRefRangeParams } from '@univerjs/sheets';
-import { handleCommonDefaultRangeChangeWithEffectRefCommands, RefRangeService } from '@univerjs/sheets';
+import type { ISheetDataValidationRule } from '@univerjs/core';
 import type { IRemoveDataValidationMutationParams, IUpdateDataValidationMutationParams } from '@univerjs/data-validation';
-import { DataValidationModel, RemoveDataValidationMutation, removeDataValidationUndoFactory, UpdateDataValidationMutation, UpdateRuleType } from '@univerjs/data-validation';
+import type { EffectRefRangeParams } from '@univerjs/sheets';
+import { Disposable, Inject, Injector, isRangesEqual, toDisposable } from '@univerjs/core';
+import { DataValidatorRegistryService, RemoveDataValidationMutation, UpdateDataValidationMutation, UpdateRuleType } from '@univerjs/data-validation';
+import { handleCommonDefaultRangeChangeWithEffectRefCommands, RefRangeService } from '@univerjs/sheets';
 import { FormulaRefRangeService } from '@univerjs/sheets-formula';
-import { DataValidationCustomFormulaService } from '../services/dv-custom-formula.service';
+import { removeDataValidationUndoFactory } from '../commands/commands/data-validation.command';
+import { SheetDataValidationModel } from '../models/sheet-data-validation-model';
 import { DataValidationFormulaService } from '../services/dv-formula.service';
+import { shouldOffsetFormulaByRange } from '../utils/formula';
 
-@OnLifecycle(LifecycleStages.Ready, DataValidationRefRangeController)
 export class DataValidationRefRangeController extends Disposable {
     private _disposableMap: Map<string, Set<() => void>> = new Map();
 
     constructor(
-        @Inject(DataValidationModel) private _dataValidationModel: DataValidationModel,
+        @Inject(SheetDataValidationModel) private _dataValidationModel: SheetDataValidationModel,
         @Inject(Injector) private _injector: Injector,
         @Inject(RefRangeService) private _refRangeService: RefRangeService,
-        @Inject(DataValidationCustomFormulaService) private _dataValidationCustomFormulaService: DataValidationCustomFormulaService,
         @Inject(DataValidationFormulaService) private _dataValidationFormulaService: DataValidationFormulaService,
-        @Inject(FormulaRefRangeService) private _formulaRefRangeService: FormulaRefRangeService
+        @Inject(FormulaRefRangeService) private _formulaRefRangeService: FormulaRefRangeService,
+        @Inject(DataValidatorRegistryService) private _validatorRegistryService: DataValidatorRegistryService
     ) {
         super();
         this._initRefRange();
@@ -45,6 +46,9 @@ export class DataValidationRefRangeController extends Disposable {
     }
 
     registerRule = (unitId: string, subUnitId: string, rule: ISheetDataValidationRule) => {
+        if (shouldOffsetFormulaByRange(rule.type, this._validatorRegistryService)) {
+            return;
+        }
         this.register(unitId, subUnitId, rule);
         this.registerFormula(unitId, subUnitId, rule);
     };
@@ -76,6 +80,7 @@ export class DataValidationRefRangeController extends Disposable {
                         [type]: formulaString,
                     },
                 },
+                source: 'patched',
             };
             const undoParams: IUpdateDataValidationMutationParams = {
                 unitId,
@@ -89,6 +94,7 @@ export class DataValidationRefRangeController extends Disposable {
                         formula2: oldRule.formula2,
                     },
                 },
+                source: 'patched',
             };
             const redos = [
                 {
@@ -105,36 +111,27 @@ export class DataValidationRefRangeController extends Disposable {
             return { redos, undos };
         };
 
-        if (rule.type === DataValidationType.CUSTOM) {
-            const currentFormula = this._dataValidationCustomFormulaService.getRuleFormulaInfo(unitId, subUnitId, ruleId);
-            if (currentFormula) {
+        const currentFormula = this._dataValidationFormulaService.getRuleFormulaInfo(unitId, subUnitId, ruleId);
+        if (currentFormula) {
+            const [formula1, formula2] = currentFormula;
+            if (formula1) {
                 const disposable = this._formulaRefRangeService.registerFormula(
-                    currentFormula.formula,
+                    unitId,
+                    subUnitId,
+                    formula1.text,
                     (newFormulaString) => handleFormulaChange('formula1', newFormulaString)
                 );
                 disposeSet.add(() => disposable.dispose());
             }
-        }
 
-        if (rule.type !== DataValidationType.CUSTOM) {
-            const currentFormula = this._dataValidationFormulaService.getRuleFormulaInfo(unitId, subUnitId, ruleId);
-            if (currentFormula) {
-                const [formula1, formula2] = currentFormula;
-                if (formula1) {
-                    const disposable = this._formulaRefRangeService.registerFormula(
-                        formula1.text,
-                        (newFormulaString) => handleFormulaChange('formula1', newFormulaString)
-                    );
-                    disposeSet.add(() => disposable.dispose());
-                }
-
-                if (formula2) {
-                    const disposable = this._formulaRefRangeService.registerFormula(
-                        formula2.text,
-                        (newFormulaString) => handleFormulaChange('formula1', newFormulaString)
-                    );
-                    disposeSet.add(() => disposable.dispose());
-                }
+            if (formula2) {
+                const disposable = this._formulaRefRangeService.registerFormula(
+                    unitId,
+                    subUnitId,
+                    formula2.text,
+                    (newFormulaString) => handleFormulaChange('formula2', newFormulaString)
+                );
+                disposeSet.add(() => disposable.dispose());
             }
         }
     }
@@ -143,9 +140,8 @@ export class DataValidationRefRangeController extends Disposable {
         const handleRangeChange = (commandInfo: EffectRefRangeParams) => {
             const oldRanges = [...rule.ranges];
             const resultRangesOrigin = oldRanges.map((range) => {
-                return handleCommonDefaultRangeChangeWithEffectRefCommands(range, commandInfo) as IRange | IRange[];
+                return handleCommonDefaultRangeChangeWithEffectRefCommands(range, commandInfo);
             }).filter((range) => !!range);
-
             const resultRanges = resultRangesOrigin.flat();
 
             const isEqual = isRangesEqual(resultRanges, oldRanges);
@@ -200,6 +196,15 @@ export class DataValidationRefRangeController extends Disposable {
     };
 
     private _initRefRange() {
+        const allRules = this._dataValidationModel.getAll();
+        for (const [unitId, subUnitMap] of allRules) {
+            for (const [subUnitId, rules] of subUnitMap) {
+                for (const rule of rules) {
+                    this.registerRule(unitId, subUnitId, rule);
+                }
+            }
+        }
+
         this.disposeWithMe(
             this._dataValidationModel.ruleChange$.subscribe((option) => {
                 const { unitId, subUnitId, rule } = option;
@@ -211,13 +216,17 @@ export class DataValidationRefRangeController extends Disposable {
                     }
                     case 'remove': {
                         const disposeSet = this._disposableMap.get(this._getIdWithUnitId(unitId, subUnitId, rule!.uid));
-                        disposeSet && disposeSet.forEach((dispose) => dispose());
+                        if (disposeSet) {
+                            disposeSet.forEach((dispose) => dispose());
+                        }
                         break;
                     }
                     case 'update': {
                         const rule = option.rule!;
                         const disposeSet = this._disposableMap.get(this._getIdWithUnitId(unitId, subUnitId, rule!.uid));
-                        disposeSet && disposeSet.forEach((dispose) => dispose());
+                        if (disposeSet) {
+                            disposeSet.forEach((dispose) => dispose());
+                        }
                         this.registerRule(option.unitId, option.subUnitId, rule);
                         break;
                     }

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,21 @@
 
 import type { IKeyValue, IOffset, IScale, ISize, Nullable } from '@univerjs/core';
 
-import { BASE_OBJECT_ARRAY, BaseObject, ObjectType } from '../base-object';
-import { SHAPE_TYPE } from '../basics/const';
 import type { IObjectFullState } from '../basics/interfaces';
 import type { IViewportInfo, Vector2 } from '../basics/vector2';
 import type { UniverRenderingContext } from '../context';
+import { BASE_OBJECT_ARRAY, BaseObject, ObjectType } from '../base-object';
+import { SHAPE_TYPE } from '../basics/const';
 
 export type LineJoin = 'round' | 'bevel' | 'miter';
 export type LineCap = 'butt' | 'round' | 'square';
 export type PaintFirst = 'fill' | 'stroke';
 
+const BASE_OBJECT_ARRAY_Set = new Set(BASE_OBJECT_ARRAY);
 export interface IShapeProps extends IObjectFullState, ISize, IOffset, IScale {
+    rotateEnabled?: boolean;
+    resizeEnabled?: boolean;
+    borderEnabled?: boolean;
     hoverCursor?: Nullable<string>;
     moveCursor?: string | null;
     fillRule?: string;
@@ -296,7 +300,7 @@ export abstract class Shape<T extends IShapeProps> extends BaseObject {
     //     return { scaleX: 1, scaleY: 1 };
     // }
 
-    private static _removeShadow(ctx: UniverRenderingContext) {}
+    private static _removeShadow(ctx: UniverRenderingContext) { }
 
     private static _setFillStyles(ctx: UniverRenderingContext, props: IShapeProps) {
         ctx.fillStyle = props.fill!;
@@ -341,21 +345,25 @@ export abstract class Shape<T extends IShapeProps> extends BaseObject {
         return this;
     }
 
-    setProps(props?: T) {
+    /**
+     * if BASE_OBJECT_ARRAY_Set.has(key) not exist, then this[_key] = props[key],
+     * @param props
+     */
+    setProps(props?: T): Shape<T> {
         if (!props) {
-            return;
+            return this;
         }
 
         const themeKeys = Object.keys(props);
         if (themeKeys.length === 0) {
-            return;
+            return this;
         }
         themeKeys.forEach((key) => {
             if ((props as IKeyValue)[key] === undefined) {
                 return true;
             }
 
-            if (BASE_OBJECT_ARRAY.indexOf(key) === -1) {
+            if (!BASE_OBJECT_ARRAY_Set.has(key)) {
                 (this as IKeyValue)[`_${key}`] = (props as IKeyValue)[key];
             }
         });
@@ -392,12 +400,31 @@ export abstract class Shape<T extends IShapeProps> extends BaseObject {
 
         const transformState: IObjectFullState = {};
         let hasTransformState = false;
+
+        const hasRotateEnabled = props?.rotateEnabled !== undefined;
+        const hasResizeEnabled = props?.resizeEnabled !== undefined;
+        const hasBorderEnabled = props?.borderEnabled !== undefined;
+
+        if (hasRotateEnabled || hasResizeEnabled || hasBorderEnabled) {
+            const transformerConfig = this.transformerConfig || {};
+            if (hasRotateEnabled) {
+                transformerConfig.rotateEnabled = props?.rotateEnabled;
+            }
+            if (hasResizeEnabled) {
+                transformerConfig.resizeEnabled = props?.resizeEnabled;
+            }
+            if (hasBorderEnabled) {
+                transformerConfig.borderEnabled = props?.borderEnabled;
+            }
+            this.transformerConfig = { ...transformerConfig };
+        }
+
         themeKeys.forEach((key) => {
             if ((props as IKeyValue)[key] === undefined) {
                 return true;
             }
 
-            if (BASE_OBJECT_ARRAY.indexOf(key) > -1) {
+            if (BASE_OBJECT_ARRAY_Set.has(key)) {
                 transformState[key as keyof IObjectFullState] = (props as IKeyValue)[key];
                 hasTransformState = true;
             } else {

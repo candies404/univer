@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,24 +15,23 @@
  */
 
 import type { IObjectMatrixPrimitiveType, Nullable } from '../shared';
-import { ObjectMatrix, Tools } from '../shared';
-import { DEFAULT_STYLES } from '../types/const';
 import type { HorizontalAlign, VerticalAlign } from '../types/enum';
-import { BooleanNumber, FontItalic, FontWeight, WrapStrategy } from '../types/enum';
-import {
-    type IBorderData,
-    type ICellData,
-    type IDocumentBody,
-    type IDocumentData,
-    type IRange,
-    type IStyleBase,
-    type IStyleData,
-    type ITextDecoration,
-    type ITextRotation,
-    RANGE_TYPE,
+import type {
+    IBorderData,
+    IDocumentBody,
+    IDocumentData,
+    IStyleBase,
+    IStyleData,
+    ITextDecoration,
+    ITextRotation,
 } from '../types/interfaces';
 import type { Styles } from './styles';
+import type { ICellData, IRange } from './typedef';
 import type { Worksheet } from './worksheet';
+import { ObjectMatrix, Tools } from '../shared';
+import { DEFAULT_STYLES } from '../types/const';
+import { BooleanNumber, FontItalic, FontWeight, WrapStrategy } from '../types/enum';
+import { RANGE_TYPE } from './typedef';
 
 /**
  * getObjectValues options type
@@ -124,19 +123,22 @@ export class Range {
     }
 
     static transformRange = (range: IRange, worksheet: Worksheet): IRange => {
+        const maxColumns = worksheet.getMaxColumns() - 1;
+        const maxRows = worksheet.getMaxRows() - 1;
+
         if (range.rangeType === RANGE_TYPE.ALL) {
             return {
                 startColumn: 0,
                 startRow: 0,
-                endColumn: worksheet.getMaxColumns() - 1,
-                endRow: worksheet.getMaxRows() - 1,
+                endColumn: maxColumns,
+                endRow: maxRows,
             };
         }
 
         if (range.rangeType === RANGE_TYPE.COLUMN) {
             return {
                 startRow: 0,
-                endRow: worksheet.getMaxRows() - 1,
+                endRow: maxRows,
                 startColumn: range.startColumn,
                 endColumn: range.endColumn,
             };
@@ -145,13 +147,18 @@ export class Range {
         if (range.rangeType === RANGE_TYPE.ROW) {
             return {
                 startColumn: 0,
-                endColumn: worksheet.getMaxColumns() - 1,
+                endColumn: maxColumns,
                 startRow: range.startRow,
                 endRow: range.endRow,
             };
         }
 
-        return range;
+        return {
+            startColumn: range.startColumn,
+            endColumn: Math.min(range.endColumn, maxColumns),
+            startRow: range.startRow,
+            endRow: Math.min(range.endRow, maxRows),
+        };
     };
 
     /**
@@ -294,7 +301,7 @@ export class Range {
      * @returns  — A range containing a single cell at the specified coordinates.
      */
     getCell(row: number, column: number): Range {
-        const { startRow, endRow, startColumn, endColumn } = this._range;
+        const { startRow, startColumn } = this._range;
         const cell = {
             startRow: startRow + row,
             endRow: startRow + row,
@@ -383,7 +390,7 @@ export class Range {
     }
 
     /**
-     * 	Returns the font family of the cell in the top-left corner of the range.
+     * Returns the font family of the cell in the top-left corner of the range.
      */
     getFontFamily(): string {
         return this.getFontFamilies()[0][0];
@@ -560,7 +567,7 @@ export class Range {
     }
 
     /**
-     * 	Returns the horizontal alignment of the text (left/center/right) of the cell in the top-left corner of the range.
+     *     Returns the horizontal alignment of the text (left/center/right) of the cell in the top-left corner of the range.
      */
     getHorizontalAlignment(): HorizontalAlign {
         return this.getHorizontalAlignments()[0][0];
@@ -581,7 +588,7 @@ export class Range {
     }
 
     /**
-     * 	Returns the end row position.
+     *     Returns the end row position.
      */
     getLastRow(): number {
         return this._range.endRow;
@@ -662,7 +669,7 @@ export class Range {
     }
 
     /**
-     * 	Returns the text style for the top left cell of the range.
+     *     Returns the text style for the top left cell of the range.
      */
     getTextStyle(): Nullable<IStyleData> {
         return this.getTextStyles()[0][0];

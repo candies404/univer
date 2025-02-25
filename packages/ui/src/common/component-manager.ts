@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,11 @@
  * limitations under the License.
  */
 
+import type { IDisposable } from '@univerjs/core';
+import type React from 'react';
+import type { defineComponent } from 'vue';
 import { toDisposable } from '@univerjs/core';
+
 import {
     AddDigitsSingle,
     AdjustHeight,
@@ -25,6 +29,7 @@ import {
     AllBorderSingle,
     AmplifySingle,
     AutoHeight,
+    AutoWidth,
     AutowrapSingle,
     AvgSingle,
     BackSlashSingle,
@@ -45,7 +50,9 @@ import {
     DeleteColumn,
     DeleteRow,
     DirectExportSingle,
+    DollarSingle,
     DownBorder,
+    EuroSingle,
     ExportSingle,
     FolderSingle,
     FontColor,
@@ -55,6 +62,8 @@ import {
     FreezeRowSingle,
     FreezeToSelectedSingle,
     FunctionSingle,
+    GridSingle,
+    HeaderFooterSingle,
     Hide,
     HorizontalBorder,
     HorizontallySingle,
@@ -99,6 +108,7 @@ import {
     RightRotationFortyFiveDegreesSingle,
     RightRotationNinetyDegreesSingle,
     RmbSingle,
+    RoubleSingle,
     SlashSingle,
     StrikethroughSingle,
     SubscriptSingle,
@@ -114,15 +124,11 @@ import {
     VerticalIntegrationSingle,
     VerticalTextSingle,
 } from '@univerjs/icons';
-import type { IDisposable } from '@univerjs/core';
-import type { defineComponent } from 'vue';
-
-import type React from 'react';
 import { cloneElement, createElement, useEffect, useRef } from 'react';
 
 type ComponentFramework = 'vue3' | 'react';
 
-interface IComponentOptions {
+export interface IComponentOptions {
     framework?: ComponentFramework;
 }
 
@@ -141,6 +147,7 @@ export type ComponentList = Map<string, IVue3Component | IReactComponent>;
 
 export class ComponentManager {
     private _components: ComponentList = new Map();
+    private _componentsReverse = new Map<ComponentType, string>();
 
     // eslint-disable-next-line max-lines-per-function
     constructor() {
@@ -214,6 +221,7 @@ export class ComponentManager {
             Hide,
             HorizontalBorder,
             AutoHeight,
+            AutoWidth,
             AdjustHeight,
             AdjustWidth,
             AvgSingle,
@@ -224,6 +232,8 @@ export class ComponentManager {
             CancelFreezeSingle,
             FreezeColumnSingle,
             FreezeRowSingle,
+            GridSingle,
+            HeaderFooterSingle,
             FreezeToSelectedSingle,
             CodeSingle,
             FontSizeIncreaseSingle,
@@ -242,7 +252,9 @@ export class ComponentManager {
             AddDigitsSingle,
             ReduceDigitsSingle,
             PercentSingle,
-
+            EuroSingle,
+            RoubleSingle,
+            DollarSingle,
         };
 
         for (const k in iconList) {
@@ -261,8 +273,16 @@ export class ComponentManager {
             framework,
             component,
         });
+        this._componentsReverse.set(component, name);
 
-        return toDisposable(() => this._components.delete(name));
+        return toDisposable(() => {
+            this._components.delete(name);
+            this._componentsReverse.delete(component);
+        });
+    }
+
+    getKey(component: ComponentType) {
+        return this._componentsReverse.get(component);
     }
 
     get(name: string) {

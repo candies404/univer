@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -110,6 +110,9 @@ const locale: typeof zhCN = {
             right: 'Правая рамка',
         },
         more: 'Больше',
+        hideGridlines: 'Скрыть сетку',
+        showGridlines: 'Показать сетку',
+        toggleGridlines: 'Переключить сетку',
     },
     defaultFmt: {
         Automatic: {
@@ -602,6 +605,7 @@ const locale: typeof zhCN = {
             setCellStyle: 'Установить стиль ячейки',
             copy: 'Копировать',
             alert: 'Предупреждение',
+            search: 'Поиск',
             alertContent: 'Этот диапазон защищен и в настоящее время недоступен для редактирования. Если вам нужно редактировать, пожалуйста, свяжитесь с создателем.',
             userEmpty: 'нет назначенных лиц, поделитесь ссылкой, чтобы пригласить конкретных людей.',
             listEmpty: 'Вы не установили ни одного защищенного диапазона или листа.',
@@ -631,4 +635,3 @@ const locale: typeof zhCN = {
 };
 
 export default locale;
-

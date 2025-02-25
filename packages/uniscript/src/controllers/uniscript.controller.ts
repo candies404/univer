@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,35 +14,22 @@
  * limitations under the License.
  */
 
-import { Disposable, ICommandService, Inject, Injector, LifecycleStages, OnLifecycle } from '@univerjs/core';
-import type { MenuConfig } from '@univerjs/ui';
-import { ComponentManager, IMenuService } from '@univerjs/ui';
+import { Disposable, ICommandService, Inject } from '@univerjs/core';
+import { ComponentManager, IMenuManagerService } from '@univerjs/ui';
 
 import { ScriptPanelComponentName, ToggleScriptPanelOperation } from '../commands/operations/panel.operation';
 import { ScriptEditorPanel } from '../views/components/ScriptEditorPanel';
-import { UniscriptMenuItemFactory } from './menu';
+import { menuSchema } from './menu.schema';
 
-export interface IUniverUniscriptConfig {
-    getWorkerUrl(moduleID: string, label: string): string;
-    menu: MenuConfig;
-}
-
-export const DefaultUniscriptConfig = {};
-
-@OnLifecycle(LifecycleStages.Steady, UniscriptController)
 export class UniscriptController extends Disposable {
     constructor(
-        private readonly _config: Partial<IUniverUniscriptConfig>,
-        @Inject(Injector) private readonly _injector: Injector,
-        @IMenuService private readonly _menuService: IMenuService,
+        @IMenuManagerService private readonly _menuManagerService: IMenuManagerService,
         @ICommandService commandService: ICommandService,
         @Inject(ComponentManager) componentManager: ComponentManager
     ) {
         super();
 
-        const { menu = {} } = this._config;
-
-        this.disposeWithMe(_menuService.addMenuItem(this._injector.invoke(UniscriptMenuItemFactory), menu));
+        this._menuManagerService.mergeMenu(menuSchema);
         this.disposeWithMe(componentManager.register(ScriptPanelComponentName, ScriptEditorPanel));
         this.disposeWithMe(commandService.registerCommand(ToggleScriptPanelOperation));
     }

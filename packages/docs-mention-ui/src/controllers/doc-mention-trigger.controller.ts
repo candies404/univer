@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,19 +14,19 @@
  * limitations under the License.
  */
 
-import { Disposable, ICommandService, Inject, LifecycleStages, OnLifecycle, Tools } from '@univerjs/core';
-import type { IInsertCommandParams } from '@univerjs/docs';
-import { DeleteLeftCommand, InsertCommand, MoveCursorOperation, TextSelectionManagerService } from '@univerjs/docs';
-import { DocMentionService } from '@univerjs/docs-mention';
-import { DocMentionPopupService } from '../services/doc-mention-popup.service';
+import type { IInsertCommandParams } from '@univerjs/docs-ui';
+import { Disposable, ICommandService, Inject, Tools } from '@univerjs/core';
+import { DocSelectionManagerService } from '@univerjs/docs';
+import { DeleteLeftCommand, InsertCommand, MoveCursorOperation } from '@univerjs/docs-ui';
 import { CloseMentionEditPopupOperation, ShowMentionEditPopupOperation } from '../commands/operations/mention-popup.operation';
+import { DocMentionPopupService } from '../services/doc-mention-popup.service';
+import { DocMentionService } from '../services/doc-mention.service';
 
-@OnLifecycle(LifecycleStages.Rendered, DocMentionTriggerController)
 export class DocMentionTriggerController extends Disposable {
     constructor(
         @ICommandService private readonly _commandService: ICommandService,
         @Inject(DocMentionService) private readonly _docMentionService: DocMentionService,
-        @Inject(TextSelectionManagerService) private readonly _textSelectionManagerService: TextSelectionManagerService,
+        @Inject(DocSelectionManagerService) private readonly _textSelectionManagerService: DocSelectionManagerService,
         @Inject(DocMentionPopupService) private readonly _docMentionPopupService: DocMentionPopupService
     ) {
         super();
@@ -39,11 +39,14 @@ export class DocMentionTriggerController extends Disposable {
             this._commandService.onCommandExecuted((commandInfo) => {
                 if (commandInfo.id === InsertCommand.id) {
                     const params = commandInfo.params as IInsertCommandParams;
-                    const activeRange = this._textSelectionManagerService.getActiveRange();
+                    const activeRange = this._textSelectionManagerService.getActiveTextRange();
                     if (params.body.dataStream === '@' && activeRange && !Tools.isDefine(this._docMentionService.editing)) {
-                        this._commandService.executeCommand(ShowMentionEditPopupOperation.id, {
-                            startIndex: activeRange.startOffset - 1,
-                        });
+                        setTimeout(() => {
+                            this._commandService.executeCommand(ShowMentionEditPopupOperation.id, {
+                                startIndex: activeRange.startOffset - 1,
+                                unitId: params.unitId,
+                            });
+                        }, 100);
                     }
                 }
 
@@ -55,7 +58,7 @@ export class DocMentionTriggerController extends Disposable {
                     if (this._docMentionPopupService.editPopup == null) {
                         return;
                     }
-                    const activeRange = this._textSelectionManagerService.getActiveRange();
+                    const activeRange = this._textSelectionManagerService.getActiveTextRange();
                     if (activeRange && activeRange.endOffset <= this._docMentionPopupService.editPopup.anchor) {
                         this._commandService.executeCommand(CloseMentionEditPopupOperation.id);
                     }

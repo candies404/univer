@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,12 @@
  */
 
 import type { IAccessor, ICommand } from '@univerjs/core';
+import type { ISetNumfmtCommandParams } from './set-numfmt.command';
 import { CommandType, ICommandService, Range } from '@univerjs/core';
 import { SheetsSelectionsService } from '@univerjs/sheets';
-
-import { CURRENCYFORMAT } from '../../base/const/FORMATDETAIL';
-import type { ISetNumfmtCommandParams } from './set-numfmt.command';
+import { countryCurrencyMap } from '../../base/const/currency-symbols';
+import { CURRENCYFORMAT } from '../../base/const/formatdetail';
+import { MenuCurrencyService } from '../../service/menu.currency.service';
 import { SetNumfmtCommand } from './set-numfmt.command';
 
 export const SetCurrencyCommand: ICommand = {
@@ -28,14 +29,15 @@ export const SetCurrencyCommand: ICommand = {
     handler: async (accessor: IAccessor) => {
         const commandService = accessor.get(ICommandService);
         const selectionManagerService = accessor.get(SheetsSelectionsService);
-
+        const menuCurrencyService = accessor.get(MenuCurrencyService);
+        const symbol = countryCurrencyMap[menuCurrencyService.getCurrencySymbol()] || '$';
         const selections = selectionManagerService.getCurrentSelections();
         if (!selections || !selections.length) {
             return false;
         }
         const values: ISetNumfmtCommandParams['values'] = [];
 
-        const suffix = CURRENCYFORMAT[0].suffix('¥');
+        const suffix = CURRENCYFORMAT[4].suffix(symbol);
 
         selections.forEach((selection) => {
             Range.foreach(selection.range, (row, col) => {

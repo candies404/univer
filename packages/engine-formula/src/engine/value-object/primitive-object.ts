@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,20 @@
  */
 
 import { isRealNum } from '@univerjs/core';
+import { FormulaAstLRU } from '../../basics/cache-lru';
 import { reverseCompareOperator } from '../../basics/calculate';
 import { BooleanValue, ConcatenateType } from '../../basics/common';
-import { ERROR_TYPE_SET, ErrorType } from '../../basics/error-type';
+import { ErrorType } from '../../basics/error-type';
 import { compareToken, operatorToken } from '../../basics/token';
 import { compareWithWildcard, isWildcard } from '../utils/compare';
 import { ceil, divide, equals, floor, greaterThan, greaterThanOrEquals, lessThan, lessThanOrEquals, minus, mod, multiply, plus, pow, round, sqrt } from '../utils/math-kit';
-import { FormulaAstLRU } from '../../basics/cache-lru';
 import { comparePatternPriority } from '../utils/numfmt-kit';
 import { BaseValueObject, ErrorValueObject } from './base-value-object';
 
 export type PrimitiveValueType = string | boolean | number | null;
+
+export type FormulaFunctionValueType = PrimitiveValueType | PrimitiveValueType[][] | BaseValueObject;
+export type FormulaFunctionResultValueType = PrimitiveValueType | PrimitiveValueType[][];
 
 export class NullValueObject extends BaseValueObject {
     private static _instance: NullValueObject;
@@ -432,27 +435,15 @@ export class BooleanValueObject extends BaseValueObject {
     }
 }
 
-const NUMBER_CACHE_LRU_COUNT = 200000;
-
-export const NumberValueObjectCache = new FormulaAstLRU<NumberValueObject>(NUMBER_CACHE_LRU_COUNT);
-
 export class NumberValueObject extends BaseValueObject {
     private _value: number = 0;
 
     static create(value: number, pattern: string = '') {
-        // The same number may have different number formats
-        const key = `${value}-${pattern}`;
-        const cached = NumberValueObjectCache.get(key);
-        if (cached) {
-            return cached;
-        }
-
         const instance = new NumberValueObject(value);
         if (pattern) {
             instance.setPattern(pattern);
         }
 
-        NumberValueObjectCache.set(key, instance);
         return instance;
     }
 
@@ -639,114 +630,91 @@ export class NumberValueObject extends BaseValueObject {
     }
 
     override plusBy(value: string | number | boolean): BaseValueObject {
-        const currentValue = this.getValue();
-        if (typeof value === 'string') {
-            // = 1 + #NAME? gets #NAME?, = 1 + #VALUE! gets #VALUE!
-            if (ERROR_TYPE_SET.has(value as ErrorType)) {
-                return ErrorValueObject.create(value as ErrorType);
-            }
+        const currentValue = +this.getValue();
+        const _value = +value;
+
+        if (Number.isNaN(currentValue) || Number.isNaN(_value)) {
             return ErrorValueObject.create(ErrorType.VALUE);
         }
-        if (typeof value === 'number') {
-            if (!Number.isFinite(currentValue) || !Number.isFinite(value)) {
-                return ErrorValueObject.create(ErrorType.NUM);
-            }
 
-            const result = plus(currentValue, value);
-
-            if (!Number.isFinite(result)) {
-                return ErrorValueObject.create(ErrorType.NUM);
-            }
-
-            return NumberValueObject.create(result);
+        if (!Number.isFinite(currentValue) || !Number.isFinite(_value)) {
+            return ErrorValueObject.create(ErrorType.NUM);
         }
-        if (typeof value === 'boolean') {
-            return NumberValueObject.create(
-                plus(currentValue, value ? 1 : 0)
-            );
+
+        const result = plus(currentValue, _value);
+
+        if (!Number.isFinite(result)) {
+            return ErrorValueObject.create(ErrorType.NUM);
         }
-        return this;
+
+        return NumberValueObject.create(result);
     }
 
     override minusBy(value: string | number | boolean): BaseValueObject {
-        const currentValue = this.getValue();
-        if (typeof value === 'string') {
+        const currentValue = +this.getValue();
+        const _value = +value;
+
+        if (Number.isNaN(currentValue) || Number.isNaN(_value)) {
             return ErrorValueObject.create(ErrorType.VALUE);
         }
-        if (typeof value === 'number') {
-            if (!Number.isFinite(currentValue) || !Number.isFinite(value)) {
-                return ErrorValueObject.create(ErrorType.NUM);
-            }
 
-            const result = minus(currentValue, value);
-
-            if (!Number.isFinite(result)) {
-                return ErrorValueObject.create(ErrorType.NUM);
-            }
-
-            return NumberValueObject.create(result);
+        if (!Number.isFinite(currentValue) || !Number.isFinite(_value)) {
+            return ErrorValueObject.create(ErrorType.NUM);
         }
-        if (typeof value === 'boolean') {
-            return NumberValueObject.create(
-                minus(currentValue, value ? 1 : 0)
-            );
+
+        const result = minus(currentValue, _value);
+
+        if (!Number.isFinite(result)) {
+            return ErrorValueObject.create(ErrorType.NUM);
         }
-        return this;
+
+        return NumberValueObject.create(result);
     }
 
     override multiplyBy(value: string | number | boolean): BaseValueObject {
-        const currentValue = this.getValue();
-        if (typeof value === 'string') {
+        const currentValue = +this.getValue();
+        const _value = +value;
+
+        if (Number.isNaN(currentValue) || Number.isNaN(_value)) {
             return ErrorValueObject.create(ErrorType.VALUE);
         }
-        if (typeof value === 'number') {
-            if (!Number.isFinite(currentValue) || !Number.isFinite(value)) {
-                return ErrorValueObject.create(ErrorType.NUM);
-            }
 
-            const result = multiply(currentValue, value);
+        if (!Number.isFinite(currentValue) || !Number.isFinite(_value)) {
+            return ErrorValueObject.create(ErrorType.NUM);
+        }
 
-            if (!Number.isFinite(result)) {
-                return ErrorValueObject.create(ErrorType.NUM);
-            }
-            return NumberValueObject.create(result);
+        const result = multiply(currentValue, _value);
+
+        if (!Number.isFinite(result)) {
+            return ErrorValueObject.create(ErrorType.NUM);
         }
-        if (typeof value === 'boolean') {
-            return NumberValueObject.create(
-                multiply(currentValue, value ? 1 : 0)
-            );
-        }
-        return this;
+
+        return NumberValueObject.create(result);
     }
 
     override dividedBy(value: string | number | boolean): BaseValueObject {
-        const currentValue = this.getValue();
-        if (typeof value === 'string') {
+        const currentValue = +this.getValue();
+        const _value = +value;
+
+        if (Number.isNaN(currentValue) || Number.isNaN(_value)) {
             return ErrorValueObject.create(ErrorType.VALUE);
         }
-        if (typeof value === 'number') {
-            if (value === 0) {
-                return ErrorValueObject.create(ErrorType.DIV_BY_ZERO);
-            }
-            if (!Number.isFinite(currentValue) || !Number.isFinite(value)) {
-                return ErrorValueObject.create(ErrorType.NUM);
-            }
 
-            const result = divide(currentValue, value);
-
-            if (!Number.isFinite(result)) {
-                return ErrorValueObject.create(ErrorType.NUM);
-            }
-
-            return NumberValueObject.create(result);
+        if (!Number.isFinite(currentValue) || !Number.isFinite(_value)) {
+            return ErrorValueObject.create(ErrorType.NUM);
         }
-        if (typeof value === 'boolean') {
-            if (value === false) {
-                return ErrorValueObject.create(ErrorType.DIV_BY_ZERO);
-            }
-            return NumberValueObject.create(divide(currentValue, 1));
+
+        if (_value === 0) {
+            return ErrorValueObject.create(ErrorType.DIV_BY_ZERO);
         }
-        return this;
+
+        const result = divide(currentValue, _value);
+
+        if (!Number.isFinite(result)) {
+            return ErrorValueObject.create(ErrorType.NUM);
+        }
+
+        return NumberValueObject.create(result);
     }
 
     override compareBy(value: string | number | boolean, operator: compareToken): BaseValueObject {
@@ -820,30 +788,51 @@ export class NumberValueObject extends BaseValueObject {
             return valueObject.powInverse(this);
         }
 
-        const currentValue = this.getValue();
-        const value = valueObject.getValue();
+        if (this.isError()) {
+            return this;
+        }
 
-        if (typeof value === 'string') {
+        const currentValue = this.getValue();
+
+        let _valueObject = valueObject;
+
+        if (valueObject.isString()) {
+            _valueObject = valueObject.convertToNumberObjectValue();
+        }
+
+        if (_valueObject.isError()) {
+            return _valueObject;
+        }
+
+        const value = +_valueObject.getValue();
+
+        if (Number.isNaN(value)) {
             return ErrorValueObject.create(ErrorType.VALUE);
         }
-        if (typeof value === 'number') {
-            if (!Number.isFinite(currentValue) || !Number.isFinite(value)) {
+
+        if (!Number.isFinite(currentValue) || !Number.isFinite(value)) {
+            return ErrorValueObject.create(ErrorType.NUM);
+        }
+
+        if (currentValue === 0) {
+            if (value < 0) {
+                return ErrorValueObject.create(ErrorType.DIV_BY_ZERO);
+            }
+
+            if (value === 0) {
                 return ErrorValueObject.create(ErrorType.NUM);
             }
 
-            const result = pow(currentValue, value);
-
-            if (!Number.isFinite(result)) {
-                return ErrorValueObject.create(ErrorType.NUM);
-            }
-
-            return NumberValueObject.create(result);
-        }
-        if (typeof value === 'boolean') {
-            return NumberValueObject.create(pow(currentValue, value ? 1 : 0));
+            return NumberValueObject.create(0);
         }
 
-        return this;
+        const result = pow(currentValue, value);
+
+        if (!Number.isFinite(result)) {
+            return ErrorValueObject.create(ErrorType.NUM);
+        }
+
+        return NumberValueObject.create(result);
     }
 
     override sqrt(): BaseValueObject {
@@ -1309,7 +1298,7 @@ export class NumberValueObject extends BaseValueObject {
     }
 }
 
-const STRING_CACHE_LRU_COUNT = 200000;
+const STRING_CACHE_LRU_COUNT = 100000;
 
 export const StringValueObjectCache = new FormulaAstLRU<StringValueObject>(STRING_CACHE_LRU_COUNT);
 export class StringValueObject extends BaseValueObject {
@@ -1350,6 +1339,22 @@ export class StringValueObject extends BaseValueObject {
             return valueObject.concatenateFront(this);
         }
         return StringValueObject.create(this.concatenate(valueObject.getValue(), ConcatenateType.BACK));
+    }
+
+    override plus(valueObject: BaseValueObject): BaseValueObject {
+        return this.convertToNumberObjectValue().plus(valueObject);
+    }
+
+    override minus(valueObject: BaseValueObject): BaseValueObject {
+        return this.convertToNumberObjectValue().minus(valueObject);
+    }
+
+    override multiply(valueObject: BaseValueObject): BaseValueObject {
+        return this.convertToNumberObjectValue().multiply(valueObject);
+    }
+
+    override divided(valueObject: BaseValueObject): BaseValueObject {
+        return this.convertToNumberObjectValue().divided(valueObject);
     }
 
     override compare(valueObject: BaseValueObject, operator: compareToken, isCaseSensitive?: boolean): BaseValueObject {

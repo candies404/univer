@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
  */
 
 import type { ICellData, IRange, Nullable, ObjectMatrix } from '@univerjs/core';
-import { createIdentifier, LifecycleStages, runOnLifecycle } from '@univerjs/core';
+import { createIdentifier } from '@univerjs/core';
 
 // eslint-disable-next-line ts/consistent-type-definitions
 export type INumfmtItem = {
@@ -46,6 +46,7 @@ export interface INumfmtItemWithCache {
     pattern: string;
 }
 
+export const INumfmtService = createIdentifier<INumfmtService>('INumfmtService');
 export interface INumfmtService {
     getValue(
         unitId: string,
@@ -61,6 +62,3 @@ export interface INumfmtService {
     ): void;
     deleteValues(unitId: string, subUnitId: string, values: IRange[]): void;
 }
-
-export const INumfmtService = createIdentifier<INumfmtService>('INumfmtService');
-runOnLifecycle(LifecycleStages.Ready, INumfmtService);

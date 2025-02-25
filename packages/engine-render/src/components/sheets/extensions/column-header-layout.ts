@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,19 +15,19 @@
  */
 
 import type { IScale } from '@univerjs/core';
-import { numberToABC } from '@univerjs/core';
+import type { UniverRenderingContext } from '../../../context';
 
+import type { IAColumnCfg, IAColumnCfgObj, IHeaderStyleCfg } from '../interfaces';
+import type { SpreadsheetSkeleton } from '../sheet.render-skeleton';
+import { numberToABC } from '@univerjs/core';
 import { DEFAULT_FONTFACE_PLANE, FIX_ONE_PIXEL_BLUR_OFFSET, MIDDLE_CELL_POS_MAGIC_NUMBER } from '../../../basics/const';
 import { getColor } from '../../../basics/tools';
-import type { UniverRenderingContext } from '../../../context';
 import { SheetColumnHeaderExtensionRegistry } from '../../extension';
-import type { SpreadsheetSkeleton } from '../sheet-skeleton';
-import type { IAColumnCfg, IAColumnCfgObj, IColumnStyleCfg } from '../interfaces';
 import { SheetExtension } from './sheet-extension';
 
 const UNIQUE_KEY = 'DefaultColumnHeaderLayoutExtension';
 export interface IColumnsHeaderCfgParam {
-    headerStyle?: Partial<IColumnStyleCfg>;
+    headerStyle?: Partial<IHeaderStyleCfg>;
     columnsCfg?: IAColumnCfg[];
 }
 const DEFAULT_COLUMN_STYLE = {
@@ -39,11 +39,15 @@ const DEFAULT_COLUMN_STYLE = {
     textAlign: 'center',
     textBaseline: 'middle',
 } as const;
+
+/**
+ * Column Header Bar, include a lot of columns header
+ */
 export class ColumnHeaderLayout extends SheetExtension {
     override uKey = UNIQUE_KEY;
     override Z_INDEX = 10;
     columnsCfg: IAColumnCfg[] = [];
-    headerStyle: IColumnStyleCfg = {
+    headerStyle: IHeaderStyleCfg = {
         fontSize: DEFAULT_COLUMN_STYLE.fontSize,
         fontFamily: DEFAULT_COLUMN_STYLE.fontFamily,
         fontColor: DEFAULT_COLUMN_STYLE.fontColor,
@@ -60,12 +64,12 @@ export class ColumnHeaderLayout extends SheetExtension {
         }
     }
 
-    configHeaderColumn(cfg: IColumnsHeaderCfgParam) {
+    configHeaderColumn(cfg: IColumnsHeaderCfgParam): void {
         this.columnsCfg = cfg.columnsCfg || [];
         this.headerStyle = { ...this.headerStyle, ...cfg.headerStyle };
     }
 
-    getCfgOfCurrentColumn(colIndex: number) {
+    getCfgOfCurrentColumn(colIndex: number): [IAColumnCfgObj, boolean] {
         let mergeWithSpecCfg;
         let curColSpecCfg;
         const columnsCfg = this.columnsCfg || [];
@@ -74,7 +78,7 @@ export class ColumnHeaderLayout extends SheetExtension {
             if (typeof columnsCfg[colIndex] == 'string') {
                 columnsCfg[colIndex] = { text: columnsCfg[colIndex] } as IAColumnCfgObj;
             }
-            curColSpecCfg = columnsCfg[colIndex] as IColumnStyleCfg & { text: string };
+            curColSpecCfg = columnsCfg[colIndex] as IHeaderStyleCfg & { text: string };
             mergeWithSpecCfg = { ...this.headerStyle, ...curColSpecCfg };
         } else {
             mergeWithSpecCfg = { ...this.headerStyle, text: numberToABC(colIndex) };
@@ -83,7 +87,7 @@ export class ColumnHeaderLayout extends SheetExtension {
         return [mergeWithSpecCfg, specStyle] as [IAColumnCfgObj, boolean];
     }
 
-    setStyleToCtx(ctx: UniverRenderingContext, columnStyle: Partial<IColumnStyleCfg>) {
+    setStyleToCtx(ctx: UniverRenderingContext, columnStyle: Partial<IHeaderStyleCfg>): void {
         if (columnStyle.textAlign) ctx.textAlign = columnStyle.textAlign;
         if (columnStyle.textBaseline) ctx.textBaseline = columnStyle.textBaseline;
         if (columnStyle.fontColor) ctx.fillStyle = columnStyle.fontColor;
@@ -92,7 +96,7 @@ export class ColumnHeaderLayout extends SheetExtension {
     }
 
     // eslint-disable-next-line max-lines-per-function
-    override draw(ctx: UniverRenderingContext, parentScale: IScale, spreadsheetSkeleton: SpreadsheetSkeleton) {
+    override draw(ctx: UniverRenderingContext, parentScale: IScale, spreadsheetSkeleton: SpreadsheetSkeleton): void {
         const { rowColumnSegment, columnHeaderHeight = 0 } = spreadsheetSkeleton;
         const { startColumn, endColumn } = rowColumnSegment;
 
@@ -123,6 +127,8 @@ export class ColumnHeaderLayout extends SheetExtension {
         ctx.setLineWidthByPrecision(1);
         ctx.translateWithPrecisionRatio(FIX_ONE_PIXEL_BLUR_OFFSET, FIX_ONE_PIXEL_BLUR_OFFSET);
         let preColumnPosition = 0;
+
+        // draw each column header
         for (let c = startColumn - 1; c <= endColumn; c++) {
             if (c < 0 || c > columnWidthAccumulation.length - 1) {
                 continue;
@@ -154,9 +160,9 @@ export class ColumnHeaderLayout extends SheetExtension {
                     case 'center':
                         return cellBound.left + (cellBound.right - cellBound.left) / 2;
                     case 'right':
-                        return cellBound.right - MIDDLE_CELL_POS_MAGIC_NUMBER;
+                        return cellBound.right - MIDDLE_CELL_POS_MAGIC_NUMBER * 3;
                     case 'left':
-                        return cellBound.left + MIDDLE_CELL_POS_MAGIC_NUMBER;
+                        return cellBound.left + MIDDLE_CELL_POS_MAGIC_NUMBER * 3;
                     default: // center
                         return cellBound.left + (cellBound.right - cellBound.left) / 2;
                 }

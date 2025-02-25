@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,12 @@
 
 import type { IScale } from '@univerjs/core';
 
+import type { UniverRenderingContext } from '../../../context';
+import type { IARowCfg, IARowCfgObj, IHeaderStyleCfg, IRowStyleCfg } from '../interfaces';
+import type { SpreadsheetSkeleton } from '../sheet.render-skeleton';
 import { DEFAULT_FONTFACE_PLANE, FIX_ONE_PIXEL_BLUR_OFFSET, MIDDLE_CELL_POS_MAGIC_NUMBER } from '../../../basics/const';
 import { getColor } from '../../../basics/tools';
-import type { UniverRenderingContext } from '../../../context';
 import { SheetRowHeaderExtensionRegistry } from '../../extension';
-import type { SpreadsheetSkeleton } from '../sheet-skeleton';
-import type { IARowCfg, IARowCfgObj, IColumnStyleCfg, IRowStyleCfg } from '../interfaces.ts';
 import { SheetExtension } from './sheet-extension';
 
 const UNIQUE_KEY = 'DefaultRowHeaderLayoutExtension';
@@ -85,7 +85,7 @@ export class RowHeaderLayout extends SheetExtension {
         return [mergeWithSpecCfg, specStyle] as [IARowCfgObj, boolean];
     }
 
-    setStyleToCtx(ctx: UniverRenderingContext, rowStyle: Partial<IColumnStyleCfg>) {
+    setStyleToCtx(ctx: UniverRenderingContext, rowStyle: Partial<IHeaderStyleCfg>) {
         if (rowStyle.textAlign) ctx.textAlign = rowStyle.textAlign;
         if (rowStyle.textBaseline) ctx.textBaseline = rowStyle.textBaseline;
         if (rowStyle.fontColor) ctx.fillStyle = rowStyle.fontColor;

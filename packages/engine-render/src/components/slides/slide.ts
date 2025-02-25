@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,6 +37,8 @@ const arrowPath =
 export class Slide extends SceneViewer {
     slideChangePageByNavigation$ = new EventSubject<Nullable<string>>();
 
+    subSceneChanged$ = new EventSubject<Scene>();
+
     private _navigationEnabled = false;
 
     activeFirstPage() {
@@ -48,13 +50,17 @@ export class Slide extends SceneViewer {
         this.changePage(firstKey);
     }
 
-    addPage(scene: Scene) {
-        const key = scene.sceneKey;
-        if (this.getSubScene(key) != null) {
-            return;
+    /**
+     * add pageScene to this._subScenes
+     * @param pageScene
+     */
+    addPageScene(pageScene: Scene) {
+        const key = pageScene.sceneKey;
+        if (!this.getSubScene(key)) {
+            this.addSubScene(pageScene);
         }
-        this.addSubScene(scene);
         this.addNavigation();
+        this.subSceneChanged$.emitEvent(pageScene);
     }
 
     changePage(id?: string) {

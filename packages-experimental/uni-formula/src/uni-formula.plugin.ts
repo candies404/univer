@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,24 +14,32 @@
  * limitations under the License.
  */
 
-import { DependentOn, Inject, Injector, Plugin, UniverInstanceType } from '@univerjs/core';
-import { UniverFormulaEnginePlugin } from '@univerjs/engine-formula';
-import { UniFormulaService } from './services/uni-formula.service';
-import { DOC_FORMULA_PLUGIN_NAME } from './const';
+import type { Dependency } from '@univerjs/core';
+import { Inject, Injector, Plugin, UniverInstanceType } from '@univerjs/core';
+import { DumbUniFormulaService, IUniFormulaService } from './services/uni-formula.service';
+import { UNI_FORMULA_PLUGIN_NAME } from './const';
+import { UniFormulaController } from './controller/uni-formula.controller';
 
-@DependentOn(UniverFormulaEnginePlugin)
 export class UniverDocUniFormulaPlugin extends Plugin {
-    static override pluginName: string = DOC_FORMULA_PLUGIN_NAME;
-    static override type: UniverInstanceType = UniverInstanceType.UNIVER_DOC;
+    static override pluginName: string = UNI_FORMULA_PLUGIN_NAME;
+
+    // This plugin should load only when sheet related modules are loaded.
+    static override type: UniverInstanceType = UniverInstanceType.UNIVER_UNKNOWN;
 
     constructor(
-        _config: unknown,
+        private readonly _config: { playDumb: boolean } | undefined,
         @Inject(Injector) protected readonly _injector: Injector
     ) {
         super();
     }
 
     override onStarting(): void {
-        this._injector.add([UniFormulaService]);
+        this._injector.add([UniFormulaController]);
+        this._injector.get(UniFormulaController);
+
+        if (this._config?.playDumb) {
+            this._injector.add([IUniFormulaService, { useClass: DumbUniFormulaService }] as Dependency);
+            this._injector.get(IUniFormulaService);
+        }
     }
 }

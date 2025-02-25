@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,8 @@
  */
 
 import type { IMutationInfo } from '@univerjs/core';
-import { CommandType, Disposable, ICommandService, Inject, Injector, LifecycleStages, OnLifecycle } from '@univerjs/core';
-
 import type { IRemoteSyncMutationOptions } from '../../services/remote-instance/remote-instance.service';
+import { CommandType, Disposable, ICommandService, Inject, Injector } from '@univerjs/core';
 import {
     IRemoteInstanceService,
     IRemoteSyncService,
@@ -31,7 +30,6 @@ import { fromModule, toModule } from '../../services/rpc/rpc.service';
  * This controller is responsible for syncing data from the worker thread to
  * the primary thread.
  */
-@OnLifecycle(LifecycleStages.Starting, DataSyncReplicaController)
 export class DataSyncReplicaController extends Disposable {
     private _remoteSyncService!: IRemoteSyncService;
 

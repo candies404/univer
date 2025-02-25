@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,24 +15,14 @@
  */
 
 import type { DocumentDataModel, IDocumentData } from '@univerjs/core';
-import { Disposable, ICommandService, IResourceManagerService, IUniverInstanceService, LifecycleStages, OnLifecycle, UniverInstanceType } from '@univerjs/core';
 import type { IDrawingMapItem, IDrawingMapItemData } from '@univerjs/drawing';
+import { Disposable, IResourceManagerService, IUniverInstanceService, UniverInstanceType } from '@univerjs/core';
 import { IDrawingManagerService } from '@univerjs/drawing';
 import { type IDocDrawing, IDocDrawingService } from '../services/doc-drawing.service';
 
 export const DOCS_DRAWING_PLUGIN = 'DOC_DRAWING_PLUGIN';
 export interface IDocDrawingModel { drawings?: IDocumentData['drawings']; drawingsOrder?: IDocumentData['drawingsOrder'] };
 
-@OnLifecycle(LifecycleStages.Starting, DocDrawingLoadController)
-export class DocDrawingLoadController extends Disposable {
-    constructor(
-        @ICommandService private readonly _commandService: ICommandService
-    ) {
-        super();
-    }
-}
-
-@OnLifecycle(LifecycleStages.Starting, DocDrawingController)
 export class DocDrawingController extends Disposable {
     constructor(
         @IDocDrawingService private readonly _docDrawingService: IDocDrawingService,
@@ -51,9 +41,16 @@ export class DocDrawingController extends Disposable {
 
     private _initSnapshot() {
         const toJson = (unitId: string) => {
-            const map = this._docDrawingService.getDrawingDataForUnit(unitId);
-            if (map?.[unitId]) {
-                return JSON.stringify(map?.[unitId]);
+            const doc = this._univerInstanceService.getUnit<DocumentDataModel>(unitId, UniverInstanceType.UNIVER_DOC);
+            if (doc) {
+                const drawings = doc.getSnapshot().drawings;
+                const drawingOrder = doc.getSnapshot().drawingsOrder;
+                const data: IDrawingMapItem<IDocDrawing> = {
+                    data: drawings ?? {},
+                    order: drawingOrder ?? [],
+
+                };
+                return JSON.stringify(data);
             }
             return '';
         };
@@ -91,16 +88,15 @@ export class DocDrawingController extends Disposable {
         }
 
         documentDataModel.resetDrawing(drawingMapItem.data, drawingMapItem.order);
-        this._initDataLoader();
+        this.loadDrawingDataForUnit(unitId);
     }
 
-    private _initDataLoader(): boolean {
-        const dataModel = this._univerInstanceService.getCurrentUnitForType<DocumentDataModel>(UniverInstanceType.UNIVER_DOC);
+    loadDrawingDataForUnit(unitId: string): boolean {
+        const dataModel = this._univerInstanceService.getUnit<DocumentDataModel>(unitId, UniverInstanceType.UNIVER_DOC);
         if (!dataModel) {
             return false;
         }
 
-        const unitId = dataModel.getUnitId();
         const subUnitId = unitId;
 
         const drawingDataModels = dataModel.getDrawings();

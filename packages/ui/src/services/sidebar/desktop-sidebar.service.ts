@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-import { toDisposable } from '@univerjs/core';
 import type { IDisposable } from '@univerjs/core';
-import { Subject } from 'rxjs';
-
 import type { ISidebarMethodOptions } from '../../views/components/sidebar/interface';
 import type { ISidebarService } from './sidebar.service';
+
+import { toDisposable } from '@univerjs/core';
+import { Subject } from 'rxjs';
 
 export class DesktopSidebarService implements ISidebarService {
     private _sidebarOptions: ISidebarMethodOptions = {};
@@ -27,9 +27,20 @@ export class DesktopSidebarService implements ISidebarService {
 
     readonly scrollEvent$ = new Subject<Event>();
 
+    private container?: HTMLElement;
+
+    get visible(): boolean {
+        return this._sidebarOptions.visible || false;
+    }
+
+    get options() {
+        return this._sidebarOptions;
+    }
+
     open(params: ISidebarMethodOptions): IDisposable {
         this._sidebarOptions = {
             ...params,
+            id: params.id,
             visible: true,
         };
 
@@ -40,13 +51,23 @@ export class DesktopSidebarService implements ISidebarService {
         });
     }
 
-    close() {
+    close(id?: string) {
+        if (id && this._sidebarOptions.id !== id) {
+            return;
+        }
         this._sidebarOptions = {
             ...this._sidebarOptions,
             visible: false,
         };
-
         this.sidebarOptions$.next(this._sidebarOptions);
         this._sidebarOptions.onClose && this._sidebarOptions.onClose();
+    }
+
+    getContainer() {
+        return this.container;
+    }
+
+    setContainer(element: HTMLElement) {
+        this.container = element;
     }
 }

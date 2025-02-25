@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,9 @@ const locale: typeof zhCN = {
             confirm: '確認',
             cancel: '取消',
             title: '連結',
-            address: '連結地址',
+            address: '連結',
+            label: '文本',
+            labelError: '请输入链接文本',
             placeholder: '請輸入合法的連結',
             addressError: '請輸入合法的連結',
         },

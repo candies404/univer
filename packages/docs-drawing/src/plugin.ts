@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,11 @@
  * limitations under the License.
  */
 
-import { Inject, Injector, Plugin, UniverInstanceType } from '@univerjs/core';
 import type { Dependency } from '@univerjs/core';
-import { DocDrawingController, DocDrawingLoadController, DOCS_DRAWING_PLUGIN } from './controllers/doc-drawing.controller';
+import type { IUniverDocsDrawingConfig } from './controllers/config.schema';
+import { IConfigService, Inject, Injector, merge, Plugin, touchDependencies, UniverInstanceType } from '@univerjs/core';
+import { defaultPluginConfig, DOCS_DRAWING_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
+import { DocDrawingController, DOCS_DRAWING_PLUGIN } from './controllers/doc-drawing.controller';
 import { DocDrawingService, IDocDrawingService } from './services/doc-drawing.service';
 
 export class UniverDocsDrawingPlugin extends Plugin {
@@ -24,20 +26,30 @@ export class UniverDocsDrawingPlugin extends Plugin {
     static override type = UniverInstanceType.UNIVER_DOC;
 
     constructor(
-        _config: undefined,
-        @Inject(Injector) override _injector: Injector
+        private readonly _config: Partial<IUniverDocsDrawingConfig> = defaultPluginConfig,
+        @Inject(Injector) override _injector: Injector,
+        @IConfigService private readonly _configService: IConfigService
     ) {
         super();
+
+        // Manage the plugin configuration.
+        const { ...rest } = merge(
+            {},
+            defaultPluginConfig,
+            this._config
+        );
+        this._configService.setConfig(DOCS_DRAWING_PLUGIN_CONFIG_KEY, rest);
     }
 
     override onStarting(): void {
         ([
-            [DocDrawingLoadController],
             [DocDrawingController],
             [DocDrawingService],
             [IDocDrawingService, { useClass: DocDrawingService }],
-        ] as Dependency[
+        ] as Dependency[]).forEach((dependency) => this._injector.add(dependency));
 
-        ]).forEach((dependency) => this._injector.add(dependency));
+        touchDependencies(this._injector, [
+            [DocDrawingController],
+        ]);
     }
 }

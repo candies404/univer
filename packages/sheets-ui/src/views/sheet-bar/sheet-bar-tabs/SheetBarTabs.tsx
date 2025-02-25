@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,13 @@
  */
 
 import type { ICommandInfo } from '@univerjs/core';
-import { ICommandService, IPermissionService, LocaleService, nameCharacterCheck, Quantity, useDependency } from '@univerjs/core';
-import { Dropdown } from '@univerjs/design';
+import type { IUniverUIConfig } from '@univerjs/ui';
+import type { IBaseSheetBarProps } from './SheetBarItem';
+import type { IScrollState } from './utils/slide-tab-bar';
+import { ICommandService, IConfigService, IPermissionService, LocaleService, nameCharacterCheck, Quantity } from '@univerjs/core';
+import { DropdownLegacy } from '@univerjs/design';
+import { LockSingle } from '@univerjs/icons';
+
 import {
     InsertSheetMutation,
     RangeProtectionRuleModel,
@@ -32,19 +37,14 @@ import {
     WorkbookRenameSheetPermission,
     WorksheetProtectionRuleModel,
 } from '@univerjs/sheets';
-import { IConfirmService, Menu, useObservable } from '@univerjs/ui';
+import { ContextMenuPosition, IConfirmService, UI_PLUGIN_CONFIG_KEY, UIMenu, useDependency, useObservable } from '@univerjs/ui';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-
-import { LockSingle } from '@univerjs/icons';
 import { merge } from 'rxjs';
-import { SheetMenuPosition } from '../../../controllers/menu/menu';
-import { ISheetBarService } from '../../../services/sheet-bar/sheet-bar.service';
-import { IEditorBridgeService } from '../../../services/editor-bridge.service';
 import { useActiveWorkbook } from '../../../components/hook';
+import { IEditorBridgeService } from '../../../services/editor-bridge.service';
+import { ISheetBarService } from '../../../services/sheet-bar/sheet-bar.service';
 import styles from './index.module.less';
-import type { IBaseSheetBarProps } from './SheetBarItem';
 import { SheetBarItem } from './SheetBarItem';
-import type { IScrollState } from './utils/slide-tab-bar';
 import { SlideTabBar } from './utils/slide-tab-bar';
 
 export function SheetBarTabs() {
@@ -60,6 +60,7 @@ export function SheetBarTabs() {
     const sheetBarService = useDependency(ISheetBarService);
     const localeService = useDependency(LocaleService);
     const confirmService = useDependency(IConfirmService);
+    const configService = useDependency(IConfigService);
     const editorBridgeService = useDependency(IEditorBridgeService, Quantity.OPTIONAL);
     const worksheetProtectionRuleModel = useDependency(WorksheetProtectionRuleModel);
     const rangeProtectionRuleModel = useDependency(RangeProtectionRuleModel);
@@ -104,7 +105,7 @@ export function SheetBarTabs() {
 
     useEffect(() => {
         updateSheetItems();
-        const slideTabBar = setupSlideTabBarInit();
+        const { slideTabBar, disconnectResizeObserver } = setupSlideTabBarInit();
         const disposable = setupStatusUpdate();
         const subscribeList = [
             setupSubscribeScroll(),
@@ -117,6 +118,7 @@ export function SheetBarTabs() {
             disposable.dispose();
             slideTabBar.destroy();
             subscribeList.forEach((subscribe) => subscribe.unsubscribe());
+            disconnectResizeObserver && disconnectResizeObserver();
         };
     }, [resetOrder, workbook]);
 
@@ -198,10 +200,13 @@ export function SheetBarTabs() {
         slideTabBarRef.current.slideTabBar = slideTabBar;
 
         // FIXME@Dushusir: First time asynchronous rendering will cause flickering problems
-        resizeInit(slideTabBar);
+        const disconnectResizeObserver = resizeInit(slideTabBar);
 
-        return slideTabBar;
+        return { slideTabBar, disconnectResizeObserver };
     };
+
+    const config = configService.getConfig<IUniverUIConfig>(UI_PLUGIN_CONFIG_KEY);
+    const showContextMenu = config?.contextMenu ?? true;
 
     // TODO@Dushusir: the following callback functions should be wrapped by `useCallback`.
 
@@ -381,9 +386,14 @@ export function SheetBarTabs() {
 
         // Start the observer
         observer.observe(slideTabBarContainer);
+
+        // Return the cleanup function that disconnects the observer
+        return () => observer.disconnect();
     };
 
     const onVisibleChange = (visible: boolean) => {
+        if (!showContextMenu) return;
+
         if (editorBridgeService?.isForceKeepVisible()) {
             return;
         }
@@ -402,17 +412,17 @@ export function SheetBarTabs() {
     };
 
     return (
-        <Dropdown
+        <DropdownLegacy
             className={styles.slideTabItemDropdown}
             visible={visible}
             align={{ offset }}
             trigger={['contextMenu']}
             overlay={(
-                <Menu
-                    menuType={SheetMenuPosition.SHEET_BAR}
+                <UIMenu
+                    menuType={ContextMenuPosition.FOOTER_TABS}
                     onOptionSelect={(params) => {
-                        const { label: commandId, value } = params;
-                        commandService.executeCommand(commandId as string, { value, subUnitId: activeKey });
+                        const { label: id, value, commandId } = params;
+                        commandService.executeCommand(commandId ?? id as string, { value, subUnitId: activeKey });
                         setVisible(false);
                     }}
                 />
@@ -431,6 +441,6 @@ export function SheetBarTabs() {
                     ))}
                 </div>
             </div>
-        </Dropdown>
+        </DropdownLegacy>
     );
 }

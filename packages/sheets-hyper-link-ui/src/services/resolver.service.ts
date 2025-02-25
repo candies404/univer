@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,20 +15,17 @@
  */
 
 import type { IRange, Workbook, Worksheet } from '@univerjs/core';
-import { ICommandService, Inject, isValidRange, IUniverInstanceService, LocaleService, RANGE_TYPE, Rectangle, UniverInstanceType } from '@univerjs/core';
-import { MessageType } from '@univerjs/design';
-import { deserializeRangeWithSheet, IDefinedNamesService, serializeRangeWithSheet } from '@univerjs/engine-formula';
 import type { ISetSelectionsOperationParams } from '@univerjs/sheets';
+import type { ISheetHyperLinkInfo, ISheetUrlParams } from '@univerjs/sheets-hyper-link';
+import type { IUniverSheetsHyperLinkUIConfig } from '../controllers/config.schema';
+import { ICommandService, IConfigService, Inject, isValidRange, IUniverInstanceService, LocaleService, RANGE_TYPE, Rectangle, UniverInstanceType } from '@univerjs/core';
+import { MessageType } from '@univerjs/design';
+import { deserializeRangeWithSheet, IDefinedNamesService } from '@univerjs/engine-formula';
 import { SetSelectionsOperation, SetWorksheetActiveOperation } from '@univerjs/sheets';
-import { ERROR_RANGE } from '@univerjs/sheets-hyper-link';
+import { ERROR_RANGE, SheetHyperLinkType } from '@univerjs/sheets-hyper-link';
 import { ScrollToRangeOperation } from '@univerjs/sheets-ui';
 import { IMessageService } from '@univerjs/ui';
-
-interface ISheetUrlParams {
-    gid?: string;
-    range?: string;
-    rangeid?: string;
-}
+import { SHEETS_HYPER_LINK_UI_PLUGIN_CONFIG_KEY } from '../controllers/config.schema';
 
 function getContainRange(range: IRange, worksheet: Worksheet) {
     const mergedCells = worksheet.getMergeData();
@@ -62,75 +59,58 @@ export class SheetsHyperLinkResolverService {
         @ICommandService private _commandService: ICommandService,
         @IDefinedNamesService private _definedNamesService: IDefinedNamesService,
         @IMessageService private _messageService: IMessageService,
-        @Inject(LocaleService) private _localeService: LocaleService
+        @Inject(LocaleService) private _localeService: LocaleService,
+        @IConfigService private _configService: IConfigService
     ) { }
 
-    private _getURLName(params: ISheetUrlParams) {
-        const { gid, range, rangeid } = params;
-        const workbook = this._univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET);
-        if (!workbook) {
-            return null;
+    navigate(info: ISheetHyperLinkInfo): void {
+        switch (info.type) {
+            case SheetHyperLinkType.URL:
+                this.navigateToOtherWebsite(info.url);
+                break;
+            default:
+                this._navigateToUniver(info.searchObj!);
         }
-
-        const sheet = gid ? workbook.getSheetBySheetId(gid) : workbook.getActiveSheet();
-        const sheetName = sheet?.getName() ?? '';
-
-        if (range) {
-            const rangeObj = deserializeRangeWithSheet(range).range;
-            if (isValidRange(rangeObj) && range !== ERROR_RANGE) {
-                return {
-                    type: 'range',
-                    name: serializeRangeWithSheet(sheetName, rangeObj),
-                } as const;
-            } else {
-                return {
-                    type: 'range-error',
-                    name: this._localeService.t('hyperLink.message.refError'),
-                } as const;
-            }
-        }
-
-        if (rangeid) {
-            const range = this._definedNamesService.getValueById(workbook.getUnitId(), rangeid);
-            if (range) {
-                return {
-                    type: 'defineName',
-                    name: range.formulaOrRefString,
-                } as const;
-            } else {
-                return {
-                    type: 'range-error',
-                    name: this._localeService.t('hyperLink.message.refError'),
-                } as const;
-            }
-        }
-
-        if (gid) {
-            const worksheet = workbook.getSheetBySheetId(gid);
-            if (worksheet) {
-                return {
-                    type: 'sheet',
-                    name: worksheet.getName(),
-                } as const;
-            } else {
-                return {
-                    type: 'sheet-error',
-                    name: this._localeService.t('hyperLink.message.refError'),
-                } as const;
-            }
-        }
-
-        return null;
     }
 
-    navigateTo(params: ISheetUrlParams) {
+    private _navigateToUniver(params: ISheetUrlParams) {
+        // NOTE: should we always use current unit and active worksheet?
+
         const { gid, range, rangeid } = params;
         const workbook = this._univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET);
         if (!workbook) {
             return;
         }
+
         const unitId = workbook.getUnitId();
         if (rangeid) {
+            const item = this._definedNamesService.getValueById(unitId, rangeid);
+            if (!item) {
+                return;
+            }
+
+            const { formulaOrRefString } = item;
+            const worksheet = this._definedNamesService.getWorksheetByRef(unitId, formulaOrRefString);
+
+            if (!worksheet) {
+                this._messageService.show({
+                    content: this._localeService.t('hyperLink.message.refError'),
+                    type: MessageType.Error,
+                });
+                return;
+            }
+
+            const isHidden = worksheet.isSheetHidden();
+
+            // The worksheet may be hidden
+            if (isHidden) {
+                this._messageService.show({
+                    content: this._localeService.t('hyperLink.message.hiddenSheet'),
+                    type: MessageType.Error,
+                });
+                return;
+            }
+
             this.navigateToDefineName(unitId, rangeid);
         }
 
@@ -149,38 +129,7 @@ export class SheetsHyperLinkResolverService {
         this.navigateToSheetById(unitId, gid);
     }
 
-    parseHyperLink(urlStr: string) {
-        if (urlStr?.startsWith('#')) {
-            const search = new URLSearchParams(urlStr.slice(1));
-            // range, gid, rangeid
-            const searchObj: ISheetUrlParams = {
-                gid: search.get('gid') ?? '',
-                range: search.get('range') ?? '',
-                rangeid: search.get('rangeid') ?? '',
-            };
-            const urlInfo = this._getURLName(searchObj);
-            return {
-                type: urlInfo?.type || 'link',
-                name: urlInfo?.name || urlStr,
-                url: urlStr,
-                searchObj,
-                handler: () => {
-                    this.navigateTo(searchObj);
-                },
-            } as const;
-        } else {
-            return {
-                type: 'outer',
-                name: urlStr,
-                url: urlStr,
-                handler: () => {
-                    this.navigateToOtherWebsite(urlStr);
-                },
-            } as const;
-        }
-    }
-
-    async navigateToRange(unitId: string, subUnitId: string, range: IRange) {
+    async navigateToRange(unitId: string, subUnitId: string, range: IRange, forceTop?: boolean) {
         const worksheet = await this.navigateToSheetById(unitId, subUnitId);
         if (worksheet) {
             const realRange = getContainRange(range, worksheet);
@@ -192,44 +141,15 @@ export class SheetsHyperLinkResolverService {
 
                     selections: [{
                         range: realRange,
+                        primary: null,
                     }],
                 } as ISetSelectionsOperationParams
             );
             await this._commandService.executeCommand(ScrollToRangeOperation.id, {
                 range: realRange,
+                forceTop,
             });
         }
-    }
-
-    async navigateToSheet(unitId: string, sheetName: string) {
-        const workbook = this._univerInstanceService.getUnit<Workbook>(unitId, UniverInstanceType.UNIVER_SHEET);
-        if (!workbook) {
-            return false;
-        }
-        const worksheet = workbook.getActiveSheet();
-
-        if (worksheet?.getName() === sheetName) {
-            return true;
-        }
-        const targetSheet = workbook.getSheetBySheetName(sheetName);
-
-        if (!targetSheet) {
-            this._messageService.show({
-                content: this._localeService.t('hyperLink.message.noSheet'),
-                type: MessageType.Error,
-            });
-            return;
-        }
-
-        const sheetId = targetSheet.getSheetId();
-        if (workbook.getHiddenWorksheets().indexOf(sheetId) > -1) {
-            this._messageService.show({
-                content: this._localeService.t('hyperLink.message.hiddenSheet'),
-                type: MessageType.Error,
-            });
-        }
-
-        return await this._commandService.executeCommand(SetWorksheetActiveOperation.id, { unitId, subUnitId: sheetId });
     }
 
     async navigateToSheetById(unitId: string, subUnitId: string) {
@@ -270,12 +190,18 @@ export class SheetsHyperLinkResolverService {
         return false;
     }
 
-    async navigateToDefineName(unitId: string, rangeid: string) {
-        this._definedNamesService.focusRange(unitId, rangeid);
+    async navigateToDefineName(unitId: string, rangeId: string) {
+        this._definedNamesService.focusRange(unitId, rangeId);
         return true;
     }
 
     async navigateToOtherWebsite(url: string) {
+        const config = this._configService.getConfig<IUniverSheetsHyperLinkUIConfig>(SHEETS_HYPER_LINK_UI_PLUGIN_CONFIG_KEY);
+
+        if (config?.urlHandler?.navigateToOtherWebsite) {
+            return config.urlHandler.navigateToOtherWebsite(url);
+        }
+
         window.open(url, '_blank', 'noopener noreferrer');
     }
 }

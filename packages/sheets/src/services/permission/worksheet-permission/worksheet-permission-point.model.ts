@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,11 +14,9 @@
  * limitations under the License.
  */
 
-import { Subject } from 'rxjs';
-import { LifecycleStages, OnLifecycle } from '@univerjs/core';
 import type { IObjectPointModel, IPointRuleModel, IWorksheetProtectionPointRule } from '../type';
+import { Subject } from 'rxjs';
 
-@OnLifecycle(LifecycleStages.Starting, WorksheetProtectionPointModel)
 export class WorksheetProtectionPointModel {
     private _model: IPointRuleModel = new Map();
 
@@ -82,8 +80,8 @@ export class WorksheetProtectionPointModel {
         this._model = result;
     }
 
-    deleteUnitModel() {
-        this._model.clear();
+    deleteUnitModel(unitId: string) {
+        this._model.delete(unitId);
     }
 
     private _ensureSubUnitMap(unitId: string) {
@@ -93,5 +91,15 @@ export class WorksheetProtectionPointModel {
             this._model.set(unitId, subUnitMap);
         }
         return subUnitMap;
+    }
+
+    getTargetByPermissionId(unitId: string, permissionId: string) {
+        const subUnitMap = this._model.get(unitId);
+        if (!subUnitMap) return null;
+        for (const [subUnitId, rule] of subUnitMap) {
+            if (rule.permissionId === permissionId) {
+                return [unitId, subUnitId];
+            }
+        }
     }
 }

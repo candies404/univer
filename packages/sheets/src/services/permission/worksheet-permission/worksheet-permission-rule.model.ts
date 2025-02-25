@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +14,15 @@
  * limitations under the License.
  */
 
-import { BehaviorSubject, Subject } from 'rxjs';
-import { LifecycleStages, OnLifecycle } from '@univerjs/core';
 import type { IModel, IObjectModel, IWorksheetProtectionRule } from '../type';
+import { BehaviorSubject, Subject } from 'rxjs';
 
 type IRuleChangeType = 'add' | 'set' | 'delete';
 
-@OnLifecycle(LifecycleStages.Starting, WorksheetProtectionRuleModel)
 export class WorksheetProtectionRuleModel {
     /**
      *
-     * Map<unitId, Map<subUnitId, Map<ruleId, IWorksheetProtectionRule>>>
+     * Map<unitId, Map<subUnitId, Map<subUnitId, IWorksheetProtectionRule>>>
      */
     private _model: IModel = new Map();
 
@@ -36,7 +34,7 @@ export class WorksheetProtectionRuleModel {
         type: IRuleChangeType;
     }>();
 
-    private _ruleRefresh = new Subject();
+    private _ruleRefresh = new Subject<string>();
     private _resetOrder = new Subject();
 
     ruleChange$ = this._ruleChange.asObservable();
@@ -50,6 +48,10 @@ export class WorksheetProtectionRuleModel {
 
     changeRuleInitState(state: boolean) {
         this._worksheetRuleInitStateChange.next(state);
+    }
+
+    getSheetRuleInitState() {
+        return this._worksheetRuleInitStateChange.value;
     }
 
     addRule(unitId: string, rule: IWorksheetProtectionRule) {
@@ -112,8 +114,8 @@ export class WorksheetProtectionRuleModel {
         this._model = result;
     }
 
-    deleteUnitModel() {
-        this._model.clear();
+    deleteUnitModel(unitId: string) {
+        this._model.delete(unitId);
     }
 
     private _ensureSubUnitMap(unitId: string) {
@@ -131,5 +133,15 @@ export class WorksheetProtectionRuleModel {
 
     resetOrder() {
         this._resetOrder.next(Math.random());
+    }
+
+    getTargetByPermissionId(unitId: string, permissionId: string) {
+        const subUnitMap = this._model.get(unitId);
+        if (!subUnitMap) return null;
+        for (const [subUnitId, rule] of subUnitMap) {
+            if (rule.permissionId === permissionId) {
+                return [unitId, subUnitId];
+            }
+        }
     }
 }

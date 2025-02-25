@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 import type { ICommand } from '@univerjs/core';
 import { CommandType, ICommandService, sequenceExecute } from '@univerjs/core';
-import { deleteCustomDecorationFactory } from '@univerjs/docs';
+import { deleteCustomDecorationFactory } from '@univerjs/docs-ui';
 
 export interface IDeleteDocCommentComment {
     unitId: string;
@@ -45,4 +45,3 @@ export const DeleteDocCommentComment: ICommand<IDeleteDocCommentComment> = {
         return false;
     },
 };
-

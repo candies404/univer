@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,11 @@
  */
 
 import type { IAccessor, ICommand, IRange } from '@univerjs/core';
+import type {
+    ISetWorksheetRowHeightMutationParams,
+    ISetWorksheetRowIsAutoHeightMutationParams,
+} from '../mutations/set-worksheet-row-height.mutation';
+
 import {
     BooleanNumber,
     CommandType,
@@ -25,13 +30,8 @@ import {
     Rectangle,
     sequenceExecute,
 } from '@univerjs/core';
-
-import { SheetsSelectionsService } from '../../services/selections/selection-manager.service';
+import { SheetsSelectionsService } from '../../services/selections/selection.service';
 import { SheetInterceptorService } from '../../services/sheet-interceptor/sheet-interceptor.service';
-import type {
-    ISetWorksheetRowHeightMutationParams,
-    ISetWorksheetRowIsAutoHeightMutationParams,
-} from '../mutations/set-worksheet-row-height.mutation';
 import {
     SetWorksheetRowHeightMutation,
     SetWorksheetRowHeightMutationFactory,
@@ -80,8 +80,8 @@ export const DeltaRowHeightCommand: ICommand = {
 
         let redoMutationParams: ISetWorksheetRowHeightMutationParams;
         if (rangeType === RANGE_TYPE.ALL) {
-            const colCount = worksheet.getRowCount();
-            const allRowRanges = new Array(worksheet.getColumnCount())
+            const colCount = worksheet.getColumnCount();
+            const allRowRanges = new Array(worksheet.getRowCount())
                 .fill(undefined)
                 .map(
                     (_, index) =>
@@ -117,10 +117,7 @@ export const DeltaRowHeightCommand: ICommand = {
             };
         }
 
-        const undoMutationParams: ISetWorksheetRowHeightMutationParams = SetWorksheetRowHeightMutationFactory(
-            accessor,
-            redoMutationParams
-        );
+        const undoMutationParams: ISetWorksheetRowHeightMutationParams = SetWorksheetRowHeightMutationFactory(redoMutationParams, worksheet);
 
         const redoSetIsAutoHeightParams: ISetWorksheetRowIsAutoHeightMutationParams = {
             unitId,
@@ -130,7 +127,7 @@ export const DeltaRowHeightCommand: ICommand = {
         };
 
         const undoSetIsAutoHeightParams: ISetWorksheetRowIsAutoHeightMutationParams =
-            SetWorksheetRowIsAutoHeightMutationFactory(accessor, redoSetIsAutoHeightParams);
+            SetWorksheetRowIsAutoHeightMutationFactory(redoSetIsAutoHeightParams, worksheet);
 
         const commandService = accessor.get(ICommandService);
         const undoRedoService = accessor.get(IUndoRedoService);
@@ -189,8 +186,12 @@ export const DeltaRowHeightCommand: ICommand = {
 };
 
 export interface ISetRowHeightCommandParams {
+    unitId?: string;
+    subUnitId?: string;
+    ranges?: IRange[]; // For Facade API
     value: number;
 }
+
 export const SetRowHeightCommand: ICommand = {
     type: CommandType.COMMAND,
     id: 'sheet.command.set-row-height',
@@ -202,15 +203,16 @@ export const SetRowHeightCommand: ICommand = {
         const univerInstanceService = accessor.get(IUniverInstanceService);
         const sheetInterceptorService = accessor.get(SheetInterceptorService);
 
-        const selections = selectionManagerService.getCurrentSelections()?.map((s) => s.range);
+        // user can specify the ranges to set row height, if not, use the current selection
+        const selections = params?.ranges?.length ? params.ranges : selectionManagerService.getCurrentSelections()?.map((s) => s.range);
         if (!selections?.length) {
             return false;
         }
 
-        const target = getSheetCommandTarget(univerInstanceService);
+        const target = getSheetCommandTarget(univerInstanceService, params);
         if (!target) return false;
 
-        const { unitId, subUnitId } = target;
+        const { unitId, subUnitId, worksheet } = target;
 
         const redoMutationParams: ISetWorksheetRowHeightMutationParams = {
             subUnitId,
@@ -219,10 +221,7 @@ export const SetRowHeightCommand: ICommand = {
             rowHeight: params.value,
         };
 
-        const undoMutationParams: ISetWorksheetRowHeightMutationParams = SetWorksheetRowHeightMutationFactory(
-            accessor,
-            redoMutationParams
-        );
+        const undoMutationParams: ISetWorksheetRowHeightMutationParams = SetWorksheetRowHeightMutationFactory(redoMutationParams, worksheet);
 
         const redoSetIsAutoHeightParams: ISetWorksheetRowIsAutoHeightMutationParams = {
             unitId,
@@ -232,7 +231,7 @@ export const SetRowHeightCommand: ICommand = {
         };
 
         const undoSetIsAutoHeightParams: ISetWorksheetRowIsAutoHeightMutationParams =
-            SetWorksheetRowIsAutoHeightMutationFactory(accessor, redoSetIsAutoHeightParams);
+            SetWorksheetRowIsAutoHeightMutationFactory(redoSetIsAutoHeightParams, worksheet);
 
         const result = sequenceExecute([
             {
@@ -288,35 +287,25 @@ export const SetRowHeightCommand: ICommand = {
 };
 
 export interface ISetWorksheetRowIsAutoHeightCommandParams {
-    anchorRow?: number;
+    unitId?: string;
+    subUnitId?: string;
+    ranges?: IRange[]; // For Facade API
 }
 
 export const SetWorksheetRowIsAutoHeightCommand: ICommand = {
     type: CommandType.COMMAND,
     id: 'sheet.command.set-row-is-auto-height',
-    handler: async (accessor: IAccessor, params: ISetWorksheetRowIsAutoHeightCommandParams) => {
+    handler: (accessor: IAccessor, params?: ISetWorksheetRowIsAutoHeightCommandParams) => {
         const commandService = accessor.get(ICommandService);
         const undoRedoService = accessor.get(IUndoRedoService);
         const selectionManagerService = accessor.get(SheetsSelectionsService);
         const univerInstanceService = accessor.get(IUniverInstanceService);
 
-        const target = getSheetCommandTarget(univerInstanceService);
+        const target = getSheetCommandTarget(univerInstanceService, params);
         if (!target) return false;
 
         const { unitId, subUnitId, worksheet } = target;
-        const { anchorRow } = params ?? {};
-
-        const ranges =
-            anchorRow != null
-                ? [
-                    {
-                        startRow: anchorRow,
-                        endRow: anchorRow,
-                        startColumn: 0,
-                        endColumn: worksheet.getMaxColumns() - 1,
-                    },
-                ]
-                : selectionManagerService.getCurrentSelections()?.map((s) => s.range);
+        const ranges = params?.ranges?.length ? params.ranges : selectionManagerService.getCurrentSelections()?.map((s) => s.range);
 
         if (!ranges?.length) {
             return false;
@@ -330,7 +319,7 @@ export const SetWorksheetRowIsAutoHeightCommand: ICommand = {
         };
 
         const undoMutationParams: ISetWorksheetRowIsAutoHeightMutationParams =
-            SetWorksheetRowIsAutoHeightMutationFactory(accessor, redoMutationParams);
+            SetWorksheetRowIsAutoHeightMutationFactory(redoMutationParams, worksheet);
 
         const setIsAutoHeightResult = commandService.syncExecuteCommand(
             SetWorksheetRowIsAutoHeightMutation.id,

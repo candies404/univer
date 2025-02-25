@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,13 +19,12 @@ import type { ISelectionStyle } from '@univerjs/sheets';
 
 export function createCopyPasteSelectionStyle(
     themeService: ThemeService
-): ISelectionStyle {
+): Partial<ISelectionStyle> {
     return {
         strokeWidth: 1.5,
         stroke: themeService.getCurrentTheme().primaryColor,
         fill: 'rgba(178, 178, 178, 0.10)',
         widgets: {},
-        hasAutoFill: false,
         strokeDash: 8,
     };
 }

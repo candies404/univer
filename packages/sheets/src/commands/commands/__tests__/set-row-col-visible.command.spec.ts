@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ import type { Injector, Univer, Workbook } from '@univerjs/core';
 import { ICommandService, IUniverInstanceService, RANGE_TYPE, RedoCommand, UndoCommand, UniverInstanceType } from '@univerjs/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { SheetsSelectionsService } from '../../../services/selections/selection-manager.service';
+import { SheetsSelectionsService } from '../../../services/selections/selection.service';
 import { SetColHiddenMutation, SetColVisibleMutation } from '../../mutations/set-col-visible.mutation';
 import { SetRowHiddenMutation, SetRowVisibleMutation } from '../../mutations/set-row-visible.mutation';
 import { SetSelectionsOperation } from '../../operations/selection.operation';
@@ -153,8 +153,12 @@ describe('Test row col hide/unhine commands', () => {
             await commandService.executeCommand(RedoCommand.id);
             expect(getRowRawVisible(0)).toBeFalsy();
 
-            selectRow(2, 2);
-            await commandService.executeCommand(SetRowHiddenCommand.id);
+            // Specify the parameter ranges as the third row
+            await commandService.executeCommand(SetRowHiddenCommand.id, {
+                unitId: 'test',
+                subUnitId: 'sheet1',
+                ranges: [{ startRow: 2, startColumn: 2, endRow: 2, endColumn: 2, rangeType: RANGE_TYPE.ROW }],
+            });
             expect(getRowRawVisible(2)).toBeFalsy();
 
             // select a range and invoke unhide command will unhide all
@@ -212,8 +216,12 @@ describe('Test row col hide/unhine commands', () => {
             await commandService.executeCommand(RedoCommand.id);
             expect(getColVisible(0)).toBeFalsy();
 
-            selectColumn(2, 2);
-            await commandService.executeCommand(SetColHiddenCommand.id);
+            // Specify the parameter ranges as the third column
+            await commandService.executeCommand(SetColHiddenCommand.id, {
+                unitId: 'test',
+                subUnitId: 'sheet1',
+                ranges: [{ startRow: 2, startColumn: 2, endRow: 2, endColumn: 2, rangeType: RANGE_TYPE.COLUMN }],
+            });
             expect(getColVisible(2)).toBeFalsy();
 
             // select a range and invoke unhide command will unhide all

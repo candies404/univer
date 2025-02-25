@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,17 @@
  */
 
 import type { IAccessor } from '@univerjs/core';
-import { UniverInstanceType } from '@univerjs/core';
 import type { IMenuButtonItem } from '@univerjs/ui';
-import { getMenuHiddenObservable, MenuGroup, MenuItemType, MenuPosition } from '@univerjs/ui';
-import { DocSkeletonManagerService, TextSelectionManagerService } from '@univerjs/docs';
+import { SHEET_EDITOR_UNITS, UniverInstanceType } from '@univerjs/core';
+import { DocSelectionManagerService, DocSkeletonManagerService } from '@univerjs/docs';
 import { DocumentEditArea, IRenderManagerService } from '@univerjs/engine-render';
+import { getMenuHiddenObservable, MenuItemType } from '@univerjs/ui';
 import { debounceTime, Observable } from 'rxjs';
 import { StartAddCommentOperation, ToggleCommentPanelOperation } from '../commands/operations/show-comment-panel.operation';
 
 export const shouldDisableAddComment = (accessor: IAccessor) => {
     const renderManagerService = accessor.get(IRenderManagerService);
-    const textSelectionManagerService = accessor.get(TextSelectionManagerService);
+    const docSelectionManagerService = accessor.get(DocSelectionManagerService);
     const render = renderManagerService.getCurrent();
     const skeleton = render?.with(DocSkeletonManagerService).getSkeleton();
     const editArea = skeleton?.getViewModel().getEditArea();
@@ -33,8 +33,9 @@ export const shouldDisableAddComment = (accessor: IAccessor) => {
         return true;
     }
 
-    const range = textSelectionManagerService.getActiveRange();
-    if (!range || range.collapsed) {
+    const range = docSelectionManagerService.getActiveTextRange();
+
+    if (range == null || range.collapsed) {
         return true;
     }
 
@@ -44,15 +45,13 @@ export const shouldDisableAddComment = (accessor: IAccessor) => {
 export function AddDocCommentMenuItemFactory(accessor: IAccessor): IMenuButtonItem {
     return {
         id: StartAddCommentOperation.id,
-        group: MenuGroup.CONTEXT_MENU_DATA,
         type: MenuItemType.BUTTON,
         icon: 'CommentSingle',
         title: 'threadCommentUI.panel.addComment',
         tooltip: 'threadCommentUI.panel.addComment',
-        positions: [MenuPosition.CONTEXT_MENU],
-        hidden$: getMenuHiddenObservable(accessor, UniverInstanceType.UNIVER_DOC),
+        hidden$: getMenuHiddenObservable(accessor, UniverInstanceType.UNIVER_DOC, undefined, SHEET_EDITOR_UNITS),
         disabled$: new Observable(function (subscribe) {
-            const textSelectionService = accessor.get(TextSelectionManagerService);
+            const textSelectionService = accessor.get(DocSelectionManagerService);
             const observer = textSelectionService.textSelection$.pipe(debounceTime(16)).subscribe(() => {
                 subscribe.next(shouldDisableAddComment(accessor));
             });
@@ -67,12 +66,10 @@ export function AddDocCommentMenuItemFactory(accessor: IAccessor): IMenuButtonIt
 export function ToolbarDocCommentMenuItemFactory(accessor: IAccessor): IMenuButtonItem {
     return {
         id: ToggleCommentPanelOperation.id,
-        group: MenuGroup.CONTEXT_MENU_DATA,
         type: MenuItemType.BUTTON,
         icon: 'CommentSingle',
         title: 'threadCommentUI.panel.addComment',
         tooltip: 'threadCommentUI.panel.addComment',
-        positions: [MenuPosition.TOOLBAR_START],
         hidden$: getMenuHiddenObservable(accessor, UniverInstanceType.UNIVER_DOC),
     };
 }

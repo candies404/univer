@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,31 +14,59 @@
  * limitations under the License.
  */
 
-import type { Nullable } from '@univerjs/core';
-import { toDisposable } from '@univerjs/core';
+import type { IDisposable, Nullable } from '@univerjs/core';
 
-import { Observable, shareReplay, Subject } from 'rxjs';
 import type { CURSOR_TYPE } from './basics/const';
-import type { IKeyboardEvent, IPointerEvent } from './basics/i-events';
+import type { IEvent, IKeyboardEvent, IPointerEvent } from './basics/i-events';
+import type { ITimeMetric, ITransformChangeState } from './basics/interfaces';
+import type { IBasicFrameInfo } from './basics/performance-monitor';
+import type { Scene } from './scene';
+import { Disposable, EventSubject, toDisposable, Tools } from '@univerjs/core';
+import { Observable, shareReplay, Subject } from 'rxjs';
+import { RENDER_CLASS_TYPE } from './basics/const';
 import { DeviceType, PointerInput } from './basics/i-events';
 import { TRANSFORM_CHANGE_OBSERVABLE_TYPE } from './basics/interfaces';
 import { PerformanceMonitor } from './basics/performance-monitor';
 import { getPointerPrefix, getSizeForDom, IsSafari, requestNewFrame } from './basics/tools';
 import { Canvas, CanvasRenderMode } from './canvas';
-import type { Scene } from './scene';
-import { ThinEngine } from './thin-engine';
 import { observeClientRect } from './floating/util';
 
-export class Engine extends ThinEngine<Scene> {
+export interface IEngineOption {
+    elementWidth: number;
+    elementHeight: number;
+    dpr?: number;
+    renderMode?: CanvasRenderMode;
+}
+
+export class Engine extends Disposable {
     renderEvenInBackground = true;
 
-    private readonly _beginFrame$ = new Subject<void>();
+    private readonly _beginFrame$ = new Subject<number>();
     readonly beginFrame$ = this._beginFrame$.asObservable();
-
-    private readonly _endFrame$ = new Subject<void>();
+    private readonly _endFrame$ = new Subject<IBasicFrameInfo>();
     readonly endFrame$ = this._endFrame$.asObservable();
 
+    readonly renderFrameTimeMetric$ = new Subject<ITimeMetric>();
+    readonly renderFrameTags$ = new Subject<[string, any]>();
+
+    /**
+     * Pass event to scene.input-manager
+     */
+    onInputChanged$ = new EventSubject<IEvent>();
+
+    onTransformChange$ = new EventSubject<ITransformChangeState>();
+
+    private _scenes: { [sceneKey: string]: Scene } = {};
+
+    private _activeScene: Scene | null = null;
+
+    /**
+     * time when render start, for elapsedTime
+     */
+    private _renderStartTime: number = 0;
+
     private _rect$: Nullable<Observable<void>> = null;
+
     public get clientRect$(): Observable<void> {
         return this._rect$ || (this._rect$ = new Observable((subscriber) => {
             if (!this._container) {
@@ -60,12 +88,13 @@ export class Engine extends ThinEngine<Scene> {
 
     private _renderingQueueLaunched = false;
 
-    private _activeRenderLoops = new Array<() => void>();
-
-    private _renderFunction = () => { /* empty */ };
+    private _renderFrameTasks = new Array<() => void>();
 
     private _requestNewFrameHandler: number = -1;
 
+    /**
+     * frameCount
+     */
     private _frameId: number = -1;
 
     private _usingSafari: boolean = IsSafari();
@@ -77,7 +106,7 @@ export class Engine extends ThinEngine<Scene> {
 
     private _deltaTime = 0;
 
-    private _performanceMonitor = new PerformanceMonitor();
+    private _performanceMonitor: PerformanceMonitor;
 
     private _pointerMoveEvent!: (evt: Event) => void;
 
@@ -108,7 +137,7 @@ export class Engine extends ThinEngine<Scene> {
     private _remainCapture: number = -1;
 
     /** previous pointer position */
-    private pointer: { [deviceSlot: number]: number } = {};
+    private _pointerPosRecord: { [deviceSlot: number]: number } = {};
 
     private _mouseId = -1;
 
@@ -118,30 +147,112 @@ export class Engine extends ThinEngine<Scene> {
 
     private _previousHeight = -1000;
 
-    constructor(elemWidth: number = 1, elemHeight: number = 1, pixelRatio?: number, mode?: CanvasRenderMode) {
+    private _unitId: string = ''; // unitId
+
+    constructor();
+    constructor(unitId: string, options?: IEngineOption);
+    constructor(elemW: number, elemH: number, dpr?: number, renderMode?: CanvasRenderMode);
+    constructor(...args: any[]) {
         super();
+        let elemWidth = 1;
+        let elemHeight = 1;
+        let pixelRatio = 1;
+        let renderMode = CanvasRenderMode.Rendering;
+
+        if (args[0] && typeof args[0] === 'string') {
+            this._unitId = args[0];
+            const options = args[1] ?? {
+                elemWidth: 1,
+                elemHeight: 1,
+                pixelRatio: 1,
+                renderMode: CanvasRenderMode.Rendering,
+            };
+            elemWidth = options.elementWidth;
+            elemHeight = options.elementHeight;
+            pixelRatio = options.pixelRatio ?? 1;
+            renderMode = options.renderMode ?? CanvasRenderMode.Rendering;
+        } else {
+            elemWidth = args[0] ?? 1;
+            elemHeight = args[1] ?? 1;
+            pixelRatio = args[2] ?? 1;
+            renderMode = args[3] ?? CanvasRenderMode.Rendering;
+        }
+
         this._canvas = new Canvas({
-            mode,
+            mode: renderMode,
             width: elemWidth,
             height: elemHeight,
             pixelRatio,
         });
-
+        this._init();
         this._handleKeyboardAction();
         this._handlePointerAction();
         this._handleDragAction();
 
-        if (mode !== CanvasRenderMode.Printing) {
+        if (renderMode !== CanvasRenderMode.Printing) {
             this._matchMediaHandler();
         }
     }
 
-    override get width() {
+    _init() {
+        this._performanceMonitor = new PerformanceMonitor();
+    }
+
+    get unitId(): string {
+        return this._unitId;
+    }
+
+    get elapsedTime(): number {
+        return Tools.now() - this._renderStartTime;
+    }
+
+    get width() {
         return this.getCanvas().getWidth();
     }
 
-    override get height() {
+    get height() {
         return this.getCanvas().getHeight();
+    }
+
+    get classType() {
+        return RENDER_CLASS_TYPE.ENGINE;
+    }
+
+    get activeScene() {
+        return this._activeScene;
+    }
+
+    getScenes() {
+        return this._scenes;
+    }
+
+    getScene(sceneKey: string): Scene | null {
+        return this._scenes[sceneKey];
+    }
+
+    hasScene(sceneKey: string): boolean {
+        return sceneKey in this._scenes;
+    }
+
+    addScene(sceneInstance: Scene): Scene {
+        const sceneKey = sceneInstance.sceneKey;
+        if (this.hasScene(sceneKey)) {
+            console.warn('Scenes has same key, it will be covered');
+        }
+        this._scenes[sceneKey] = sceneInstance;
+        return sceneInstance;
+    }
+
+    setActiveScene(sceneKey: string): Scene | null {
+        const scene = this.getScene(sceneKey);
+        if (scene) {
+            this._activeScene = scene;
+        }
+        return scene;
+    }
+
+    hasActiveScene(): boolean {
+        return this._activeScene != null;
     }
 
     get requestNewFrameHandler() {
@@ -155,20 +266,20 @@ export class Engine extends ThinEngine<Scene> {
         return this._frameId;
     }
 
-    override setCanvasCursor(val: CURSOR_TYPE) {
+    setCanvasCursor(val: CURSOR_TYPE) {
         const canvasEl = this.getCanvas().getCanvasEle();
         canvasEl.style.cursor = val;
     }
 
-    override clearCanvas() {
+    clearCanvas() {
         this.getCanvas().clear();
     }
 
-    override getCanvas() {
+    getCanvas() {
         return this._canvas!;
     }
 
-    override getCanvasElement() {
+    getCanvasElement() {
         return this.getCanvas().getCanvasEle()!;
     }
 
@@ -176,7 +287,7 @@ export class Engine extends ThinEngine<Scene> {
      * To ensure mouse events remain bound to the host element,
      * preventing the events from becoming ineffective once the mouse leaves the host.
      */
-    override setRemainCapture() {
+    setCapture() {
         try {
             this.getCanvasElement().setPointerCapture(this._remainCapture);
         } catch {
@@ -188,19 +299,49 @@ export class Engine extends ThinEngine<Scene> {
         return this.getCanvas().getPixelRatio();
     }
 
-    setContainer(elem: HTMLElement, resize = true) {
-        if (this._container === elem) {
+    private _resizeListenerDisposable: IDisposable | undefined;
+
+    /**
+     * Mount the canvas to the element so it would be rendered on UI.
+     * @param {HTMLElement} element - The element the canvas will mount on.
+     * @param {true} [resize] If should perform resize when mounted and observe resize event.
+     */
+    mount(element: HTMLElement, resize = true): void {
+        this.setContainer(element, resize);
+    }
+
+    /**
+     * Unmount the canvas without disposing it so it can be mounted again.
+     */
+    unmount(): void {
+        this._clearResizeListener();
+
+        if (!this._container) {
+            throw new Error('[Engine]: cannot unmount when container is not set!');
+        }
+
+        this._container.removeChild(this.getCanvasElement());
+        this._container = null;
+    }
+
+    /**
+     * Mount the canvas to the element so it would be rendered on UI.
+     * @deprecated Please use `mount` instead.
+     * @param {HTMLElement} element - The element the canvas will mount on.
+     * @param {true} [resize] If should perform resize when mounted and observe resize event.
+     */
+    setContainer(element: HTMLElement, resize = true) {
+        if (this._container === element) {
             return;
         }
 
-        this._container = elem;
+        this._container = element;
         this._container.appendChild(this.getCanvasElement());
+
+        this._clearResizeListener();
 
         if (resize) {
             this.resize();
-
-            this._resizeObserver?.unobserve(this._container as HTMLElement);
-            this._resizeObserver = null;
 
             let timer: number | undefined;
             this._resizeObserver = new ResizeObserver(() => {
@@ -213,11 +354,16 @@ export class Engine extends ThinEngine<Scene> {
             });
             this._resizeObserver.observe(this._container);
 
-            this.disposeWithMe(() => {
-                this._resizeObserver?.unobserve(this._container as HTMLElement);
+            this._resizeListenerDisposable = toDisposable(() => {
+                this._resizeObserver!.unobserve(this._container as HTMLElement);
                 if (timer !== undefined) window.cancelIdleCallback(timer);
             });
         }
+    }
+
+    private _clearResizeListener(): void {
+        this._resizeListenerDisposable?.dispose();
+        this._resizeListenerDisposable = undefined;
     }
 
     resize() {
@@ -226,18 +372,26 @@ export class Engine extends ThinEngine<Scene> {
         }
 
         const { width, height } = getSizeForDom(this._container);
-
         if (width === this._previousWidth && height === this._previousHeight) {
             return;
         }
 
         this._previousWidth = width;
-
         this._previousHeight = height;
-
         this.resizeBySize(width, height);
     }
 
+    dprChange() {
+        const width = this._previousWidth;
+        const height = this._previousHeight;
+        this.resizeBySize(width, height);
+    }
+
+    /**
+     * set canvas element size
+     * @param width
+     * @param height
+     */
     resizeBySize(width: number, height: number) {
         const preWidth = this.width;
         const preHeight = this.height;
@@ -258,6 +412,13 @@ export class Engine extends ThinEngine<Scene> {
     override dispose() {
         super.dispose();
 
+        const scenes = { ...this.getScenes() };
+        const sceneKeys = Object.keys(scenes);
+        sceneKeys.forEach((key) => {
+            (scenes[key] as any).dispose();
+        });
+        this._scenes = {};
+
         const eventPrefix = getPointerPrefix();
         const canvasEle = this.getCanvasElement();
         canvasEle.removeEventListener(`${eventPrefix}leave`, this._pointerLeaveEvent);
@@ -274,36 +435,67 @@ export class Engine extends ThinEngine<Scene> {
         canvasEle.removeEventListener('drop', this._dropEvent);
         canvasEle.removeEventListener(this._getWheelEventName(), this._pointerWheelEvent);
 
-        this._activeRenderLoops = [];
+        this._renderFrameTasks = [];
+        this._performanceMonitor.dispose();
         this.getCanvas().dispose();
-        // this._canvas = null; // 不应该这么做, 上面已经调用了 _canvas 的 dispose 方法
-        // 并且 idleCallback --> resize 时需要 _canvas 对象
         this.onTransformChange$.complete();
 
+        this.onTransformChange$.complete();
         this._beginFrame$.complete();
         this._endFrame$.complete();
 
-        this._resizeObserver?.disconnect();
+        this._clearResizeListener();
         this._container = null;
     }
 
-    /**
-     * Register and execute a render loop. The engine can have more than one render function
-     * @param renderFunction defines the function to continuously execute
-     */
-    runRenderLoop(renderFunction: () => void): void {
-        if (this._activeRenderLoops.indexOf(renderFunction) !== -1) {
-            return;
+    addFunction2RenderLoop(renderFunction: () => void): void {
+        if (this._renderFrameTasks.indexOf(renderFunction) === -1) {
+            this._renderFrameTasks.push(renderFunction);
         }
+    }
 
-        this._activeRenderLoops.push(renderFunction);
-
+    startRenderLoop(): void {
         if (!this._renderingQueueLaunched) {
+            this._renderStartTime = performance.now();
             this._renderingQueueLaunched = true;
-            this._renderFunction = this._renderLoop.bind(this);
+            // this._renderFunction = this._renderFunctionCore.bind(this);
             this._requestNewFrameHandler = requestNewFrame(this._renderFunction);
         }
     }
+
+    /**
+     * Register and execute a render loop. The engine could manage more than one render function
+     * @param renderFunction defines the function to continuously execute
+     */
+    runRenderLoop(renderFunction: () => void): void {
+        this.addFunction2RenderLoop(renderFunction);
+        this.startRenderLoop();
+    }
+
+    /**
+     * call itself by raf
+     * Exec all function in _renderFrameTasks in _renderFrame()
+     */
+    private _renderFunction = (timestamp: number) => {
+        let shouldRender = true;
+        if (!this.renderEvenInBackground) {
+            shouldRender = false;
+        }
+
+        if (shouldRender) {
+            // Start new frame
+            this._beginFrame(timestamp);
+            // exec functions in _renderFrameTasks
+            this._renderFrame(timestamp);
+            this._endFrame(timestamp);
+        }
+
+        if (this._renderFrameTasks.length > 0) {
+            this._requestNewFrameHandler = requestNewFrame(this._renderFunction);
+        } else {
+            this._renderingQueueLaunched = false;
+        }
+    };
 
     /**
      * stop executing a render loop function and remove it from the execution array
@@ -311,16 +503,16 @@ export class Engine extends ThinEngine<Scene> {
      */
     stopRenderLoop(renderFunction?: () => void): void {
         if (!renderFunction) {
-            this._activeRenderLoops.length = 0;
+            this._renderFrameTasks.length = 0;
             this._cancelFrame();
             return;
         }
 
-        const index = this._activeRenderLoops.indexOf(renderFunction);
+        const index = this._renderFrameTasks.indexOf(renderFunction);
 
         if (index >= 0) {
-            this._activeRenderLoops.splice(index, 1);
-            if (this._activeRenderLoops.length === 0) {
+            this._renderFrameTasks.splice(index, 1);
+            if (this._renderFrameTasks.length === 0) {
                 this._cancelFrame();
             }
         }
@@ -329,20 +521,24 @@ export class Engine extends ThinEngine<Scene> {
     /**
      * Begin a new frame
      */
-    beginFrame(): void {
-        this._measureFps();
-        this._beginFrame$.next();
+    _beginFrame(_timestamp: number): void {
+        this._frameId++;
+        this._beginFrame$.next(this._frameId);
     }
 
     /**
      * End the current frame
      */
-    endFrame(): void {
-        this._frameId++;
-        this._endFrame$.next();
+    _endFrame(timestamp: number): void {
+        this._performanceMonitor.endFrame(timestamp);
+        this._fps = this._performanceMonitor.averageFPS;
+        this._deltaTime = this._performanceMonitor.instantaneousFrameTime || 0;
+        this._endFrame$.next({
+            FPS: this.getFps(),
+            frameTime: this.getDeltaTime(),
+            elapsedTime: this.elapsedTime,
+        } as IBasicFrameInfo);
     }
-
-    // FPS
 
     /**
      * Gets the current framerate
@@ -360,10 +556,12 @@ export class Engine extends ThinEngine<Scene> {
         return this._deltaTime;
     }
 
-    _renderFrame() {
-        for (let index = 0; index < this._activeRenderLoops.length; index++) {
-            const renderFunction = this._activeRenderLoops[index];
-
+    /**
+     * Exec all function in _renderFrameTasks
+     */
+    private _renderFrame(_timestamp: number) {
+        for (let index = 0; index < this._renderFrameTasks.length; index++) {
+            const renderFunction = this._renderFrameTasks[index];
             renderFunction();
         }
     }
@@ -397,51 +595,18 @@ export class Engine extends ThinEngine<Scene> {
         return window;
     }
 
-    private _renderLoop(): void {
-        let shouldRender = true;
-        if (!this.renderEvenInBackground) {
-            shouldRender = false;
-        }
-
-        if (shouldRender) {
-            // Start new frame
-            this.beginFrame();
-            this._renderFrame();
-            // Present
-            this.endFrame();
-        }
-
-        if (this._activeRenderLoops.length > 0) {
-            this._requestNewFrameHandler = requestNewFrame(this._renderFunction);
-        } else {
-            this._renderingQueueLaunched = false;
-        }
-    }
-
-    private _measureFps(): void {
-        this._performanceMonitor.sampleFrame();
-        this._fps = this._performanceMonitor.averageFPS;
-        this._deltaTime = this._performanceMonitor.instantaneousFrameTime || 0;
-    }
-
     private _handleKeyboardAction() {
-        const keyboardDownEvent = (evt: any) => {
-            const deviceEvent = evt as IKeyboardEvent;
+        const keyboardDownEvent = (evt: KeyboardEvent) => {
+            const deviceEvent = evt as unknown as IKeyboardEvent;
             deviceEvent.deviceType = DeviceType.Keyboard;
             deviceEvent.inputIndex = evt.keyCode;
-            deviceEvent.previousState = 0;
-            deviceEvent.currentState = 1;
-
             this.onInputChanged$.emitEvent(deviceEvent);
         };
 
-        const keyboardUpEvent = (evt: any) => {
-            const deviceEvent = evt as IKeyboardEvent;
+        const keyboardUpEvent = (evt: KeyboardEvent) => {
+            const deviceEvent = evt as unknown as IKeyboardEvent;
             deviceEvent.deviceType = DeviceType.Keyboard;
             deviceEvent.inputIndex = evt.keyCode;
-            deviceEvent.previousState = 1;
-            deviceEvent.currentState = 0;
-
             this.onInputChanged$.emitEvent(deviceEvent);
         };
 
@@ -462,51 +627,27 @@ export class Engine extends ThinEngine<Scene> {
             // const previousVertical = this.pointer[PointerInput.Vertical];
             // const previousDeltaHorizontal = this.pointer[PointerInput.DeltaHorizontal];
             // const previousDeltaVertical = this.pointer[PointerInput.DeltaVertical];
-            this.pointer[PointerInput.Horizontal] = evt.clientX;
-            this.pointer[PointerInput.Vertical] = evt.clientY;
-            this.pointer[PointerInput.DeltaHorizontal] = evt.movementX;
-            this.pointer[PointerInput.DeltaVertical] = evt.movementY;
+            this._pointerPosRecord[PointerInput.Horizontal] = evt.clientX;
+            this._pointerPosRecord[PointerInput.Vertical] = evt.clientY;
+            this._pointerPosRecord[PointerInput.DeltaHorizontal] = evt.movementX;
+            this._pointerPosRecord[PointerInput.DeltaVertical] = evt.movementY;
             const deviceEvent = evt as unknown as IPointerEvent;
             deviceEvent.deviceType = deviceType;
             deviceEvent.inputIndex = PointerInput.Horizontal;// horizon 0 vertical 1
             this.onInputChanged$.emitEvent(deviceEvent);
 
-            // TODO @lumixraku
-            //if (previousHorizontal !== evt.clientX) {
-            //    deviceEvent.inputIndex = PointerInput.Horizontal;
-            //    deviceEvent.previousState = previousHorizontal;
-            //    deviceEvent.currentState = this.pointer[PointerInput.Horizontal];
-
-            //    this.onInputChanged$.emitEvent(deviceEvent);
-            //}
-            //if (previousVertical !== evt.clientY) {
-            //    deviceEvent.inputIndex = PointerInput.Vertical;
-            //    deviceEvent.previousState = previousVertical;
-            //    deviceEvent.currentState = this.pointer[PointerInput.Vertical];
-
-            //    this.onInputChanged$.emitEvent(deviceEvent);
-            //}
-            //if (this.pointer[PointerInput.DeltaHorizontal] !== 0) {
-            //    deviceEvent.inputIndex = PointerInput.DeltaHorizontal;
-            //    deviceEvent.previousState = previousDeltaHorizontal;
-            //    deviceEvent.currentState = this.pointer[PointerInput.DeltaHorizontal];
-
-            //    this.onInputChanged$.emitEvent(deviceEvent);
-            //}
-            //if (this.pointer[PointerInput.DeltaVertical] !== 0) {
-            //    deviceEvent.inputIndex = PointerInput.DeltaVertical;
-            //    deviceEvent.previousState = previousDeltaVertical;
-            //    deviceEvent.currentState = this.pointer[PointerInput.DeltaVertical];
-
-            //    this.onInputChanged$.emitEvent(deviceEvent);
-            //}
-
             // Lets Propagate the event for move with same position.
-            if (!this._usingSafari && evt.button !== -1) {
+            // evt.button is readonly and value is 0 1 2 3 4, it never be -1.
+            //if (!this._usingSafari && evt.button !== -1) {
+
+            if (!this._usingSafari) {
                 deviceEvent.inputIndex = evt.button + 2;
-                deviceEvent.previousState = this.pointer[evt.button + 2];
-                this.pointer[evt.button + 2] = this.pointer[evt.button + 2] ? 0 : 1; // Reverse state of button if evt.button has value
-                deviceEvent.currentState = this.pointer[evt.button + 2];
+                // deviceEvent.previousState = this._pointerPosRecord[evt.button + 2];
+
+                // Reverse state of button if evt.button has value // WHY?
+                // this._pointerPosRecord[evt.button + 2] = this._pointerPosRecord[evt.button + 2] ? 0 : 1;
+
+                // deviceEvent.currentState = this._pointerPosRecord[evt.button + 2];
                 this.onInputChanged$.emitEvent(deviceEvent);
             }
         };
@@ -516,9 +657,11 @@ export class Engine extends ThinEngine<Scene> {
             // TODO: maybe we should wrap the native event to an CustomEvent
 
             const deviceType = this._getPointerType(evt);
-            const previousHorizontal = this.pointer[PointerInput.Horizontal];
-            const previousVertical = this.pointer[PointerInput.Vertical];
-            const previousButton = this.pointer[evt.button + 2];
+            const previousHorizontal = this._pointerPosRecord[PointerInput.Horizontal];
+            const previousVertical = this._pointerPosRecord[PointerInput.Vertical];
+
+            // why ???
+            // const previousButton = this._pointerPosRecord[evt.button + 2];
 
             if (deviceType === DeviceType.Mouse) {
                 // Mouse; Among supported browsers, value is either 1 or 0 for mouse
@@ -532,42 +675,41 @@ export class Engine extends ThinEngine<Scene> {
                 }
                 if (!document.pointerLockElement) {
                     this._remainCapture = this._mouseId;
-                    this.getCanvasElement().setPointerCapture(this._mouseId);
                 }
             } else {
                 // Touch; Since touches are dynamically assigned, only set capture if we have an id
                 if (evt.pointerId && !document.pointerLockElement) {
                     this._remainCapture = evt.pointerId;
-                    this.getCanvasElement().setPointerCapture(evt.pointerId);
                 }
             }
 
-            this.pointer[PointerInput.Horizontal] = evt.clientX;
-            this.pointer[PointerInput.Vertical] = evt.clientY;
-            this.pointer[evt.button + 2] = 1;
+            this._pointerPosRecord[PointerInput.Horizontal] = evt.clientX;
+            this._pointerPosRecord[PointerInput.Vertical] = evt.clientY;
+            // why??
+            // this._pointerPosRecord[evt.button + 2] = 1;
 
             const deviceEvent = evt as IPointerEvent;
             deviceEvent.deviceType = deviceType;
 
             if (previousHorizontal !== evt.clientX) {
                 deviceEvent.inputIndex = PointerInput.Horizontal;
-                deviceEvent.previousState = previousHorizontal;
-                deviceEvent.currentState = this.pointer[PointerInput.Horizontal];
+                // deviceEvent.previousState = previousHorizontal;
+                // deviceEvent.currentState = this._pointerPosRecord[PointerInput.Horizontal];
 
                 this.onInputChanged$.emitEvent(deviceEvent);
             }
             if (previousVertical !== evt.clientY) {
                 deviceEvent.inputIndex = PointerInput.Vertical;
-                deviceEvent.previousState = previousVertical;
-                deviceEvent.currentState = this.pointer[PointerInput.Vertical];
+                // deviceEvent.previousState = previousVertical;
+                // deviceEvent.currentState = this._pointerPosRecord[PointerInput.Vertical];
 
                 this.onInputChanged$.emitEvent(deviceEvent);
             }
 
             // evt.button + 2  ---> leftClick: 2, middleClick: 3, rightClick:4
             deviceEvent.inputIndex = evt.button + 2;
-            deviceEvent.previousState = previousButton;
-            deviceEvent.currentState = this.pointer[evt.button + 2];
+            // deviceEvent.previousState = previousButton;
+            // deviceEvent.currentState = this._pointerPosRecord[evt.button + 2];
             this.onInputChanged$.emitEvent(deviceEvent);
         };
 
@@ -575,35 +717,39 @@ export class Engine extends ThinEngine<Scene> {
             const evt = _evt as PointerEvent | MouseEvent;
 
             const deviceType = this._getPointerType(evt);
-            const previousHorizontal = this.pointer[PointerInput.Horizontal];
-            const previousVertical = this.pointer[PointerInput.Vertical];
-            const previousButton = this.pointer[evt.button + 2];
+            const previousHorizontal = this._pointerPosRecord[PointerInput.Horizontal];
+            const previousVertical = this._pointerPosRecord[PointerInput.Vertical];
 
-            this.pointer[PointerInput.Horizontal] = evt.clientX;
-            this.pointer[PointerInput.Vertical] = evt.clientY;
-            this.pointer[evt.button + 2] = 0;
+            // why?
+            // const previousButton = this._pointerPosRecord[evt.button + 2];
+
+            this._pointerPosRecord[PointerInput.Horizontal] = evt.clientX;
+            this._pointerPosRecord[PointerInput.Vertical] = evt.clientY;
+
+            // why??
+            // this._pointerPosRecord[evt.button + 2] = 0;
 
             const deviceEvent = evt as IPointerEvent;
             deviceEvent.deviceType = deviceType;
 
             if (previousHorizontal !== evt.clientX) {
                 deviceEvent.inputIndex = PointerInput.Horizontal;
-                deviceEvent.previousState = previousHorizontal;
-                deviceEvent.currentState = this.pointer[PointerInput.Horizontal];
+                // deviceEvent.previousState = previousHorizontal;
+                // deviceEvent.currentState = this._pointerPosRecord[PointerInput.Horizontal];
 
                 this.onInputChanged$.emitEvent(deviceEvent);
             }
             if (previousVertical !== evt.clientY) {
                 deviceEvent.inputIndex = PointerInput.Vertical;
-                deviceEvent.previousState = previousVertical;
-                deviceEvent.currentState = this.pointer[PointerInput.Vertical];
+                // deviceEvent.previousState = previousVertical;
+                // deviceEvent.currentState = this._pointerPosRecord[PointerInput.Vertical];
 
                 this.onInputChanged$.emitEvent(deviceEvent);
             }
 
             deviceEvent.inputIndex = evt.button + 2;
-            deviceEvent.previousState = previousButton;
-            deviceEvent.currentState = this.pointer[evt.button + 2];
+            // deviceEvent.previousState = previousButton;
+            // deviceEvent.currentState = this._pointerPosRecord[evt.button + 2];
 
             const canvasEle = this.getCanvasElement();
             if (
@@ -622,7 +768,7 @@ export class Engine extends ThinEngine<Scene> {
 
             // We don't want to unregister the mouse because we may miss input data when a mouse is moving after a click
             if (deviceType !== DeviceType.Mouse) {
-                this.pointer = {};
+                this._pointerPosRecord = {};
             }
         };
 
@@ -632,7 +778,7 @@ export class Engine extends ThinEngine<Scene> {
             const deviceEvent = evt as IPointerEvent;
             deviceEvent.deviceType = deviceType;
 
-            deviceEvent.currentState = 2;
+            // deviceEvent.currentState = 2;
 
             this.onInputChanged$.emitEvent(deviceEvent);
         };
@@ -643,7 +789,7 @@ export class Engine extends ThinEngine<Scene> {
             const deviceEvent = evt as IPointerEvent;
             deviceEvent.deviceType = deviceType;
 
-            deviceEvent.currentState = 3;
+            // deviceEvent.currentState = 3;
 
             this.onInputChanged$.emitEvent(deviceEvent);
         };
@@ -653,7 +799,7 @@ export class Engine extends ThinEngine<Scene> {
             // Store previous values for event
             const deviceEvent = evt as IPointerEvent;
             deviceEvent.deviceType = deviceType;
-            deviceEvent.currentState = 3;
+            // deviceEvent.currentState = 3;
 
             this.onInputChanged$.emitEvent(deviceEvent);
         };
@@ -664,7 +810,7 @@ export class Engine extends ThinEngine<Scene> {
             const deviceEvent = evt as IPointerEvent;
             deviceEvent.deviceType = deviceType;
 
-            deviceEvent.currentState = 3;
+            // deviceEvent.currentState = 3;
 
             this.onInputChanged$.emitEvent(deviceEvent);
         };
@@ -678,41 +824,42 @@ export class Engine extends ThinEngine<Scene> {
                 // this._mouseId = -1;
             }
 
-            this.pointer = {};
+            this._pointerPosRecord = {};
         };
 
         this._pointerWheelEvent = (evt: any) => {
             const deviceType = DeviceType.Mouse;
             // Store previous values for event
-            const previousWheelScrollX = this.pointer[PointerInput.MouseWheelX];
-            const previousWheelScrollY = this.pointer[PointerInput.MouseWheelY];
-            const previousWheelScrollZ = this.pointer[PointerInput.MouseWheelZ];
+            // const previousWheelScrollX = this._pointerPosRecord[PointerInput.MouseWheelX];
+            // const previousWheelScrollY = this._pointerPosRecord[PointerInput.MouseWheelY];
+            // const previousWheelScrollZ = this._pointerPosRecord[PointerInput.MouseWheelZ];
 
-            this.pointer[PointerInput.MouseWheelX] = evt.deltaX || 0;
-            this.pointer[PointerInput.MouseWheelY] = evt.deltaY || evt.wheelDelta || 0;
-            this.pointer[PointerInput.MouseWheelZ] = evt.deltaZ || 0;
+            this._pointerPosRecord[PointerInput.MouseWheelX] = evt.deltaX || 0;
+            this._pointerPosRecord[PointerInput.MouseWheelY] = evt.deltaY || evt.wheelDelta || 0;
+            this._pointerPosRecord[PointerInput.MouseWheelZ] = evt.deltaZ || 0;
 
             const deviceEvent = evt as IPointerEvent;
             deviceEvent.deviceType = deviceType;
 
-            if (this.pointer[PointerInput.MouseWheelX] !== 0) {
-                deviceEvent.inputIndex = PointerInput.MouseWheelX;
-                deviceEvent.previousState = previousWheelScrollX;
-                deviceEvent.currentState = this.pointer[PointerInput.MouseWheelX];
-                this.onInputChanged$.emitEvent(deviceEvent);
+            if (this._pointerPosRecord[PointerInput.MouseWheelX] !== 0) {
+                // deviceEvent.inputIndex = PointerInput.MouseWheelX;
+                // deviceEvent.previousState = previousWheelScrollX;
+                deviceEvent.currentState = this._pointerPosRecord[PointerInput.MouseWheelX];
+                // this.onInputChanged$.emitEvent(deviceEvent);
             }
-            if (this.pointer[PointerInput.MouseWheelY] !== 0) {
-                deviceEvent.inputIndex = PointerInput.MouseWheelY;
-                deviceEvent.previousState = previousWheelScrollY;
-                deviceEvent.currentState = this.pointer[PointerInput.MouseWheelY];
-                this.onInputChanged$.emitEvent(deviceEvent);
+            if (this._pointerPosRecord[PointerInput.MouseWheelY] !== 0) {
+                // deviceEvent.inputIndex = PointerInput.MouseWheelY;
+                // deviceEvent.previousState = previousWheelScrollY;
+                deviceEvent.currentState = this._pointerPosRecord[PointerInput.MouseWheelY];
+                // this.onInputChanged$.emitEvent(deviceEvent);
             }
-            if (this.pointer[PointerInput.MouseWheelZ] !== 0) {
-                deviceEvent.inputIndex = PointerInput.MouseWheelZ;
-                deviceEvent.previousState = previousWheelScrollZ;
-                deviceEvent.currentState = this.pointer[PointerInput.MouseWheelZ];
-                this.onInputChanged$.emitEvent(deviceEvent);
+            if (this._pointerPosRecord[PointerInput.MouseWheelZ] !== 0) {
+                // deviceEvent.inputIndex = PointerInput.MouseWheelZ;
+                // deviceEvent.previousState = previousWheelScrollZ;
+                deviceEvent.currentState = this._pointerPosRecord[PointerInput.MouseWheelZ];
+                // this.onInputChanged$.emitEvent(deviceEvent);
             }
+            this.onInputChanged$.emitEvent(deviceEvent);
         };
 
         const canvasEle = this.getCanvasElement();
@@ -761,54 +908,58 @@ export class Engine extends ThinEngine<Scene> {
 
             const deviceType = this._getPointerType(evt);
             // Store previous values for event
-            const previousHorizontal = this.pointer[PointerInput.Horizontal];
-            const previousVertical = this.pointer[PointerInput.Vertical];
-            const previousDeltaHorizontal = this.pointer[PointerInput.DeltaHorizontal];
-            const previousDeltaVertical = this.pointer[PointerInput.DeltaVertical];
+            const previousHorizontal = this._pointerPosRecord[PointerInput.Horizontal];
+            const previousVertical = this._pointerPosRecord[PointerInput.Vertical];
+            // const previousDeltaHorizontal = this._pointerPosRecord[PointerInput.DeltaHorizontal];
+            // const previousDeltaVertical = this._pointerPosRecord[PointerInput.DeltaVertical];
 
-            this.pointer[PointerInput.Horizontal] = evt.clientX;
-            this.pointer[PointerInput.Vertical] = evt.clientY;
-            this.pointer[PointerInput.DeltaHorizontal] = evt.movementX;
-            this.pointer[PointerInput.DeltaVertical] = evt.movementY;
-            // console.log('pointerMoveEvent_1', previousHorizontal, evt.clientX, previousVertical, evt.clientY, this._pointer);
+            this._pointerPosRecord[PointerInput.Horizontal] = evt.clientX;
+            this._pointerPosRecord[PointerInput.Vertical] = evt.clientY;
+            this._pointerPosRecord[PointerInput.DeltaHorizontal] = evt.movementX;
+            this._pointerPosRecord[PointerInput.DeltaVertical] = evt.movementY;
             const deviceEvent = evt as IPointerEvent;
             deviceEvent.deviceType = deviceType;
 
             if (previousHorizontal !== evt.clientX) {
                 deviceEvent.inputIndex = PointerInput.Horizontal;
-                deviceEvent.previousState = previousHorizontal;
-                deviceEvent.currentState = this.pointer[PointerInput.Horizontal];
+                // deviceEvent.previousState = previousHorizontal;
+                deviceEvent.currentState = this._pointerPosRecord[PointerInput.Horizontal];
 
                 this.onInputChanged$.emitEvent(deviceEvent);
             }
             if (previousVertical !== evt.clientY) {
                 deviceEvent.inputIndex = PointerInput.Vertical;
-                deviceEvent.previousState = previousVertical;
-                deviceEvent.currentState = this.pointer[PointerInput.Vertical];
+                // deviceEvent.previousState = previousVertical;
+                deviceEvent.currentState = this._pointerPosRecord[PointerInput.Vertical];
 
                 this.onInputChanged$.emitEvent(deviceEvent);
             }
-            if (this.pointer[PointerInput.DeltaHorizontal] !== 0) {
+            if (this._pointerPosRecord[PointerInput.DeltaHorizontal] !== 0) {
                 deviceEvent.inputIndex = PointerInput.DeltaHorizontal;
-                deviceEvent.previousState = previousDeltaHorizontal;
-                deviceEvent.currentState = this.pointer[PointerInput.DeltaHorizontal];
+                // deviceEvent.previousState = previousDeltaHorizontal;
+                deviceEvent.currentState = this._pointerPosRecord[PointerInput.DeltaHorizontal];
 
                 this.onInputChanged$.emitEvent(deviceEvent);
             }
-            if (this.pointer[PointerInput.DeltaVertical] !== 0) {
+            if (this._pointerPosRecord[PointerInput.DeltaVertical] !== 0) {
                 deviceEvent.inputIndex = PointerInput.DeltaVertical;
-                deviceEvent.previousState = previousDeltaVertical;
-                deviceEvent.currentState = this.pointer[PointerInput.DeltaVertical];
+                // deviceEvent.previousState = previousDeltaVertical;
+                deviceEvent.currentState = this._pointerPosRecord[PointerInput.DeltaVertical];
 
                 this.onInputChanged$.emitEvent(deviceEvent);
             }
 
             // Lets Propagate the event for move with same position.
-            if (!this._usingSafari && evt.button !== -1) {
+            // -1 ??? evt.button varies from 0 to 4
+            // if (!this._usingSafari && evt.button !== -1) {
+
+            if (!this._usingSafari) {
                 deviceEvent.inputIndex = evt.button + 2;
-                deviceEvent.previousState = this.pointer[evt.button + 2];
-                this.pointer[evt.button + 2] = this.pointer[evt.button + 2] ? 0 : 1; // Reverse state of button if evt.button has value
-                deviceEvent.currentState = this.pointer[evt.button + 2];
+                // deviceEvent.previousState = this._pointerPosRecord[evt.button + 2];
+
+                // Reverse state of button if evt.button has value.  // WHY ?? why reverse value?
+                // this._pointerPosRecord[evt.button + 2] = this._pointerPosRecord[evt.button + 2] ? 0 : 1;
+                deviceEvent.currentState = this._pointerPosRecord[evt.button + 2];
                 this.onInputChanged$.emitEvent(deviceEvent);
             }
         };
@@ -886,7 +1037,7 @@ export class Engine extends ThinEngine<Scene> {
         const mediaQueryList = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
 
         const _handleMediaChange = () => {
-            this.resize();
+            this.dprChange();
         };
 
         mediaQueryList.addEventListener('change', _handleMediaChange);

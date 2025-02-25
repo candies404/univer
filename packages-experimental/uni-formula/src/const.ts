@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,4 +14,6 @@
  * limitations under the License.
  */
 
-export const DOC_FORMULA_PLUGIN_NAME = 'DOC_FORMULA_PLUGIN';
+export const UNI_FORMULA_PLUGIN_NAME = 'UI_FORMULA_PLUGIN';
+
+export const DOC_UNI_FORMULA_RESOURCE_NAME = 'DOC_FORMULA_PLUGIN';

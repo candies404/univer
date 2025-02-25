@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
+import type { ArrayValueObject } from '../../../engine/value-object/array-value-object';
 import { ErrorType } from '../../../basics/error-type';
 import { expandArrayValueObject } from '../../../engine/utils/array-object';
-import type { ArrayValueObject } from '../../../engine/value-object/array-value-object';
 import { type BaseValueObject, ErrorValueObject } from '../../../engine/value-object/base-value-object';
 import { BooleanValueObject, NullValueObject } from '../../../engine/value-object/primitive-object';
 import { BaseFunction } from '../../base-function';
@@ -27,16 +27,12 @@ export class If extends BaseFunction {
     override maxParams = 3;
 
     override calculate(logicalTest: BaseValueObject, valueIfTrue: BaseValueObject, valueIfFalse: BaseValueObject = BooleanValueObject.create(false)) {
-        if (logicalTest.isError()) {
-            return logicalTest;
-        }
-
-        if (valueIfTrue.isError()) {
-            return valueIfTrue;
-        }
-
         // get single value object
         const _logicalTest = this._getSingleValueObject(logicalTest);
+
+        if (_logicalTest.isError()) {
+            return _logicalTest;
+        }
 
         if (!_logicalTest.isArray()) {
             return _logicalTest.getValue() ? valueIfTrue : valueIfFalse;

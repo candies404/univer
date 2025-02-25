@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,10 @@
  */
 
 import type { DocumentDataModel } from '@univerjs/core';
-import { Disposable } from '@univerjs/core';
-import { neoGetDocObject, VIEWPORT_KEY } from '@univerjs/docs';
 import type { IRenderContext, IRenderModule } from '@univerjs/engine-render';
+import { Disposable } from '@univerjs/core';
+import { neoGetDocObject } from '../basics/component-tools';
+import { VIEWPORT_KEY } from '../basics/docs-view-key';
 
 export class DocPageLayoutService extends Disposable implements IRenderModule {
     constructor(
@@ -35,12 +36,13 @@ export class DocPageLayoutService extends Disposable implements IRenderModule {
         const parent = scene?.getParent();
 
         const { width: docsWidth, height: docsHeight, pageMarginLeft, pageMarginTop } = docsComponent;
+
         if (parent == null || docsWidth === Number.POSITIVE_INFINITY || docsHeight === Number.POSITIVE_INFINITY) {
             return;
         }
         const { width: engineWidth, height: engineHeight } = parent;
         let docsLeft = 0;
-        let docsTop = 0;
+        let docsTop = pageMarginTop;
 
         let sceneWidth = 0;
 
@@ -62,14 +64,19 @@ export class DocPageLayoutService extends Disposable implements IRenderModule {
         }
 
         if (engineHeight > docsHeight) {
-            docsTop = engineHeight / 2 - docsHeight / 2;
             sceneHeight = (engineHeight - pageMarginTop * 2) / zoomRatio;
         } else {
-            docsTop = pageMarginTop;
             sceneHeight = docsHeight + pageMarginTop * 2;
         }
 
-        scene.resize(sceneWidth, sceneHeight + 200);
+        scene.resize(sceneWidth, sceneHeight);
+
+        // the engine width is 1, when engine has no container.
+        // Use to fix flickering issues into the page.
+        if (engineWidth <= 1) {
+            docsLeft = -10000;
+            docsTop = -10000;
+        }
 
         docsComponent.translate(docsLeft, docsTop);
         docBackground.translate(docsLeft, docsTop);

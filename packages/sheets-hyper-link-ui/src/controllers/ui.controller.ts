@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,27 +14,20 @@
  * limitations under the License.
  */
 
-import { Disposable, ICommandService, Inject, Injector, LifecycleStages, LocaleService, OnLifecycle } from '@univerjs/core';
-import type { MenuConfig } from '@univerjs/ui';
-import { ComponentManager, IMenuService, IShortcutService } from '@univerjs/ui';
+import { Disposable, ICommandService, Inject, Injector } from '@univerjs/core';
 import { LinkSingle } from '@univerjs/icons';
-import { CellLinkPopup } from '../views/CellLinkPopup';
+import { ComponentManager, IMenuManagerService, IShortcutService } from '@univerjs/ui';
+import { CloseHyperLinkPopupOperation, InsertHyperLinkOperation, InsertHyperLinkToolbarOperation, OpenHyperLinkEditPanelOperation } from '../commands/operations/popup.operations';
 import { CellLinkEdit } from '../views/CellLinkEdit';
-import { CloseHyperLinkSidebarOperation, InsertHyperLinkOperation, InsertHyperLinkToolbarOperation, OpenHyperLinkSidebarOperation } from '../commands/operations/sidebar.operations';
-import { insertLinkMenuFactory, insertLinkMenuToolbarFactory, InsertLinkShortcut } from './menu';
+import { CellLinkPopup } from '../views/CellLinkPopup';
+import { InsertLinkShortcut } from './menu';
+import { menuSchema } from './menu.schema';
 
-export interface IUniverSheetsHyperLinkUIConfig {
-    menu?: MenuConfig;
-}
-
-@OnLifecycle(LifecycleStages.Ready, SheetsHyperLinkUIController)
 export class SheetsHyperLinkUIController extends Disposable {
     constructor(
-        private _config: IUniverSheetsHyperLinkUIConfig | undefined,
         @Inject(ComponentManager) private _componentManager: ComponentManager,
         @ICommandService private _commandService: ICommandService,
-        @Inject(LocaleService) private _localeService: LocaleService,
-        @IMenuService private _menuService: IMenuService,
+        @IMenuManagerService private readonly _menuManagerService: IMenuManagerService,
         @Inject(Injector) private _injector: Injector,
         @Inject(IShortcutService) private _shortcutService: IShortcutService
     ) {
@@ -58,8 +51,8 @@ export class SheetsHyperLinkUIController extends Disposable {
 
     private _initCommands() {
         [
-            OpenHyperLinkSidebarOperation,
-            CloseHyperLinkSidebarOperation,
+            OpenHyperLinkEditPanelOperation,
+            CloseHyperLinkPopupOperation,
             InsertHyperLinkOperation,
             InsertHyperLinkToolbarOperation,
         ].forEach((command) => {
@@ -68,8 +61,7 @@ export class SheetsHyperLinkUIController extends Disposable {
     }
 
     private _initMenus() {
-        this._menuService.addMenuItem(insertLinkMenuFactory(this._injector), this._config?.menu ?? {});
-        this._menuService.addMenuItem(insertLinkMenuToolbarFactory(this._injector), this._config?.menu ?? {});
+        this._menuManagerService.mergeMenu(menuSchema);
     }
 
     private _initShortCut() {

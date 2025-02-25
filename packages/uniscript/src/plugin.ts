@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,41 +14,54 @@
  * limitations under the License.
  */
 
-import { Inject, Injector, LocaleService, Plugin, Tools } from '@univerjs/core';
 import type { Dependency } from '@univerjs/core';
-
-import type { IUniverUniscriptConfig } from './controllers/uniscript.controller';
-import { DefaultUniscriptConfig, UniscriptController } from './controllers/uniscript.controller';
+import type { IUniverUniscriptConfig } from './controllers/config.schema';
+import { IConfigService, Inject, Injector, merge, Plugin } from '@univerjs/core';
+import { defaultPluginConfig, UNISCRIPT_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
+import { UniscriptController } from './controllers/uniscript.controller';
 import { ScriptEditorService } from './services/script-editor.service';
 import { IUniscriptExecutionService, UniscriptExecutionService } from './services/script-execution.service';
 import { ScriptPanelService } from './services/script-panel.service';
 
-const PLUGIN_NAME = 'uniscript';
+const PLUGIN_NAME = 'UNIVER_UNISCRIPT_PLUGIN';
 
 export class UniverUniscriptPlugin extends Plugin {
     static override pluginName = PLUGIN_NAME;
 
     constructor(
-        private readonly _config: Partial<IUniverUniscriptConfig> = {},
+        private readonly _config: Partial<IUniverUniscriptConfig> = defaultPluginConfig,
         @Inject(Injector) protected override _injector: Injector,
-        @Inject(LocaleService) private readonly _localeService: LocaleService
+        @IConfigService private readonly _configService: IConfigService
     ) {
         super();
 
-        this._config = Tools.deepMerge({}, DefaultUniscriptConfig, this._config);
+        // Manage the plugin configuration.
+        const { menu, ...rest } = merge(
+            {},
+            defaultPluginConfig,
+            this._config
+        );
+        if (menu) {
+            this._configService.setConfig('menu', menu, { merge: true });
+        }
+        this._configService.setConfig(UNISCRIPT_PLUGIN_CONFIG_KEY, rest);
     }
 
     override onStarting(): void {
         const injector = this._injector;
         const dependencies: Dependency[] = [
-            [UniscriptController, { useFactory: () => injector.createInstance(UniscriptController, this._config) }],
-            [ScriptEditorService, { useFactory: () => injector.createInstance(ScriptEditorService, this._config) }],
+            [UniscriptController],
+            [ScriptEditorService],
             [ScriptPanelService],
         ];
 
         dependencies.forEach((d) => injector.add(d));
 
         this.registerExecution();
+    }
+
+    override onSteady(): void {
+        this._injector.get(UniscriptController);
     }
 
     /**

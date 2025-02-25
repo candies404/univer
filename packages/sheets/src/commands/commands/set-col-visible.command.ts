@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,9 @@
  */
 
 import type { IAccessor, ICommand, IRange, Nullable, Worksheet } from '@univerjs/core';
+import type { ISetColHiddenMutationParams, ISetColVisibleMutationParams } from '../mutations/set-col-visible.mutation';
+
+import type { ISetSelectionsOperationParams } from '../operations/selection.operation';
 import {
     CommandType,
     ICommandService,
@@ -23,18 +26,15 @@ import {
     RANGE_TYPE,
     sequenceExecute,
 } from '@univerjs/core';
-
-import type { ISetColHiddenMutationParams, ISetColVisibleMutationParams } from '../mutations/set-col-visible.mutation';
+import { SheetsSelectionsService } from '../../services/selections/selection.service';
+import { SheetInterceptorService } from '../../services/sheet-interceptor/sheet-interceptor.service';
 import {
     SetColHiddenMutation,
     SetColHiddenUndoMutationFactory,
     SetColVisibleMutation,
     SetColVisibleUndoMutationFactory,
 } from '../mutations/set-col-visible.mutation';
-import type { ISetSelectionsOperationParams } from '../operations/selection.operation';
 import { SetSelectionsOperation } from '../operations/selection.operation';
-import { SheetInterceptorService } from '../../services/sheet-interceptor/sheet-interceptor.service';
-import { SheetsSelectionsService } from '../../services/selections/selection-manager.service';
 import { getPrimaryForRange } from './utils/selection-utils';
 import { getSheetCommandTarget } from './utils/target-util';
 
@@ -47,7 +47,7 @@ export interface ISetSpecificColsVisibleCommandParams {
 export const SetSpecificColsVisibleCommand: ICommand<ISetSpecificColsVisibleCommandParams> = {
     type: CommandType.COMMAND,
     id: 'sheet.command.set-col-visible-on-cols',
-    handler: async (accessor, params: ISetSpecificColsVisibleCommandParams) => {
+    handler: (accessor, params: ISetSpecificColsVisibleCommandParams) => {
         const { unitId, subUnitId, ranges } = params;
 
         const sheetInterceptorService = accessor.get(SheetInterceptorService);
@@ -66,7 +66,7 @@ export const SetSpecificColsVisibleCommand: ICommand<ISetSpecificColsVisibleComm
         const setSelectionOperationParams: ISetSelectionsOperationParams = {
             unitId,
             subUnitId,
-
+            reveal: true,
             selections: ranges.map((r) => ({ range: r, primary: getPrimaryForRange(r, worksheet), style: null })),
         };
 
@@ -120,7 +120,7 @@ export const SetSpecificColsVisibleCommand: ICommand<ISetSpecificColsVisibleComm
 export const SetSelectedColsVisibleCommand: ICommand = {
     type: CommandType.COMMAND,
     id: 'sheet.command.set-selected-cols-visible',
-    handler: async (accessor: IAccessor) => {
+    handler: (accessor: IAccessor) => {
         const selectionManagerService = accessor.get(SheetsSelectionsService);
         const commandService = accessor.get(ICommandService);
 
@@ -142,19 +142,25 @@ export const SetSelectedColsVisibleCommand: ICommand = {
     },
 };
 
+export interface ISetColHiddenCommandParams {
+    unitId?: string;
+    subUnitId?: string;
+    ranges?: IRange[];
+}
+
 export const SetColHiddenCommand: ICommand = {
     type: CommandType.COMMAND,
     id: 'sheet.command.set-col-hidden',
-    handler: async (accessor: IAccessor) => {
+    handler: (accessor: IAccessor, params?: ISetColHiddenCommandParams) => {
         const selectionManagerService = accessor.get(SheetsSelectionsService);
         const sheetInterceptorService = accessor.get(SheetInterceptorService);
         const univerInstanceService = accessor.get(IUniverInstanceService);
         const commandService = accessor.get(ICommandService);
 
-        let ranges = selectionManagerService.getCurrentSelections()?.map((s) => s.range).filter((r) => r.rangeType === RANGE_TYPE.COLUMN);
+        let ranges = params?.ranges?.length ? params.ranges : selectionManagerService.getCurrentSelections()?.map((s) => s.range).filter((r) => r.rangeType === RANGE_TYPE.COLUMN);
         if (!ranges?.length) return false;
 
-        const target = getSheetCommandTarget(univerInstanceService);
+        const target = getSheetCommandTarget(univerInstanceService, params);
         if (!target) return false;
 
         const { worksheet, unitId, subUnitId } = target;
@@ -174,6 +180,7 @@ export const SetColHiddenCommand: ICommand = {
         const undoMutationParams = SetColHiddenUndoMutationFactory(accessor, redoMutationParams);
         const undoSetSelectionsOperationParams: ISetSelectionsOperationParams = {
             unitId, subUnitId,
+            reveal: true,
             selections: ranges.map((range) => ({
                 range,
                 primary: getPrimaryForRange(range, worksheet),

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,20 +16,21 @@
 
 /* eslint-disable max-lines-per-function */
 
-import type { DocumentDataModel, ICellData, ICommandInfo, IDisposable, IDocumentBody, IDocumentData, IPosition, Nullable, Workbook } from '@univerjs/core';
+import type { DocumentDataModel, ICellData, ICommandInfo, IDisposable, IDocumentBody, IDocumentData, IDocumentStyle, IMutationInfo, IStyleData, Nullable, Styles, Workbook } from '@univerjs/core';
+import type { IRichTextEditingMutationParams } from '@univerjs/docs';
+import type { IRenderContext, IRenderModule } from '@univerjs/engine-render';
+import type { MutationsAffectRange, WorkbookSelectionModel } from '@univerjs/sheets';
+
+import type { IEditorBridgeServiceVisibleParam } from '../../services/editor-bridge.service';
 import {
-    CellValueType, DEFAULT_EMPTY_DOCUMENT_VALUE, Direction, Disposable, DisposableCollection, DOCS_FORMULA_BAR_EDITOR_UNIT_ID_KEY, EDITOR_ACTIVATED,
+    CellValueType, DEFAULT_EMPTY_DOCUMENT_VALUE, Direction, Disposable, DisposableCollection, DOCS_FORMULA_BAR_EDITOR_UNIT_ID_KEY, DOCS_NORMAL_EDITOR_UNIT_ID_KEY, EDITOR_ACTIVATED,
     FOCUSING_EDITOR_BUT_HIDDEN,
     FOCUSING_EDITOR_INPUT_FORMULA,
     FOCUSING_EDITOR_STANDALONE,
-    FOCUSING_FORMULA_EDITOR,
-    FOCUSING_SHEET,
-    FOCUSING_UNIVER_EDITOR_STANDALONE_SINGLE_MODE,
-    HorizontalAlign,
+    FOCUSING_FX_BAR_EDITOR,
     ICommandService,
     IContextService,
     Inject,
-    IResourceLoaderService,
     isFormulaString,
     IUndoRedoService,
     IUniverInstanceService,
@@ -37,57 +38,39 @@ import {
     toDisposable,
     Tools,
     UniverInstanceType,
-    VerticalAlign,
     WrapStrategy,
 } from '@univerjs/core';
-import type { IRichTextEditingMutationParams } from '@univerjs/docs';
 import {
-    VIEWPORT_KEY as DOC_VIEWPORT_KEY,
-    DOCS_COMPONENT_MAIN_LAYER_INDEX,
+    DocSelectionManagerService,
     DocSkeletonManagerService,
-    MoveCursorOperation,
-    MoveSelectionOperation,
     RichTextEditingMutation,
-    TextSelectionManagerService,
 } from '@univerjs/docs';
-import type { DocumentSkeleton, IDocumentLayoutObject, IEditorInputConfig, IRenderContext, IRenderModule, Scene } from '@univerjs/engine-render';
+import { VIEWPORT_KEY as DOC_VIEWPORT_KEY, DocSelectionRenderService, IEditorService, MoveCursorOperation, MoveSelectionOperation, ReplaceSnapshotCommand } from '@univerjs/docs-ui';
+import { IFunctionService, LexerTreeBuilder, matchToken } from '@univerjs/engine-formula';
+import { isTextFormat } from '@univerjs/engine-numfmt';
+
 import {
     convertTextRotation,
     DeviceInputEventType,
-    FIX_ONE_PIXEL_BLUR_OFFSET,
-    fixLineWidthByScale,
     IRenderManagerService,
-    ITextSelectionRenderManager,
-    Rect,
-    ScrollBar,
 } from '@univerjs/engine-render';
-import { IEditorService, KeyCode, SetEditorResizeOperation } from '@univerjs/ui';
-import type { WorkbookSelections } from '@univerjs/sheets';
-import { ClearSelectionFormatCommand, SetRangeValuesCommand, SetSelectionsOperation, SetWorksheetActivateCommand, SheetsSelectionsService } from '@univerjs/sheets';
-import { distinctUntilChanged, filter } from 'rxjs';
-import { IFunctionService, LexerTreeBuilder, matchToken } from '@univerjs/engine-formula';
 
+import { adjustRangeOnMutation, COMMAND_LISTENER_SKELETON_CHANGE, InsertColMutation, InsertRowMutation, MoveColsMutation, MoveRowsMutation, REF_SELECTIONS_ENABLED, RemoveColMutation, RemoveRowMutation, SetRangeValuesCommand, SetSelectionsOperation, SetWorksheetActivateCommand, SetWorksheetActiveOperation, SheetInterceptorService, SheetsSelectionsService } from '@univerjs/sheets';
+import { KeyCode } from '@univerjs/ui';
+import { distinctUntilChanged, filter } from 'rxjs';
 import { getEditorObject } from '../../basics/editor/get-editor-object';
+import { MoveSelectionCommand, MoveSelectionEnterAndTabCommand } from '../../commands/commands/set-selection.command';
 import { SetCellEditVisibleArrowOperation, SetCellEditVisibleOperation, SetCellEditVisibleWithF2Operation } from '../../commands/operations/cell-edit.operation';
-import type { IEditorBridgeServiceVisibleParam } from '../../services/editor-bridge.service';
+import { ScrollToRangeOperation } from '../../commands/operations/scroll-to-range.operation';
 import { IEditorBridgeService } from '../../services/editor-bridge.service';
 import { ICellEditorManagerService } from '../../services/editor/cell-editor-manager.service';
-import styles from '../../views/sheet-container/index.module.less';
-import { MoveSelectionCommand, MoveSelectionEnterAndTabCommand } from '../../commands/commands/set-selection.command';
+import { SheetCellEditorResizeService } from '../../services/editor/cell-editor-resize.service';
 import { MOVE_SELECTION_KEYCODE_LIST } from '../shortcuts/editor.shortcut';
 import { extractStringFromForceString, isForceString } from '../utils/cell-tools';
-import { isCJKLocale, normalizeString } from '../utils/char-tools';
+import { normalizeString } from '../utils/char-tools';
+import { isRangeSelector } from './utils/is-range-selector';
 
 const HIDDEN_EDITOR_POSITION = -1000;
-
-const EDITOR_INPUT_SELF_EXTEND_GAP = 5;
-
-const EDITOR_BORDER_SIZE = 2;
-
-interface ICanvasOffset {
-    left: number;
-    top: number;
-}
 
 enum CursorChange {
     InitialState,
@@ -104,27 +87,28 @@ export class EditingRenderController extends Disposable implements IRenderModule
     /** If the corresponding unit is active and prepared for editing. */
     private _isUnitEditing = false;
 
-    private _workbookSelections: WorkbookSelections;
+    private _workbookSelections: WorkbookSelectionModel;
 
     private _d: Nullable<IDisposable>;
+    _cursorTimeout: NodeJS.Timeout;
 
     constructor(
         private readonly _context: IRenderContext<Workbook>,
         @Inject(SheetsSelectionsService) selectionManagerService: SheetsSelectionsService,
         @IUndoRedoService private readonly _undoRedoService: IUndoRedoService,
         @IContextService private readonly _contextService: IContextService,
-        @IUniverInstanceService private readonly _instanceSrv: IUniverInstanceService,
         @IRenderManagerService private readonly _renderManagerService: IRenderManagerService,
         @IEditorBridgeService private readonly _editorBridgeService: IEditorBridgeService,
         @ICellEditorManagerService private readonly _cellEditorManagerService: ICellEditorManagerService,
-        @ITextSelectionRenderManager private readonly _textSelectionRenderManager: ITextSelectionRenderManager,
         @Inject(LexerTreeBuilder) private readonly _lexerTreeBuilder: LexerTreeBuilder,
         @IFunctionService private readonly _functionService: IFunctionService,
-        @Inject(TextSelectionManagerService) private readonly _textSelectionManagerService: TextSelectionManagerService,
+        @Inject(DocSelectionManagerService) private readonly _textSelectionManagerService: DocSelectionManagerService,
         @ICommandService private readonly _commandService: ICommandService,
         @Inject(LocaleService) protected readonly _localService: LocaleService,
         @IEditorService private readonly _editorService: IEditorService,
-        @IResourceLoaderService private readonly _resourceLoaderService: IResourceLoaderService
+        @Inject(SheetCellEditorResizeService) private readonly _sheetCellEditorResizeService: SheetCellEditorResizeService,
+        @IUniverInstanceService private readonly _univerInstanceService: IUniverInstanceService,
+        @Inject(SheetInterceptorService) private readonly _sheetInterceptorService: SheetInterceptorService
     ) {
         super();
 
@@ -132,7 +116,7 @@ export class EditingRenderController extends Disposable implements IRenderModule
 
         // EditingRenderController is per unit. It should only handle keyboard events when the unit is
         // the current of its type.
-        this.disposeWithMe(this._instanceSrv.getCurrentTypeOfUnit$(UniverInstanceType.UNIVER_SHEET).subscribe((workbook) => {
+        this.disposeWithMe(this._univerInstanceService.getCurrentTypeOfUnit$(UniverInstanceType.UNIVER_SHEET).subscribe((workbook) => {
             if (workbook?.getUnitId() === this._context.unitId) {
                 this._d = this._init();
             } else {
@@ -169,26 +153,38 @@ export class EditingRenderController extends Disposable implements IRenderModule
     private _init(): IDisposable {
         const d = new DisposableCollection();
         this._subscribeToCurrentCell(d);
-        this._initialKeyboardListener(d);
         this._initialCursorSync(d);
         this._listenEditorFocus(d);
         this._commandExecutedListener(d);
-        this._cursorStateListener(d);
+        this._initSkeletonListener(d);
+
+        // RenderManagerService._disposeItem will calls EditingRenderController.dispose before unitDisposed$.subscribe,so that the timer won't be cleared
+        d.add(() => {
+            clearTimeout(this._cursorTimeout);
+        });
+
+        // FIXME: this problem is the same with slide. Should be fixed when refactoring editor.
+        this._cursorTimeout = setTimeout(() => {
+            this._cursorStateListener(d);
+        }, 1000);
+
         return d;
     }
 
     private _initEditorVisibilityListener(): void {
-        this.disposeWithMe(this._editorBridgeService.visible$
-            .pipe(distinctUntilChanged((prev, curr) => prev.visible === curr.visible))
-            .subscribe((param) => {
-                if ((param.unitId === DOCS_FORMULA_BAR_EDITOR_UNIT_ID_KEY || param.unitId === this._context.unitId) && param.visible) {
-                    this._isUnitEditing = true;
-                    this._handleEditorVisible(param);
-                } else if (this._isUnitEditing) {
-                    this._handleEditorInvisible(param);
-                    this._isUnitEditing = false;
-                }
-            }));
+        this.disposeWithMe(
+            this._editorBridgeService.visible$
+                .pipe(distinctUntilChanged((prev, curr) => prev.visible === curr.visible))
+                .subscribe((param) => {
+                    if ((param.unitId === DOCS_FORMULA_BAR_EDITOR_UNIT_ID_KEY || param.unitId === DOCS_NORMAL_EDITOR_UNIT_ID_KEY || param.unitId === this._context.unitId) && param.visible) {
+                        this._isUnitEditing = true;
+                        this._handleEditorVisible(param);
+                    } else if (this._isUnitEditing) {
+                        this._handleEditorInvisible(param);
+                        this._isUnitEditing = false;
+                    }
+                })
+        );
     }
 
     private _listenEditorFocus(d: DisposableCollection) {
@@ -202,30 +198,64 @@ export class EditingRenderController extends Disposable implements IRenderModule
                 const param = this._editorBridgeService.getEditCellState();
                 const editorId = this._editorBridgeService.getCurrentEditorId();
 
-                if (!param || !editorId || !this._editorService.isSheetEditor(editorId)) {
+                if (!param || !editorId) {
                     return;
                 }
 
-                const skeleton = this._getEditorSkeleton(editorId);
-                if (!skeleton) return;
-
-                const { position, documentLayoutObject, canvasOffset, scaleX, scaleY } = param;
-                this._fitTextSize(position, canvasOffset, skeleton, documentLayoutObject, scaleX, scaleY);
+                this._sheetCellEditorResizeService.fitTextSize();
             }
         }));
     }
 
-    private _getEditorSkeleton(editorId: string) {
-        return this._renderManagerService.getRenderById(editorId)?.with(DocSkeletonManagerService).getSkeleton();
-    }
-
-    private _getEditorViewModel(editorId: string) {
-        return this._renderManagerService.getRenderById(editorId)?.with(DocSkeletonManagerService).getViewModel();
-    }
-
     private _initialCursorSync(d: DisposableCollection) {
         d.add(this._cellEditorManagerService.focus$.pipe(filter((f) => !!f)).subscribe(() => {
-            this._textSelectionRenderManager.sync();
+            const docSelectionRenderManager = this._renderManagerService.getCurrentTypeOfRenderer(UniverInstanceType.UNIVER_DOC)?.with(DocSelectionRenderService);
+
+            if (docSelectionRenderManager) {
+                docSelectionRenderManager.sync();
+            }
+        }));
+    }
+
+    private _initSkeletonListener(d: DisposableCollection) {
+        const commandList = new Set(COMMAND_LISTENER_SKELETON_CHANGE);
+        commandList.delete(SetWorksheetActiveOperation.id);
+
+        d.add(this._commandService.onCommandExecuted((commandInfo) => {
+            if (!commandList.has(commandInfo.id)) {
+                return;
+            }
+            switch (commandInfo.id) {
+                case MoveRowsMutation.id:
+                case MoveColsMutation.id:
+                case RemoveColMutation.id:
+                case RemoveRowMutation.id:
+                case InsertColMutation.id:
+                case InsertRowMutation.id:
+                {
+                    const editLocation = this._editorBridgeService.getEditLocation();
+                    if (!editLocation) break;
+                    const currentRange = {
+                        startRow: editLocation.row,
+                        startColumn: editLocation.column,
+                        endRow: editLocation.row,
+                        endColumn: editLocation.column,
+                    };
+                    const newRange = adjustRangeOnMutation(currentRange, commandInfo as IMutationInfo<MutationsAffectRange>);
+                    if (!newRange) break;
+                    const newRow = newRange.startRow;
+                    const newColumn = newRange.startColumn;
+                    this._editorBridgeService.updateEditLocation(newRow, newColumn);
+                    break;
+                }
+            }
+
+            this._sheetCellEditorResizeService.resizeCellEditor(() => {
+                this._textSelectionManagerService.refreshSelection({
+                    unitId: DOCS_NORMAL_EDITOR_UNIT_ID_KEY,
+                    subUnitId: DOCS_NORMAL_EDITOR_UNIT_ID_KEY,
+                });
+            });
         }));
     }
 
@@ -240,512 +270,80 @@ export class EditingRenderController extends Disposable implements IRenderModule
             if (editCellState == null || this._editorBridgeService.isForceKeepVisible()) {
                 return;
             }
-
-            const { position, documentLayoutObject, scaleX, editorUnitId } = editCellState;
-            if (
-                this._contextService.getContextValue(FOCUSING_EDITOR_STANDALONE) ||
-                this._contextService.getContextValue(FOCUSING_UNIVER_EDITOR_STANDALONE_SINGLE_MODE)
-            ) {
+            const state = this._editorBridgeService.getEditCellState();
+            if (state == null) {
                 return;
             }
 
+            const { position, documentLayoutObject, scaleX, editorUnitId } = state;
+
+            if (this._contextService.getContextValue(FOCUSING_EDITOR_STANDALONE)) {
+                return;
+            }
+
+            const cellDocument = this._getDocumentDataModel();
+            if (cellDocument == null) return;
             const { startX, endX } = position;
             const { textRotation, wrapStrategy, documentModel } = documentLayoutObject;
             const { vertexAngle: angle } = convertTextRotation(textRotation);
-            documentModel!.updateDocumentId(editorUnitId);
 
             if (wrapStrategy === WrapStrategy.WRAP && angle === 0) {
-                documentModel!.updateDocumentDataPageSize((endX - startX) / scaleX);
+                cellDocument.updateDocumentDataPageSize((endX - startX) / scaleX);
             }
 
-            this._instanceSrv.changeDoc(editorUnitId, documentModel!);
+            this._commandService.syncExecuteCommand(ReplaceSnapshotCommand.id, {
+                unitId: editorUnitId,
+                snapshot: (documentModel!.getSnapshot()),
+            });
+
             this._contextService.setContextValue(FOCUSING_EDITOR_BUT_HIDDEN, true);
-            this._textSelectionManagerService.replaceTextRanges([{
-                startOffset: 0,
-                endOffset: 0,
-            }]);
-
-            this._textSelectionRenderManager.activate(HIDDEN_EDITOR_POSITION, HIDDEN_EDITOR_POSITION);
-        }));
-    }
-
-    private _fitTextSize(
-        actualRangeWithCoord: IPosition,
-        canvasOffset: ICanvasOffset,
-        documentSkeleton: DocumentSkeleton,
-        documentLayoutObject: IDocumentLayoutObject,
-        scaleX: number = 1,
-        scaleY: number = 1
-    ) {
-        const { startX, startY, endX, endY } = actualRangeWithCoord;
-        const documentDataModel = documentLayoutObject.documentModel;
-
-        if (documentDataModel == null) {
-            return;
-        }
-
-        const { actualWidth, actualHeight } = this._predictingSize(
-            actualRangeWithCoord,
-            canvasOffset,
-            documentSkeleton,
-            documentLayoutObject,
-            scaleX,
-            scaleY
-        );
-        const { verticalAlign, paddingData, fill } = documentLayoutObject;
-
-        let editorWidth = endX - startX;
-
-        let editorHeight = endY - startY;
-
-        if (editorWidth < actualWidth) {
-            editorWidth = actualWidth;
-        }
-
-        if (editorHeight < actualHeight) {
-            editorHeight = actualHeight;
-            // To restore the page margins for the skeleton.
-            documentDataModel.updateDocumentDataMargin(paddingData);
-        } else {
-            // Set the top margin under vertical alignment.
-            let offsetTop = 0;
-
-            if (verticalAlign === VerticalAlign.MIDDLE) {
-                offsetTop = (editorHeight - actualHeight) / 2 / scaleY;
-            } else if (verticalAlign === VerticalAlign.TOP) {
-                offsetTop = paddingData.t || 0;
-            } else { // VerticalAlign.UNSPECIFIED follow the same rule as HorizontalAlign.BOTTOM.
-                offsetTop = (editorHeight - actualHeight) / scaleY - (paddingData.b || 0);
-            }
-
-            // offsetTop /= scaleY;
-            offsetTop = offsetTop < (paddingData.t || 0) ? paddingData.t || 0 : offsetTop;
-
-            documentDataModel.updateDocumentDataMargin({
-                t: offsetTop,
-            });
-        }
-
-        // re-calculate skeleton(viewModel for component)
-        documentSkeleton.calculate();
-
-        this._editAreaProcessing(editorWidth, editorHeight, actualRangeWithCoord, canvasOffset, fill, scaleX, scaleY);
-    }
-
-    /**
-     * Mainly used to pre-calculate the width of the editor,
-     * to determine whether it needs to be automatically widened.
-     */
-    private _predictingSize(
-        actualRangeWithCoord: IPosition,
-        canvasOffset: ICanvasOffset,
-        documentSkeleton: DocumentSkeleton,
-        documentLayoutObject: IDocumentLayoutObject,
-        scaleX: number = 1,
-        scaleY: number = 1
-    ) {
-        // startX and startY are the width and height after scaling.
-        const { startX, endX } = actualRangeWithCoord;
-
-        const { textRotation, wrapStrategy } = documentLayoutObject;
-
-        const documentDataModel = documentLayoutObject.documentModel;
-
-        const { vertexAngle: angle } = convertTextRotation(textRotation);
-
-        const clientWidth = document.body.clientWidth;
-
-        if (wrapStrategy === WrapStrategy.WRAP && angle === 0) {
-            const { actualWidth, actualHeight } = documentSkeleton.getActualSize();
-            // The skeleton obtains the original volume, which needs to be multiplied by the magnification factor.
-            return {
-                actualWidth: actualWidth * scaleX,
-                actualHeight: actualHeight * scaleY,
-            };
-        }
-
-        documentDataModel?.updateDocumentDataPageSize((clientWidth - startX - canvasOffset.left) / scaleX);
-        documentSkeleton.calculate();
-
-        const size = documentSkeleton.getActualSize();
-
-        let editorWidth = endX - startX;
-
-        if (editorWidth < size.actualWidth * scaleX + EDITOR_INPUT_SELF_EXTEND_GAP * scaleX) {
-            editorWidth = size.actualWidth * scaleX + EDITOR_INPUT_SELF_EXTEND_GAP * scaleX;
-        }
-
-        // Scaling is handled by the renderer, so the skeleton only accepts the original width and height, which need to be divided by the magnification factor.
-        documentDataModel?.updateDocumentDataPageSize(editorWidth / scaleX);
-
-        /**
-         * Do not rely on cell layout logic, depend on the document's internal alignment logic.
-         */
-        documentDataModel?.updateDocumentRenderConfig({
-            horizontalAlign: HorizontalAlign.UNSPECIFIED,
-            cellValueType: undefined,
-        });
-
-        return {
-            actualWidth: editorWidth,
-            actualHeight: size.actualHeight * scaleY,
-        };
-    }
-
-    /**
-     * Mainly used to calculate the volume of scenes and objects,
-     * determine whether a scrollbar appears,
-     * and calculate the editor's boundaries relative to the browser.
-     */
-
-    private _editAreaProcessing(
-        editorWidth: number,
-        editorHeight: number,
-        actualRangeWithCoord: IPosition,
-        canvasOffset: ICanvasOffset,
-        fill: Nullable<string>,
-        scaleX: number = 1,
-        scaleY: number = 1
-    ) {
-        const editorObject = this._getEditorObject();
-
-        if (editorObject == null) {
-            return;
-        }
-
-        let { startX, startY } = actualRangeWithCoord;
-
-        const { document: documentComponent, scene, engine: docEngine } = editorObject;
-
-        const viewportMain = scene.getViewport(DOC_VIEWPORT_KEY.VIEW_MAIN);
-
-        const clientHeight =
-            document.body.clientHeight -
-            startY -
-            Number.parseFloat(styles.sheetFooterBarHeight) -
-            canvasOffset.top -
-            EDITOR_BORDER_SIZE * 2;
-
-        const clientWidth = document.body.clientWidth - startX - canvasOffset.left;
-
-        let physicHeight = editorHeight;
-
-        let scrollBar = viewportMain?.getScrollBar() as Nullable<ScrollBar>;
-
-        if (physicHeight > clientHeight) {
-            physicHeight = clientHeight;
-
-            if (scrollBar == null) {
-                viewportMain && new ScrollBar(viewportMain, { enableHorizontal: false, barSize: 8 });
-            } else {
-                viewportMain?.resetCanvasSizeAndUpdateScroll();
-            }
-        } else {
-            scrollBar = null;
-            viewportMain?.getScrollBar()?.dispose();
-        }
-
-        editorWidth += scrollBar?.barSize || 0;
-
-        if (editorWidth > clientWidth) {
-            editorWidth = clientWidth;
-        }
-
-        startX -= FIX_ONE_PIXEL_BLUR_OFFSET;
-
-        startY -= FIX_ONE_PIXEL_BLUR_OFFSET;
-
-        // physicHeight = editorHeight;
-
-        this._addBackground(scene, editorWidth / scaleX, editorHeight / scaleY, fill);
-
-        const { scaleX: precisionScaleX, scaleY: precisionScaleY } = scene.getPrecisionScale();
-
-        scene.transformByState({
-            width: editorWidth / scaleX,
-            height: editorHeight / scaleY,
-            scaleX,
-            scaleY,
-        });
-
-        documentComponent.resize(editorWidth / scaleX, editorHeight / scaleY);
-
-        /**
-         * sometimes requestIdleCallback is invalid, so use setTimeout to ensure the successful execution of the resizeBySize method.
-         * resize canvas
-         * When modifying the selection area for a formula, it is necessary to add a setTimeout to ensure successful updating.
-         */
-        setTimeout(() => {
-            docEngine.resizeBySize(
-                fixLineWidthByScale(editorWidth, precisionScaleX),
-                fixLineWidthByScale(physicHeight, precisionScaleY)
-            );
-        }, 0);
-
-        // const canvasElement = this._context.engine.getCanvasElement();
-        // const canvasBoundingRect = canvasElement.getBoundingClientRect();
-        // startX += canvasBoundingRect.left;
-        // startY += canvasBoundingRect.top;
-
-        // Update cell editor container position and size.
-        this._cellEditorManagerService.setState({
-            startX,
-            startY,
-            endX: editorWidth + startX,
-            endY: physicHeight + startY,
-            show: true,
-        });
-    }
-
-    /**
-     * Since the document does not support cell background color, an additional rect needs to be added.
-     */
-    private _addBackground(scene: Scene, editorWidth: number, editorHeight: number, fill?: Nullable<string>) {
-        const fillRectKey = '_backgroundRectHelperColor_';
-        const rect = scene.getObject(fillRectKey) as Rect;
-
-        if (rect == null && fill == null) {
-            return;
-        }
-
-        if (rect == null) {
-            scene.addObjects(
-                [
-                    new Rect(fillRectKey, {
-                        width: editorWidth,
-                        height: editorHeight,
-                        fill,
-                        evented: false,
-                    }),
-                ],
-                DOCS_COMPONENT_MAIN_LAYER_INDEX
-            );
-        } else if (fill == null) {
-            rect.dispose();
-        } else {
-            rect.setProps({
-                fill,
-            });
-
-            rect.transformByState({
-                width: editorWidth,
-                height: editorHeight,
-            });
-        }
-    }
-
-    // You can double-click on the cell or input content by keyboard to put the cell into the edit state.
-
-    private _handleEditorVisible(param: IEditorBridgeServiceVisibleParam) {
-        const { eventType, keycode } = param;
-
-        // Change `CursorChange` to changed status, when formula bar clicked.
-        this._cursorChange =
-            eventType === DeviceInputEventType.PointerDown
-                ? CursorChange.CursorChange
-                : CursorChange.StartEditor;
-
-        const editCellState = this._editorBridgeService.getEditCellState();
-        if (editCellState == null) {
-            return;
-        }
-
-        const {
-            position,
-            documentLayoutObject,
-            canvasOffset,
-            scaleX,
-            scaleY,
-            editorUnitId,
-            unitId,
-            sheetId,
-            isInArrayFormulaRange = false,
-        } = editCellState;
-
-        const editorObject = this._getEditorObject();
-
-        if (editorObject == null) {
-            return;
-        }
-
-        this._setOpenForCurrent(unitId, sheetId);
-
-        const { document, scene } = editorObject;
-
-        this._contextService.setContextValue(EDITOR_ACTIVATED, true);
-
-        const { documentModel: documentDataModel } = documentLayoutObject;
-        const skeleton = this._getEditorSkeleton(editorUnitId);
-        if (!skeleton || !documentDataModel) {
-            return;
-        }
-
-        this._fitTextSize(position, canvasOffset, skeleton, documentLayoutObject, scaleX, scaleY);
-        // move selection
-        if (
-            eventType === DeviceInputEventType.Keyboard ||
-            (eventType === DeviceInputEventType.Dblclick && isInArrayFormulaRange)
-        ) {
-            const snapshot = Tools.deepClone(documentDataModel.getSnapshot());
-            const documentViewModel = this._getEditorViewModel(editorUnitId);
-
-            if (documentViewModel == null) {
-                return;
-            }
-
-            this._resetBodyStyle(snapshot.body!, !!isInArrayFormulaRange);
-
-            documentDataModel.reset(snapshot);
-            documentViewModel.reset(documentDataModel);
-
-            document.makeDirty();
-
-            // @JOCS, Why calculate here?
-            if (keycode === KeyCode.BACKSPACE || eventType === DeviceInputEventType.Dblclick) {
-                skeleton.calculate();
-                this._editorBridgeService.changeEditorDirty(true);
-            }
-
-            this._textSelectionManagerService.replaceTextRanges([
-                {
+            this._textSelectionManagerService.replaceDocRanges(
+                [{
                     startOffset: 0,
                     endOffset: 0,
-                },
-            ]);
-        } else if (eventType === DeviceInputEventType.Dblclick) {
-            // TODO: @JOCS, Get the position close to the cursor after clicking on the cell.
-            const cursor = documentDataModel.getBody()!.dataStream.length - 2 || 0;
-
-            scene.getViewport(DOC_VIEWPORT_KEY.VIEW_MAIN)?.scrollToViewportPos({
-                viewportScrollX: Number.POSITIVE_INFINITY,
-            });
-
-            this._textSelectionManagerService.replaceTextRanges([
+                }],
                 {
-                    startOffset: cursor,
-                    endOffset: cursor,
-                },
-            ]);
-        }
+                    unitId: DOCS_NORMAL_EDITOR_UNIT_ID_KEY,
+                    subUnitId: DOCS_NORMAL_EDITOR_UNIT_ID_KEY,
+                }
+            );
 
-        this._renderManagerService.getRenderById(unitId)?.scene.resetCursor();
-    }
-
-    private _resetBodyStyle(body: IDocumentBody, removeStyle = false) {
-        body.dataStream = DEFAULT_EMPTY_DOCUMENT_VALUE;
-
-        if (body.textRuns != null) {
-            if (body.textRuns.length === 1 && !removeStyle) {
-                body.textRuns[0].st = 0;
-                body.textRuns[0].ed = 1;
-            } else {
-                body.textRuns = undefined;
-            }
-        }
-
-        if (body.paragraphs != null) {
-            if (body.paragraphs.length === 1) {
-                body.paragraphs[0].startIndex = 0;
-            } else {
-                body.paragraphs = [
-                    {
-                        startIndex: 0,
-                    },
-                ];
-            }
-        }
-
-        if (body.sectionBreaks != null) {
-            body.sectionBreaks = undefined;
-        }
-
-        if (body.tables != null) {
-            body.tables = undefined;
-        }
-
-        if (body.customRanges != null) {
-            body.customRanges = undefined;
-        }
-
-        if (body.customBlocks != null) {
-            body.customBlocks = undefined;
-        }
-    }
-
-    /**
-     * Should activate the editor when the user inputs text.
-     * @param d DisposableCollection
-     */
-    private _initialKeyboardListener(d: DisposableCollection) {
-        d.add(this._textSelectionRenderManager.onInputBefore$.subscribe((config) => {
-            const isFocusFormulaEditor = this._contextService.getContextValue(FOCUSING_FORMULA_EDITOR);
-            const isFocusSheets = this._contextService.getContextValue(FOCUSING_SHEET);
-
-            // TODO@Jocs: should get editor instead of current doc
-            const unitId = this._instanceSrv.getCurrentUniverDocInstance()?.getUnitId();
-            if (unitId && isFocusSheets && !isFocusFormulaEditor && this._editorService.isSheetEditor(unitId)) {
-                this._showEditorByKeyboard(config);
+            const cellSelectionRenderManager = this._renderManagerService.getRenderById(DOCS_NORMAL_EDITOR_UNIT_ID_KEY)?.with(DocSelectionRenderService);
+            const formulaSelectionRenderManager = this._renderManagerService.getRenderById(DOCS_FORMULA_BAR_EDITOR_UNIT_ID_KEY)?.with(DocSelectionRenderService);
+            if (cellSelectionRenderManager?.canFocusing || formulaSelectionRenderManager?.canFocusing) {
+                this._univerInstanceService.setCurrentUnitForType(DOCS_NORMAL_EDITOR_UNIT_ID_KEY);
+                cellSelectionRenderManager?.activate(
+                    HIDDEN_EDITOR_POSITION,
+                    HIDDEN_EDITOR_POSITION,
+                    true
+                );
             }
         }));
-    }
-
-    private _showEditorByKeyboard(config: Nullable<IEditorInputConfig>) {
-        if (config == null) {
-            return;
-        }
-
-        const event = config.event as KeyboardEvent;
-
-        this._commandService.executeCommand(SetCellEditVisibleOperation.id, {
-            visible: true,
-            eventType: DeviceInputEventType.Keyboard,
-            keycode: event.which,
-            unitId: this._context.unitId,
-        });
     }
 
     /**
      * Listen to document edits to refresh the size of the sheet editor, not for normal editor.
      */
     private _commandExecutedListener(d: DisposableCollection) {
-        const updateCommandList = [RichTextEditingMutation.id, SetEditorResizeOperation.id];
-
         d.add(this._commandService.onCommandExecuted((command: ICommandInfo) => {
-            if (updateCommandList.includes(command.id)) {
+            if (command.id === RichTextEditingMutation.id) {
                 const params = command.params as IRichTextEditingMutationParams;
                 const { unitId: commandUnitId } = params;
 
-                if (!this._editorService.isSheetEditor(commandUnitId)) {
-                    return;
-                }
-
-                const editorId = this._editorBridgeService.getCurrentEditorId();
-                if (editorId == null) {
-                    return;
-                }
-
-                const skeleton = this._getEditorSkeleton(editorId);
-                if (skeleton == null) {
+                // Only when the sheet it attached to is focused. Maybe we should change it to the render unit sys.
+                if (!this._isCurrentSheetFocused() || isRangeSelector(commandUnitId)) {
                     return;
                 }
 
                 this._editorBridgeService.changeEditorDirty(true);
 
-                const param = this._editorBridgeService.getEditCellState();
-                if (param == null) {
+                if (!this._editorBridgeService.isVisible().visible) {
                     return;
                 }
 
-                const { position, documentLayoutObject, canvasOffset, scaleX, scaleY } = param;
-
-                this._fitTextSize(position, canvasOffset, skeleton, documentLayoutObject, scaleX, scaleY);
-            }
-        }));
-
-        // Use fix https://github.com/dream-num/univer/issues/1231.
-        d.add(this._commandService.onCommandExecuted((command: ICommandInfo) => {
-            if (command.id === ClearSelectionFormatCommand.id) {
-                this._editorBridgeService.refreshEditCellState();
+                if (commandUnitId === DOCS_NORMAL_EDITOR_UNIT_ID_KEY) {
+                    this._sheetCellEditorResizeService.fitTextSize();
+                }
             }
         }));
 
@@ -761,7 +359,7 @@ export class EditingRenderController extends Disposable implements IRenderModule
                  * but move the cursor within the editor instead.
                  */
                 if (keycode != null &&
-                    (this._cursorChange === CursorChange.CursorChange || this._contextService.getContextValue(FOCUSING_FORMULA_EDITOR))
+                    (this._cursorChange === CursorChange.CursorChange || this._contextService.getContextValue(FOCUSING_FX_BAR_EDITOR))
                 ) {
                     this._moveInEditor(keycode, isShift);
                     return;
@@ -769,7 +367,7 @@ export class EditingRenderController extends Disposable implements IRenderModule
 
                 // TODO@Jocs: After we merging editor related controllers, this seems verbose.
                 // We can directly call SetRangeValues here.
-                this._editorBridgeService.changeVisible(params);
+                this._commandService.syncExecuteCommand(SetCellEditVisibleOperation.id, params);
             }
 
             if (command.id === SetCellEditVisibleWithF2Operation.id) {
@@ -778,96 +376,147 @@ export class EditingRenderController extends Disposable implements IRenderModule
         }));
     }
 
-    private _setOpenForCurrent(unitId: Nullable<string>, sheetId: Nullable<string>) {
-        const sheetEditors = this._editorService.getAllEditor();
-        for (const [_, sheetEditor] of sheetEditors) {
-            if (!sheetEditor.isSheetEditor()) {
-                continue;
-            }
+    // You can double-click on the cell or input content by keyboard to put the cell into the edit state.
+    // eslint-disable-next-line complexity
+    private _handleEditorVisible(param: IEditorBridgeServiceVisibleParam) {
+        const { eventType, keycode } = param;
+        // Change `CursorChange` to changed status, when formula bar clicked.
+        this._cursorChange =
+            (eventType === DeviceInputEventType.PointerDown || eventType === DeviceInputEventType.Dblclick)
+                ? CursorChange.CursorChange
+                : CursorChange.StartEditor;
 
-            sheetEditor.setOpenForSheetUnitId(unitId);
-            sheetEditor.setOpenForSheetSubUnitId(sheetId);
-        }
-    }
-
-    private _getEditorObject() {
-        return getEditorObject(this._editorBridgeService.getCurrentEditorId(), this._renderManagerService);
-    }
-
-    private async _handleEditorInvisible(param: IEditorBridgeServiceVisibleParam) {
-        const { keycode } = param;
-
-        this._setOpenForCurrent(null, null);
-
-        this._cursorChange = CursorChange.InitialState;
-
-        this._exitInput(param);
-
-        const editCellState = this._editorBridgeService.getEditCellState();
+        const editCellState = this._editorBridgeService.getEditLocation();
         if (editCellState == null) {
             return;
         }
 
-        const { unitId, sheetId, row, column, documentLayoutObject } = editCellState;
+        this._commandService.syncExecuteCommand(ScrollToRangeOperation.id, {
+            range: {
+                startRow: editCellState.row,
+                startColumn: editCellState.column,
+                endRow: editCellState.row,
+                endColumn: editCellState.column,
+            },
+        });
+
+        this._editorBridgeService.refreshEditCellPosition(false);
+        const { unitId, isInArrayFormulaRange = false } = editCellState;
+        const editorObject = this._getEditorObject();
+
+        if (editorObject == null) {
+            return;
+        }
+
+        const { document, scene } = editorObject;
+
+        this._contextService.setContextValue(EDITOR_ACTIVATED, true);
+
+        const documentDataModel = this._getDocumentDataModel();
+        const skeleton = this._getEditorSkeleton(DOCS_NORMAL_EDITOR_UNIT_ID_KEY);
+        if (!skeleton || !documentDataModel) {
+            return;
+        }
+
+        this._sheetCellEditorResizeService.fitTextSize(() => {
+            const viewMain = scene.getViewport(DOC_VIEWPORT_KEY.VIEW_MAIN);
+            viewMain?.scrollToViewportPos({
+                viewportScrollX: Number.POSITIVE_INFINITY,
+                viewportScrollY: Number.POSITIVE_INFINITY,
+            });
+        });
+
+        // f2, continue to edit
+        if (eventType === DeviceInputEventType.Keyboard && keycode === KeyCode.F2) {
+            document.makeDirty();
+            this._textSelectionManagerService.replaceDocRanges([
+                {
+                    startOffset: 0,
+                    endOffset: 0,
+                },
+            ]);
+            const endOffset = (documentDataModel.getBody()?.dataStream.length ?? 2) - 2;
+            this._textSelectionManagerService.replaceDocRanges(
+                [{
+                    startOffset: endOffset,
+                    endOffset,
+                }],
+                {
+                    unitId: DOCS_NORMAL_EDITOR_UNIT_ID_KEY,
+                    subUnitId: DOCS_NORMAL_EDITOR_UNIT_ID_KEY,
+                }
+            );
+        } else if (
+            // clear and edit
+            eventType === DeviceInputEventType.Keyboard ||
+            (eventType === DeviceInputEventType.Dblclick && isInArrayFormulaRange)
+        ) {
+            this._emptyDocumentDataModel(documentDataModel.getSnapshot().documentStyle, !!isInArrayFormulaRange);
+            document.makeDirty();
+
+            // @JOCS, Why calculate here?
+            if (keycode === KeyCode.BACKSPACE || eventType === DeviceInputEventType.Dblclick) {
+                skeleton.calculate();
+                this._editorBridgeService.changeEditorDirty(true);
+            }
+
+            this._textSelectionManagerService.replaceDocRanges(
+                [{
+                    startOffset: 0,
+                    endOffset: 0,
+                }],
+                {
+                    unitId: DOCS_NORMAL_EDITOR_UNIT_ID_KEY,
+                    subUnitId: DOCS_NORMAL_EDITOR_UNIT_ID_KEY,
+                }
+            );
+        } else if (eventType === DeviceInputEventType.Dblclick) {
+            if (this._contextService.getContextValue(FOCUSING_EDITOR_INPUT_FORMULA)) {
+                return;
+            }
+
+            const cursor = documentDataModel.getBody()!.dataStream.length - 2 || 0;
+            this._textSelectionManagerService.replaceDocRanges([
+                {
+                    startOffset: cursor,
+                    endOffset: cursor,
+                },
+            ]);
+        }
+
+        this._renderManagerService.getRenderById(unitId)?.scene.resetCursor();
+    }
+
+    private async _handleEditorInvisible(param: IEditorBridgeServiceVisibleParam) {
+        const editCellState = this._editorBridgeService.getEditCellState();
+        const documentDataModel = this._univerInstanceService.getUnit<DocumentDataModel>(DOCS_NORMAL_EDITOR_UNIT_ID_KEY);
+        const snapshot = Tools.deepClone(documentDataModel?.getSnapshot());
+        let { keycode } = param;
+        this._cursorChange = CursorChange.InitialState;
+
+        this._exitInput(param);
+
+        if (editCellState == null) {
+            return;
+        }
 
         // If neither the formula bar editor nor the cell editor has been edited,
         // it is considered that the content has not changed and returns directly.
         const editorIsDirty = this._editorBridgeService.getEditorDirty();
         if (editorIsDirty === false) {
-            this._moveCursor(keycode);
-            return;
+            keycode = KeyCode.ESC;
         }
 
         const workbook = this._context.unit;
         const worksheet = workbook.getActiveSheet();
         const workbookId = this._context.unitId;
         const worksheetId = worksheet.getSheetId();
-        // Reselect the current selections, when exist cell editor by press ESC.I
-        if (keycode === KeyCode.ESC) {
-            const selections = this._workbookSelections.getCurrentSelections();
-            if (selections) {
-                this._commandService.syncExecuteCommand(SetSelectionsOperation.id, {
-                    unitId: this._context.unit.getUnitId(),
-                    subUnitId: worksheetId,
 
-                    // must be a new selectionData
-                    // in selection-manager.service.ts@setSelections
-                    // this._ensureWorkbookSelection(unitIdOrSelections).setSelections
-                    // would clear selection Data on selecitonManagerInstance.
-                    selections: [...selections],
-                });
-            }
-
-            return;
-        }
-
-        const cellData: Nullable<ICellData> = getCellDataByInput(
-            worksheet.getCellRaw(row, column) || {},
-            documentLayoutObject,
-            this._lexerTreeBuilder,
-            (model) => this._resourceLoaderService.saveDoc(model),
-            this._localService,
-            this._functionService
-        );
-
-        if (!cellData) {
-            this._moveCursor(keycode);
-            return;
-        }
-
-        const context = {
-            subUnitId: sheetId,
-            unitId,
-            workbook: workbook!,
-            worksheet,
-            row,
-            col: column,
-        };
-
+        const { unitId, sheetId } = editCellState;
         /**
          * When closing the editor, switch to the current tab of the editor.
          */
-        if (workbookId === unitId && sheetId !== worksheetId && this._editorBridgeService.isForceKeepVisible()) {
+        if (workbookId === unitId && sheetId !== worksheetId) {
             // SetWorksheetActivateCommand handler uses Promise
             await this._commandService.executeCommand(SetWorksheetActivateCommand.id, {
                 subUnitId: sheetId,
@@ -875,14 +524,78 @@ export class EditingRenderController extends Disposable implements IRenderModule
             });
         }
 
-        const cell = this._editorBridgeService.interceptor.fetchThroughInterceptors(
-            this._editorBridgeService.interceptor.getInterceptPoints().AFTER_CELL_EDIT
-        )(cellData, context);
+        // Reselect the current selections, when exist cell editor by press ESC.I
+        if (keycode === KeyCode.ESC) {
+            if (this._editorBridgeService.isForceKeepVisible()) {
+                this._editorBridgeService.disableForceKeepVisible();
+            }
+            const selections = this._workbookSelections.getCurrentSelections();
+            if (selections) {
+                this._contextService.setContextValue(REF_SELECTIONS_ENABLED, false);
+                this._commandService.syncExecuteCommand(SetSelectionsOperation.id, {
+                    unitId: this._context.unit.getUnitId(),
+                    subUnitId: sheetId,
+                    selections,
+                });
+            }
 
-        const finalCell = await this._editorBridgeService.interceptor.fetchThroughInterceptors(
-            this._editorBridgeService.interceptor.getInterceptPoints().AFTER_CELL_EDIT_ASYNC
-        )(Promise.resolve(cell), context);
+            return;
+        }
 
+        if (snapshot) {
+            await this._submitCellData(snapshot);
+        }
+
+        // moveCursor need to put behind of SetRangeValuesCommand, fix https://github.com/dream-num/univer/issues/1155
+        this._moveCursor(keycode);
+    }
+
+    private _getEditorObject() {
+        return getEditorObject(this._editorBridgeService.getCurrentEditorId(), this._renderManagerService);
+    }
+
+    submitCellData(documentDataModel: DocumentDataModel) {
+        return this._submitCellData(documentDataModel.getSnapshot());
+    }
+
+    private async _submitCellData(snapshot: IDocumentData) {
+        const editCellState = this._editorBridgeService.getEditCellState();
+        if (editCellState == null) {
+            return;
+        }
+
+        const { unitId, sheetId, row, column } = editCellState;
+
+        const workbook = this._context.unit;
+        let worksheet = workbook.getActiveSheet();
+
+        // If the target cell does not exist, there is no need to execute setRangeValue
+        const setRangeValueTargetSheet = workbook.getSheetBySheetId(sheetId);
+        if (!setRangeValueTargetSheet) {
+            return;
+        }
+
+        worksheet = workbook.getActiveSheet();
+
+        // If cross-sheet operation, switch current sheet first, then const cellData
+        // This should moved to after cell editor
+        const cellData: Nullable<ICellData> = getCellDataByInput(
+            { ...(worksheet.getCellRaw(row, column) || {}) },
+            snapshot,
+            this._lexerTreeBuilder,
+            this._localService,
+            this._functionService,
+            workbook.getStyles()
+        );
+
+        if (!cellData) {
+            return;
+        }
+
+        const finalCell = await this._sheetInterceptorService.onWriteCell(workbook, worksheet, row, column, cellData);
+        if (finalCell === worksheet.getCellRaw(row, column)) {
+            return;
+        }
         this._commandService.executeCommand(SetRangeValuesCommand.id, {
             subUnitId: sheetId,
             unitId,
@@ -894,19 +607,20 @@ export class EditingRenderController extends Disposable implements IRenderModule
             },
             value: finalCell,
         });
-
-        // moveCursor need to put behind of SetRangeValuesCommand, fix https://github.com/dream-num/univer/issues/1155
-        this._moveCursor(keycode);
     }
 
     private _exitInput(param: IEditorBridgeServiceVisibleParam) {
         this._contextService.setContextValue(FOCUSING_EDITOR_INPUT_FORMULA, false);
         this._contextService.setContextValue(EDITOR_ACTIVATED, false);
         this._contextService.setContextValue(FOCUSING_EDITOR_BUT_HIDDEN, false);
-        this._contextService.setContextValue(FOCUSING_FORMULA_EDITOR, false);
-
+        this._contextService.setContextValue(FOCUSING_FX_BAR_EDITOR, false);
         this._cellEditorManagerService.setState({
             show: param.visible,
+        });
+        const editorObject = this._getEditorObject();
+        editorObject?.scene.getViewport(DOC_VIEWPORT_KEY.VIEW_MAIN)?.scrollToViewportPos({
+            viewportScrollX: 0,
+            viewportScrollY: 0,
         });
         const editorUnitId = this._editorBridgeService.getCurrentEditorId();
         if (editorUnitId == null || !this._editorService.isSheetEditor(editorUnitId)) {
@@ -961,7 +675,8 @@ export class EditingRenderController extends Disposable implements IRenderModule
      * The logic here predicts the user's first cursor movement behavior based on this rule
      */
     private _cursorStateListener(d: DisposableCollection) {
-        const editorObject = this._getEditorObject()!;
+        const editorObject = this._getEditorObject();
+        if (!editorObject?.document) return;
         const { document: documentComponent } = editorObject;
 
         d.add(toDisposable(documentComponent.onPointerDown$.subscribeEvent(() => {
@@ -992,30 +707,64 @@ export class EditingRenderController extends Disposable implements IRenderModule
             });
         }
     }
+
+    private _getDocumentDataModel() {
+        return this._univerInstanceService.getUnit<DocumentDataModel>(DOCS_NORMAL_EDITOR_UNIT_ID_KEY, UniverInstanceType.UNIVER_DOC);
+    }
+
+    // WTF: this is should not exist at all. It is because all editor instances reuse the singleton
+    // "DocSelectionManagerService" and other modules. Which will be refactored soon in August, 2024.
+    private _isCurrentSheetFocused(): boolean {
+        return this._univerInstanceService.getFocusedUnit()?.getUnitId() === this._context.unitId;
+    }
+
+    private _getEditorSkeleton(editorId: string) {
+        return this._renderManagerService.getRenderById(editorId)?.with(DocSkeletonManagerService).getSkeleton();
+    }
+
+    private _getEditorViewModel(editorId: string) {
+        return this._renderManagerService.getRenderById(editorId)?.with(DocSkeletonManagerService).getViewModel();
+    }
+
+    private _emptyDocumentDataModel(documentStyle: IDocumentStyle, removeStyle: boolean) {
+        const empty = (documentDataModel: DocumentDataModel, resetDocumentStyle?: boolean) => {
+            const snapshot = Tools.deepClone(documentDataModel.getSnapshot());
+            const documentViewModel = this._getEditorViewModel(documentDataModel.getUnitId());
+            if (documentViewModel == null) {
+                return;
+            }
+
+            emptyBody(snapshot.body!, removeStyle);
+            if (resetDocumentStyle) {
+                snapshot.documentStyle = documentStyle;
+            }
+            snapshot.drawings = {};
+            snapshot.drawingsOrder = [];
+            documentDataModel.reset(snapshot);
+            documentViewModel.reset(documentDataModel);
+        };
+
+        const documentDataModel = this._getDocumentDataModel();
+        documentDataModel && empty(documentDataModel, true);
+
+        const formulaDocument = this._univerInstanceService.getUnit<DocumentDataModel>(DOCS_FORMULA_BAR_EDITOR_UNIT_ID_KEY, UniverInstanceType.UNIVER_DOC);
+        formulaDocument && empty(formulaDocument);
+    }
 }
 
+// eslint-disable-next-line complexity
 export function getCellDataByInput(
     cellData: ICellData,
-    documentLayoutObject: IDocumentLayoutObject,
+    snapshot: Nullable<IDocumentData>,
     lexerTreeBuilder: LexerTreeBuilder,
-    getSnapshot: (data: DocumentDataModel) => IDocumentData,
     localeService: LocaleService,
-    functionService: IFunctionService
+    functionService: IFunctionService,
+    styles: Styles
 ) {
-    cellData = Tools.deepClone(cellData);
-
-    const { documentModel } = documentLayoutObject;
-    if (documentModel == null) {
+    if (snapshot?.body == null) {
         return null;
     }
-
-    const snapshot = getSnapshot(documentModel);
-
     const { body } = snapshot;
-    if (body == null) {
-        return null;
-    }
-
     cellData.t = undefined;
 
     const data = body.dataStream;
@@ -1023,11 +772,35 @@ export function getCellDataByInput(
     let newDataStream = lastString === DEFAULT_EMPTY_DOCUMENT_VALUE ? data.substring(0, data.length - 2) : data;
 
     const currentLocale = localeService.getCurrentLocale();
-    if (isCJKLocale(currentLocale)) {
-        newDataStream = normalizeString(newDataStream, lexerTreeBuilder, functionService);
-    }
+    newDataStream = normalizeString(newDataStream, lexerTreeBuilder, currentLocale, functionService);
 
-    if (isFormulaString(newDataStream)) {
+    if (snapshot.drawingsOrder?.length) {
+        cellData.v = '';
+        cellData.f = null;
+        cellData.si = null;
+        cellData.p = snapshot;
+        cellData.t = CellValueType.STRING;
+    }
+    // Text format ('@' or '@@@') has the highest priority
+    else if (cellData.s && isTextFormat(styles?.get(cellData.s)?.n?.pattern)) {
+        // If the style is text format ('@'or  '@@@'), the data should be set as a string.
+        cellData.v = newDataStream;
+        cellData.f = null;
+        cellData.si = null;
+        cellData.p = null;
+        cellData.t = CellValueType.STRING;
+
+        // Text format supports rich text
+        if (isRichText(body) && body.dataStream !== '\r\n') {
+            cellData.p = snapshot;
+        }
+
+        // If the style length in textRun.ts is equal to the content length, it should be set as the cell style
+        const style = getCellStyleBySnapshot(snapshot);
+        if (style) {
+            cellData.s = style;
+        }
+    } else if (isFormulaString(newDataStream)) {
         if (cellData.f === newDataStream) {
             return null;
         }
@@ -1062,26 +835,98 @@ export function getCellDataByInput(
         }
     } else {
         // If the data is empty, the data is set to null.
-        if ((newDataStream === cellData.v || (newDataStream === '' && cellData.v == null)) && cellData.p == null) {
+        if (newDataStream === '' && cellData.v == null && cellData.p == null) {
             return null;
         }
         cellData.v = newDataStream;
         cellData.f = null;
         cellData.si = null;
         cellData.p = null;
+        // If the style length in textRun.ts is equal to the content length, it should be set as the cell style
+        const style = getCellStyleBySnapshot(snapshot);
+        if (style) {
+            cellData.s = style;
+        }
     }
 
     return cellData;
 }
 
-function isRichText(body: IDocumentBody) {
+export function isRichText(body: IDocumentBody): boolean {
     const { textRuns = [], paragraphs = [], customRanges, customBlocks = [] } = body;
 
+    const bodyNoLineBreak = body.dataStream.replace(/(\r\n)+$/, '');
+
+    // Some styles are unique to rich text. When this style appears, we consider the value to be rich text.
+    const richTextStyle = ['va'];
+
     return (
-        textRuns.some((textRun) => textRun.ts && !Tools.isEmptyObject(textRun.ts)) ||
+        // This is because after editing, an inexplicable second paragraph style will appear \r\n
+        textRuns.filter((ts) => ts.st < bodyNoLineBreak.length).some((textRun) => {
+            const hasRichTextStyle = Boolean(textRun.ts && Object.keys(textRun.ts).some((property) => {
+                return richTextStyle.includes(property);
+            }));
+            return hasRichTextStyle || (Object.keys(textRun.ts ?? {}).length && (textRun.ed - textRun.st < bodyNoLineBreak.length));
+        }) ||
         paragraphs.some((paragraph) => paragraph.bullet) ||
         paragraphs.length >= 2 ||
         Boolean(customRanges?.length) ||
         customBlocks.length > 0
     );
+}
+
+export function getCellStyleBySnapshot(snapshot: IDocumentData): Nullable<IStyleData> {
+    const { body } = snapshot;
+    if (!body) return null;
+    const { textRuns = [] } = body;
+
+    let style = {};
+    const bodyNoLineBreak = body.dataStream.replace('\r\n', '');
+    textRuns.forEach((textRun) => {
+        const { st, ed, ts } = textRun;
+        if (ed - st >= bodyNoLineBreak.length) {
+            style = { ...style, ...ts };
+        }
+    });
+    if (Object.keys(style).length) {
+        return style;
+    }
+    return null;
+}
+
+function emptyBody(body: IDocumentBody, removeStyle = false) {
+    body.dataStream = DEFAULT_EMPTY_DOCUMENT_VALUE;
+
+    if (body.textRuns != null) {
+        if (body.textRuns.length === 1 && !removeStyle) {
+            body.textRuns[0].st = 0;
+            body.textRuns[0].ed = 1;
+        } else {
+            body.textRuns = undefined;
+        }
+    }
+
+    if (body.paragraphs != null) {
+        body.paragraphs = [
+            {
+                startIndex: 0,
+            },
+        ];
+    }
+
+    if (body.sectionBreaks != null) {
+        body.sectionBreaks = undefined;
+    }
+
+    if (body.tables != null) {
+        body.tables = undefined;
+    }
+
+    if (body.customRanges != null) {
+        body.customRanges = undefined;
+    }
+
+    if (body.customBlocks != null) {
+        body.customBlocks = undefined;
+    }
 }

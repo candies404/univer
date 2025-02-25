@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,22 +15,19 @@
  */
 
 import type { ICellDataForSheetInterceptor, IRange, Nullable, Workbook } from '@univerjs/core';
-import { getSheetCommandTarget, RangeProtectionRuleModel, SheetsSelectionsService, WorkbookEditablePermission, WorksheetEditPermission, WorksheetSetColumnStylePermission, WorksheetSetRowStylePermission } from '@univerjs/sheets';
-import { DisposableCollection, Inject, IPermissionService, IUniverInstanceService, LifecycleStages, OnLifecycle, Optional, RANGE_TYPE, Rectangle, RxDisposable, UniverInstanceType } from '@univerjs/core';
 import type { IRenderContext, IRenderModule, Scene, SpreadsheetSkeleton } from '@univerjs/engine-render';
-
+import { DisposableCollection, Inject, IPermissionService, IUniverInstanceService, Optional, RANGE_TYPE, Rectangle, RxDisposable, UniverInstanceType } from '@univerjs/core';
 import { UnitAction } from '@univerjs/protocol';
+
+import { getSheetCommandTarget, RangeProtectionCache, RangeProtectionRuleModel, SheetsSelectionsService, WorkbookEditablePermission, WorksheetEditPermission, WorksheetSetCellStylePermission, WorksheetSetCellValuePermission, WorksheetSetColumnStylePermission, WorksheetSetRowStylePermission } from '@univerjs/sheets';
+import { ISheetSelectionRenderService } from '../../services/selection/base-selection-render.service';
+import { HeaderFreezeRenderController } from '../render-controllers/freeze.render-controller';
 import { HeaderMoveRenderController } from '../render-controllers/header-move.render-controller';
 import { HeaderResizeRenderController } from '../render-controllers/header-resize.render-controller';
-import { HeaderFreezeRenderController } from '../render-controllers/freeze.render-controller';
 import { getTransformCoord } from '../utils/component-tools';
-import { ISheetSelectionRenderService } from '../../services/selection/base-selection-render.service';
 
 type ICellPermission = Record<UnitAction, boolean> & { ruleId?: string; ranges?: IRange[] };
 
-export const SHEET_PERMISSION_PASTE_PLUGIN = 'SHEET_PERMISSION_PASTE_PLUGIN';
-
-@OnLifecycle(LifecycleStages.Steady, SheetPermissionInterceptorCanvasRenderController)
 export class SheetPermissionInterceptorCanvasRenderController extends RxDisposable implements IRenderModule {
     disposableCollection = new DisposableCollection();
 
@@ -43,6 +40,7 @@ export class SheetPermissionInterceptorCanvasRenderController extends RxDisposab
         @Inject(HeaderMoveRenderController) private _headerMoveRenderController: HeaderMoveRenderController,
         @ISheetSelectionRenderService private _selectionRenderService: ISheetSelectionRenderService,
         @Inject(HeaderFreezeRenderController) private _headerFreezeRenderController: HeaderFreezeRenderController,
+        @Inject(RangeProtectionCache) private _rangeProtectionCache: RangeProtectionCache,
         @Optional(HeaderResizeRenderController) private _headerResizeRenderController?: HeaderResizeRenderController
     ) {
         super();
@@ -50,18 +48,18 @@ export class SheetPermissionInterceptorCanvasRenderController extends RxDisposab
         this._initHeaderResizePermissionInterceptor();
         this._initRangeFillPermissionInterceptor();
         this._initRangeMovePermissionInterceptor();
-        this._initFreezePermissionInterceptor();
     }
 
     private _initHeaderMovePermissionInterceptor() {
+        const headerMoveInterceptor = this._headerMoveRenderController.interceptor.getInterceptPoints().HEADER_MOVE_PERMISSION_CHECK;
         this.disposeWithMe(
-            this._headerMoveRenderController.interceptor.intercept(this._headerMoveRenderController.interceptor.getInterceptPoints().HEADER_MOVE_PERMISSION_CHECK, {
+            this._headerMoveRenderController.interceptor.intercept(headerMoveInterceptor, {
                 handler: (defaultValue: Nullable<boolean>, selectionRange: IRange) => {
                     const target = getSheetCommandTarget(this._univerInstanceService);
                     if (!target) {
                         return false;
                     }
-                    const { worksheet, unitId, subUnitId } = target;
+                    const { unitId, subUnitId } = target;
 
                     const worksheetEditPermission = this._permissionService.composePermission([new WorkbookEditablePermission(unitId).id, new WorksheetEditPermission(unitId, subUnitId).id]).every((permission) => permission.value);
                     if (!worksheetEditPermission) {
@@ -72,26 +70,27 @@ export class SheetPermissionInterceptorCanvasRenderController extends RxDisposab
                         return true;
                     }
 
-                    const protectionLapRange = this._rangeProtectionRuleModel.getSubunitRuleList(unitId, subUnitId).reduce((p, c) => {
-                        return [...p, ...c.ranges];
-                    }, [] as IRange[]).filter((range) => {
-                        return Rectangle.intersects(range, selectionRange);
-                    });
+                    if (selectionRange.rangeType !== RANGE_TYPE.ROW && selectionRange.rangeType !== RANGE_TYPE.COLUMN) {
+                        return defaultValue;
+                    }
 
-                    const haveNotPermission = protectionLapRange.some((range) => {
-                        const { startRow, startColumn, endRow, endColumn } = range;
-                        for (let row = startRow; row <= endRow; row++) {
-                            for (let col = startColumn; col <= endColumn; col++) {
-                                const permission = (worksheet.getCell(row, col) as (ICellDataForSheetInterceptor & { selectionProtection: ICellPermission[] }))?.selectionProtection?.[0];
-                                if (permission?.[UnitAction.Edit] === false) {
-                                    return true;
-                                }
+                    if (selectionRange.rangeType === RANGE_TYPE.ROW) {
+                        for (let i = selectionRange.startRow; i <= selectionRange.endRow; i++) {
+                            const rowAllowed = this._rangeProtectionCache.getRowPermissionInfo(unitId, subUnitId, i, [UnitAction.Edit]);
+                            if (rowAllowed === false) {
+                                return false;
                             }
                         }
-                        return false;
-                    });
+                    } else {
+                        for (let i = selectionRange.startColumn; i <= selectionRange.endColumn; i++) {
+                            const colAllowed = this._rangeProtectionCache.getColPermissionInfo(unitId, subUnitId, i, [UnitAction.Edit]);
+                            if (colAllowed === false) {
+                                return false;
+                            }
+                        }
+                    }
 
-                    return !haveNotPermission;
+                    return true;
                 },
             })
         );
@@ -109,12 +108,7 @@ export class SheetPermissionInterceptorCanvasRenderController extends RxDisposab
                     if (!target) {
                         return false;
                     }
-                    const { worksheet, unitId, subUnitId } = target;
-
-                    const worksheetEditPermission = this._permissionService.composePermission([new WorkbookEditablePermission(unitId).id, new WorksheetEditPermission(unitId, subUnitId).id]).every((permission) => permission.value);
-                    if (!worksheetEditPermission) {
-                        return false;
-                    }
+                    const { unitId, subUnitId } = target;
 
                     if (rangeParams.row) {
                         const setRowStylePermission = this._permissionService.getPermissionPoint(new WorksheetSetRowStylePermission(unitId, subUnitId).id)?.value ?? false;
@@ -128,101 +122,7 @@ export class SheetPermissionInterceptorCanvasRenderController extends RxDisposab
                         }
                     }
 
-                    let selectionRange: Nullable<IRange>;
-
-                    if (rangeParams.row !== undefined) {
-                        selectionRange = {
-                            startRow: rangeParams.row,
-                            endRow: rangeParams.row,
-                            startColumn: 0,
-                            endColumn: worksheet.getColumnCount() - 1,
-                        };
-                    } else if (rangeParams.col !== undefined) {
-                        selectionRange = {
-                            startRow: 0,
-                            endRow: worksheet.getRowCount() - 1,
-                            startColumn: rangeParams.col,
-                            endColumn: rangeParams.col,
-                        };
-                    }
-
-                    if (!selectionRange) {
-                        return true;
-                    }
-
-                    const protectionLapRange = this._rangeProtectionRuleModel.getSubunitRuleList(unitId, subUnitId).reduce((p, c) => {
-                        return [...p, ...c.ranges];
-                    }, [] as IRange[]).filter((range) => {
-                        return Rectangle.intersects(range, selectionRange);
-                    });
-
-                    let haveNotPermission = protectionLapRange.some((range) => {
-                        const { startRow, startColumn, endRow, endColumn } = range;
-                        for (let row = startRow; row <= endRow; row++) {
-                            for (let col = startColumn; col <= endColumn; col++) {
-                                const permission = (worksheet.getCell(row, col) as (ICellDataForSheetInterceptor & { selectionProtection: ICellPermission[] }))?.selectionProtection?.[0];
-                                if (permission?.[UnitAction.Edit] === false) {
-                                    return true;
-                                }
-                            }
-                        }
-                        return false;
-                    });
-
-                    if (haveNotPermission) {
-                        return false;
-                    }
-
-                    const resizeType = rangeParams.row !== undefined ? RANGE_TYPE.ROW : RANGE_TYPE.COLUMN;
-                    const selectionRowColRanges: IRange[] = [];
-                    const selectionRanges = this._selectionManagerService.getCurrentSelections();
-                    let isResizeTargetInSelectionRanges = false;
-                    if (resizeType === RANGE_TYPE.ROW) {
-                        selectionRanges?.forEach((selection) => {
-                            if (selection?.range?.rangeType === RANGE_TYPE.ROW || selection?.range?.rangeType === RANGE_TYPE.ALL) {
-                                selectionRowColRanges.push(selection.range);
-                                if (selection.range.startRow <= rangeParams.row! && selection.range.endRow >= rangeParams.row!) {
-                                    isResizeTargetInSelectionRanges = true;
-                                }
-                            }
-                        });
-                    } else {
-                        selectionRanges?.forEach((selection) => {
-                            if (selection?.range?.rangeType === RANGE_TYPE.COLUMN || selection?.range?.rangeType === RANGE_TYPE.ALL) {
-                                selectionRowColRanges.push(selection.range);
-                                if (selection.range.startColumn <= rangeParams.col! && selection.range.endColumn >= rangeParams.col!) {
-                                    isResizeTargetInSelectionRanges = true;
-                                }
-                            }
-                        });
-                    }
-
-                    if (!isResizeTargetInSelectionRanges) {
-                        return true;
-                    }
-
-                    const protectionLapWithSelectionRanges = this._rangeProtectionRuleModel.getSubunitRuleList(unitId, subUnitId).reduce((p, c) => {
-                        return [...p, ...c.ranges];
-                    }, [] as IRange[]).filter((range) => {
-                        return selectionRowColRanges.some((selectionRange) => {
-                            return Rectangle.intersects(range, selectionRange);
-                        });
-                    });
-
-                    haveNotPermission = protectionLapWithSelectionRanges.some((range) => {
-                        const { startRow, startColumn, endRow, endColumn } = range;
-                        for (let row = startRow; row <= endRow; row++) {
-                            for (let col = startColumn; col <= endColumn; col++) {
-                                const permission = (worksheet.getCell(row, col) as (ICellDataForSheetInterceptor & { selectionProtection: ICellPermission[] }))?.selectionProtection?.[0];
-                                if (permission?.[UnitAction.Edit] === false) {
-                                    return true;
-                                }
-                            }
-                        }
-                        return false;
-                    });
-
-                    return !haveNotPermission;
+                    return true;
                 },
             })
         );
@@ -238,7 +138,12 @@ export class SheetPermissionInterceptorCanvasRenderController extends RxDisposab
                     }
                     const { worksheet, unitId, subUnitId } = target;
 
-                    const worksheetEditPermission = this._permissionService.composePermission([new WorkbookEditablePermission(unitId).id, new WorksheetEditPermission(unitId, subUnitId).id]).every((permission) => permission.value);
+                    const worksheetEditPermission = this._permissionService.composePermission([
+                        new WorkbookEditablePermission(unitId).id,
+                        new WorksheetEditPermission(unitId, subUnitId).id,
+                        new WorksheetSetCellValuePermission(unitId, subUnitId).id,
+                        new WorksheetSetCellStylePermission(unitId, subUnitId).id,
+                    ]).every((permission) => permission.value);
                     if (!worksheetEditPermission) {
                         return false;
                     }
@@ -249,7 +154,7 @@ export class SheetPermissionInterceptorCanvasRenderController extends RxDisposab
 
                     const selectionRange = ranges?.find((range) => {
                         const transformCoord = getTransformCoord(position.x, position.y, position.scene, position.skeleton);
-                        const cellPosition = position.skeleton.getCellByIndex(range.endRow, range.endColumn);
+                        const cellPosition = position.skeleton.getCellWithCoordByIndex(range.endRow, range.endColumn);
                         const missX = Math.abs(cellPosition.endX - transformCoord.x);
                         const missY = Math.abs(cellPosition.endY - transformCoord.y);
                         return missX <= 5 && missY <= 5;
@@ -327,9 +232,9 @@ export class SheetPermissionInterceptorCanvasRenderController extends RxDisposab
         this.disposeWithMe(
             this._headerFreezeRenderController.interceptor.intercept(this._headerFreezeRenderController.interceptor.getInterceptPoints().FREEZE_PERMISSION_CHECK, {
                 handler: (_: Nullable<boolean>, __) => {
-                    const workbook = this._univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)!;
-                    const worksheet = workbook.getActiveSheet();
-                    if (!worksheet) {
+                    const workbook = this._univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET);
+                    const worksheet = workbook?.getActiveSheet();
+                    if (!worksheet || !workbook) {
                         return false;
                     }
                     const permission = this._permissionService.getPermissionPoint(new WorkbookEditablePermission(workbook.getUnitId()).id)?.value ?? false;

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,6 @@ export interface IRetainAction {
     body?: IDocumentBody;
     oldBody?: IDocumentBody;
     coverType?: UpdateDocsAttributeType;
-    segmentId?: string;
 }
 
 /**
@@ -42,8 +41,6 @@ export interface IInsertAction {
     t: TextXActionType.INSERT;
     body: IDocumentBody;
     len: number;
-    line: number;
-    segmentId?: string;
 }
 
 /**
@@ -52,9 +49,7 @@ export interface IInsertAction {
 export interface IDeleteAction {
     t: TextXActionType.DELETE;
     len: number;
-    line: number;
     body?: IDocumentBody; // Add a body property to make this action invertible.
-    segmentId?: string;
 }
 
 export type TextXAction = IRetainAction | IInsertAction | IDeleteAction;

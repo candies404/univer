@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,65 +14,70 @@
  * limitations under the License.
  */
 
-import { merge, Observable } from 'rxjs';
-import type { IMenuSelectorItem } from '@univerjs/ui';
 import type { IAccessor, Workbook } from '@univerjs/core';
-import { getMenuHiddenObservable, MenuGroup, MenuItemType, MenuPosition } from '@univerjs/ui';
-import { checkRangesEditablePermission, RangeProtectionPermissionEditPoint, SetWorksheetActiveOperation, SheetsSelectionsService, WorkbookEditablePermission, WorksheetEditPermission, WorksheetSetCellStylePermission } from '@univerjs/sheets';
-
-import { debounceTime } from 'rxjs/operators';
+import type { IMenuSelectorItem } from '@univerjs/ui';
 import { ICommandService, IUniverInstanceService, Rectangle, UniverInstanceType } from '@univerjs/core';
+import { checkRangesEditablePermission, RangeProtectionPermissionEditPoint, SetWorksheetActiveOperation, SheetsSelectionsService, WorkbookEditablePermission, WorksheetEditPermission, WorksheetSetCellStylePermission } from '@univerjs/sheets';
 import { AddConditionalRuleMutation, ConditionalFormattingRuleModel, DeleteConditionalRuleMutation, MoveConditionalRuleMutation, SetConditionalRuleMutation } from '@univerjs/sheets-conditional-formatting';
 
 import { getCurrentRangeDisable$ } from '@univerjs/sheets-ui';
+import { getMenuHiddenObservable, MenuItemType } from '@univerjs/ui';
+import { merge, Observable } from 'rxjs';
+
+import { debounceTime } from 'rxjs/operators';
 import { CF_MENU_OPERATION, OpenConditionalFormattingOperator } from '../commands/operations/open-conditional-formatting-panel';
 
-const commandList = [SetWorksheetActiveOperation.id, AddConditionalRuleMutation.id, SetConditionalRuleMutation.id, DeleteConditionalRuleMutation.id, MoveConditionalRuleMutation.id];
+const commandList = [
+    SetWorksheetActiveOperation.id,
+    AddConditionalRuleMutation.id,
+    SetConditionalRuleMutation.id,
+    DeleteConditionalRuleMutation.id,
+    MoveConditionalRuleMutation.id,
+];
 
-// eslint-disable-next-line max-lines-per-function
+const commonSelections = [
+    {
+        label: 'sheet.cf.ruleType.highlightCell',
+        value: CF_MENU_OPERATION.highlightCell,
+    },
+    {
+        label: 'sheet.cf.panel.rankAndAverage',
+        value: CF_MENU_OPERATION.rank,
+    },
+    {
+        label: 'sheet.cf.ruleType.formula',
+        value: CF_MENU_OPERATION.formula,
+    },
+    {
+        label: 'sheet.cf.ruleType.colorScale',
+        value: CF_MENU_OPERATION.colorScale,
+    },
+    {
+        label: 'sheet.cf.ruleType.dataBar',
+        value: CF_MENU_OPERATION.dataBar,
+    }, {
+        label: 'sheet.cf.ruleType.iconSet',
+        value: CF_MENU_OPERATION.icon,
+    },
+    {
+        label: 'sheet.cf.menu.manageConditionalFormatting',
+        value: CF_MENU_OPERATION.viewRule,
+    }, {
+        label: 'sheet.cf.menu.createConditionalFormatting',
+        value: CF_MENU_OPERATION.createRule,
+    },
+    {
+        label: 'sheet.cf.menu.clearRangeRules',
+        value: CF_MENU_OPERATION.clearRangeRules,
+        disabled: false,
+    },
+    {
+        label: 'sheet.cf.menu.clearWorkSheetRules',
+        value: CF_MENU_OPERATION.clearWorkSheetRules,
+    },
+];
+
 export const FactoryManageConditionalFormattingRule = (accessor: IAccessor): IMenuSelectorItem => {
-    const commonSelections = [
-        {
-            label: 'sheet.cf.ruleType.highlightCell',
-            value: CF_MENU_OPERATION.highlightCell,
-        },
-        {
-            label: 'sheet.cf.panel.rankAndAverage',
-            value: CF_MENU_OPERATION.rank,
-        },
-        {
-            label: 'sheet.cf.ruleType.formula',
-            value: CF_MENU_OPERATION.formula,
-        },
-        {
-            label: 'sheet.cf.ruleType.colorScale',
-            value: CF_MENU_OPERATION.colorScale,
-        },
-        {
-            label: 'sheet.cf.ruleType.dataBar',
-            value: CF_MENU_OPERATION.dataBar,
-        }, {
-            label: 'sheet.cf.ruleType.iconSet',
-            value: CF_MENU_OPERATION.icon,
-        },
-        {
-            label: 'sheet.cf.menu.manageConditionalFormatting',
-            value: CF_MENU_OPERATION.viewRule,
-        }, {
-            label: 'sheet.cf.menu.createConditionalFormatting',
-            value: CF_MENU_OPERATION.createRule,
-        },
-        {
-            label: 'sheet.cf.menu.clearRangeRules',
-            value: CF_MENU_OPERATION.clearRangeRules,
-            disabled: false,
-        },
-        {
-            label: 'sheet.cf.menu.clearWorkSheetRules',
-            value: CF_MENU_OPERATION.clearWorkSheetRules,
-        },
-    ];
-
     const selectionManagerService = accessor.get(SheetsSelectionsService);
     const commandService = accessor.get(ICommandService);
     const univerInstanceService = accessor.get(IUniverInstanceService);
@@ -80,6 +85,7 @@ export const FactoryManageConditionalFormattingRule = (accessor: IAccessor): IMe
 
     const clearRangeEnable$ = new Observable<boolean>((subscriber) => merge(
         selectionManagerService.selectionMoveEnd$,
+        selectionManagerService.selectionSet$,
         new Observable<null>((commandSubscribe) => {
             const disposable = commandService.onCommandExecuted((commandInfo) => {
                 const { id, params } = commandInfo;
@@ -99,22 +105,22 @@ export const FactoryManageConditionalFormattingRule = (accessor: IAccessor): IMe
 
         const allRule = conditionalFormattingRuleModel.getSubunitRules(workbook.getUnitId(), worksheet.getSheetId()) || [];
         const ruleList = allRule.filter((rule) => rule.ranges.some((ruleRange) => ranges.some((range) => Rectangle.intersects(range, ruleRange))));
-        subscriber.next(!!ruleList.length);
+        const hasPermission = ruleList.map((rule) => rule.ranges).every((ranges) => {
+            return checkRangesEditablePermission(accessor, workbook.getUnitId(), worksheet.getSheetId(), ranges);
+        });
+        subscriber.next(hasPermission);
     }));
     const clearSheetEnable$ = new Observable<boolean>((subscriber) =>
-        merge(
-            selectionManagerService.selectionMoveEnd$,
-            new Observable<null>((commandSubscribe) => {
-                const disposable = commandService.onCommandExecuted((commandInfo) => {
-                    const { id, params } = commandInfo;
-                    const unitId = univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)?.getUnitId();
-                    if (commandList.includes(id) && (params as { unitId: string }).unitId === unitId) {
-                        commandSubscribe.next(null);
-                    }
-                });
-                return () => disposable.dispose();
-            })
-        ).pipe(debounceTime(16)).subscribe(() => {
+        new Observable<null>((commandSubscribe) => {
+            const disposable = commandService.onCommandExecuted((commandInfo) => {
+                const { id, params } = commandInfo;
+                const unitId = univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET)?.getUnitId();
+                if (commandList.includes(id) && (params as { unitId: string }).unitId === unitId) {
+                    commandSubscribe.next(null);
+                }
+            });
+            return () => disposable.dispose();
+        }).pipe(debounceTime(16)).subscribe(() => {
             const workbook = univerInstanceService.getCurrentUnitForType<Workbook>(UniverInstanceType.UNIVER_SHEET);
             if (!workbook) return;
             const worksheet = workbook.getActiveSheet();
@@ -152,8 +158,6 @@ export const FactoryManageConditionalFormattingRule = (accessor: IAccessor): IMe
     return {
         id: OpenConditionalFormattingOperator.id,
         type: MenuItemType.SELECTOR,
-        group: MenuGroup.TOOLBAR_FORMULAS_INSERT,
-        positions: [MenuPosition.TOOLBAR_START],
         icon: 'Conditions',
         tooltip: 'sheet.cf.title',
         selections: selections$,
@@ -161,4 +165,3 @@ export const FactoryManageConditionalFormattingRule = (accessor: IAccessor): IMe
         disabled$: getCurrentRangeDisable$(accessor, { workbookTypes: [WorkbookEditablePermission], worksheetTypes: [WorksheetSetCellStylePermission, WorksheetEditPermission], rangeTypes: [RangeProtectionPermissionEditPoint] }),
     } as IMenuSelectorItem;
 };
-

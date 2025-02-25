@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,28 +15,28 @@
  */
 
 import type { IDisposable, Nullable, SlideDataModel } from '@univerjs/core';
-import { FOCUSING_COMMON_DRAWINGS, IContextService, Inject, Injector, IUniverInstanceService, LifecycleStages, OnLifecycle, RxDisposable, toDisposable, UniverInstanceType } from '@univerjs/core';
-import type { BaseObject, Scene } from '@univerjs/engine-render';
-import { IRenderManagerService, ObjectType } from '@univerjs/engine-render';
-import { IUIPartsService } from '@univerjs/ui';
-import { CanvasView } from '@univerjs/slides';
-import { SlideCanvasPopMangerService } from '../services/slide-popup-manager.service';
-import { COMPONENT_SLIDE_IMAGE_POPUP_MENU } from '../components/image-popup-menu/component-name';
+import type { BaseObject, ObjectType, Scene } from '@univerjs/engine-render';
+import { FOCUSING_COMMON_DRAWINGS, ICommandService, IContextService, Inject, IUniverInstanceService, RxDisposable, toDisposable, UniverInstanceType } from '@univerjs/core';
+import { IRenderManagerService } from '@univerjs/engine-render';
+import { ISidebarService } from '@univerjs/ui';
 import { DeleteSlideElementOperation } from '../commands/operations/delete-element.operation';
+import { ToggleSlideEditSidebarOperation } from '../commands/operations/insert-shape.operation';
+import { UpdateSlideElementOperation } from '../commands/operations/update-element.operation';
+import { COMPONENT_SLIDE_IMAGE_POPUP_MENU } from '../components/image-popup-menu/component-name';
+import { SlideCanvasPopMangerService } from '../services/slide-popup-manager.service';
+import { CanvasView } from './canvas-view';
 
-@OnLifecycle(LifecycleStages.Steady, SlidePopupMenuController)
 export class SlidePopupMenuController extends RxDisposable {
     private _initImagePopupMenu = new Set<string>();
 
     constructor(
-        @Inject(Injector) private _injector: Injector,
-        // @IDrawingManagerService private readonly _drawingManagerService: IDrawingManagerService,
         @Inject(SlideCanvasPopMangerService) private readonly _canvasPopManagerService: SlideCanvasPopMangerService,
         @IRenderManagerService private readonly _renderManagerService: IRenderManagerService,
         @IUniverInstanceService private readonly _univerInstanceService: IUniverInstanceService,
         @IContextService private readonly _contextService: IContextService,
-        @Inject(IUIPartsService) private readonly _uiPartsService: IUIPartsService,
-        @Inject(CanvasView) private readonly _canvasView: CanvasView
+        @Inject(CanvasView) private readonly _canvasView: CanvasView,
+        @ISidebarService private readonly _sidebarService: ISidebarService,
+        @ICommandService private readonly _commandService: ICommandService
     ) {
         super();
 
@@ -44,14 +44,7 @@ export class SlidePopupMenuController extends RxDisposable {
     }
 
     private _init(): void {
-        // this._univerInstanceService.getCurrentTypeOfUnit$<Workbook>(UniverInstanceType.UNIVER_SHEET).pipe(takeUntil(this.dispose$)).subscribe((workbook) => this._create(workbook));
-        // this._univerInstanceService.getTypeOfUnitDisposed$<Workbook>(UniverInstanceType.UNIVER_SHEET).pipe(takeUntil(this.dispose$)).subscribe((workbook) => this._dispose(workbook));
         this._univerInstanceService.getAllUnitsForType<SlideDataModel>(UniverInstanceType.UNIVER_SLIDE).forEach((slide) => this._create(slide));
-    }
-
-    private _dispose(workbook: SlideDataModel) {
-        // const unitId = workbook.getUnitId();
-        // this._renderManagerService.removeRender(unitId);
     }
 
     private _create(slide: Nullable<SlideDataModel>) {
@@ -79,12 +72,14 @@ export class SlidePopupMenuController extends RxDisposable {
         // return false;
     }
 
+    // eslint-disable-next-line max-lines-per-function
     private _popupMenuListener(unitId: string) {
         const model = this._univerInstanceService.getCurrentUnitForType<SlideDataModel>(UniverInstanceType.UNIVER_SLIDE);
         const pages = model?.getPages() ?? {};
 
+        // eslint-disable-next-line max-lines-per-function
         Object.keys(pages).forEach((pageId) => {
-            const page = this._canvasView.getRenderUnitByPageId(pageId);
+            const page = this._canvasView.getRenderUnitByPageId(pageId, unitId);
             const transformer = page.scene?.getTransformer();
 
             if (!transformer) return;
@@ -127,6 +122,13 @@ export class SlidePopupMenuController extends RxDisposable {
                             },
                         }));
 
+                        if (this._sidebarService.visible) {
+                            this._commandService.executeCommand(ToggleSlideEditSidebarOperation.id, {
+                                visible: true,
+                                objectType: object.objectType,
+                            });
+                        }
+
                         // this._drawingManagerService.focusDrawing([{
                         //     unitId,
                         //     subUnitId,
@@ -145,80 +147,53 @@ export class SlidePopupMenuController extends RxDisposable {
             this.disposeWithMe(
                 transformer.changing$.subscribe(() => {
                     singletonPopupDisposer?.dispose();
+
+                    const selectedObjects = transformer.getSelectedObjectMap();
+                    if (selectedObjects.size > 1) {
+                        singletonPopupDisposer?.dispose();
+                        return;
+                    }
+
+                    const object = selectedObjects.values().next().value as Nullable<BaseObject>;
+                    if (!object) {
+                        return;
+                    }
+
+                    this._commandService.executeCommand(UpdateSlideElementOperation.id, {
+                        unitId,
+                        oKey: object.oKey,
+                        props: {
+                            width: object.width,
+                            height: object.height,
+                            left: object.left,
+                            top: object.top,
+                        },
+                    });
                 })
             );
         });
     }
 
     private _getMenuItemsByObjectType(objectType: ObjectType, oKey: string, unitId: string) {
-        const menuItems = [];
-
-        if (objectType === ObjectType.RICH_TEXT) {
-            menuItems.push({
-                label: 'slide.popup.edit',
-                index: 0,
-                commandId: 'xxxx',
-                commandParams: {},
-                disable: false,
-            });
-        } else if (objectType === ObjectType.IMAGE) {
-            menuItems.push({
-                label: 'slide.popup.edit',
-                index: 0,
-                commandId: 'xxxx',
-                commandParams: {},
-                disable: false,
-            });
-        } else if (objectType === ObjectType.RECT) {
-            menuItems.push({
-                label: 'slide.popup.edit',
-                index: 0,
-                commandId: 'xxxx',
-                commandParams: {},
-                disable: false,
-            });
-        }
-
-        menuItems.push({
+        const menuItems = [{
+            label: 'slide.popup.edit',
+            index: 0,
+            commandId: ToggleSlideEditSidebarOperation.id,
+            commandParams: {
+                visible: true,
+                objectType,
+            },
+            disable: false,
+        }, {
             label: 'slide.popup.delete',
             index: 5,
             commandId: DeleteSlideElementOperation.id,
             commandParams: {
                 id: oKey,
+                unitId,
             },
             disable: false,
-        });
-
-        // return [
-        //     {
-        //         label: 'image-popup.edit',
-        //         index: 0,
-        //         commandId: 'EditSheetDrawingOperation.id',
-        //         commandParams: { unitId },
-        //         disable: false,
-        //     },
-        //     {
-        //         label: 'image-popup.delete',
-        //         index: 1,
-        //         commandId: 'RemoveSheetDrawingCommand.id',
-        //         commandParams: { unitId, drawings: [{ unitId }] },
-        //         disable: false,
-        //     },
-        //     {
-        //         label: 'image-popup.crop',
-        //         index: 2,
-        //         commandId: 'OpenImageCropOperation.id',
-        //         commandParams: { unitId },
-        //         disable: false,
-        //     },
-        //     {
-        //         label: 'image-popup.reset',
-        //         index: 3,
-        //         commandId: 'ImageResetSizeOperation.id',
-        //         commandParams: [{ unitId }],
-        //         disable: false,
-        //     },
-        // ];
+        }];
 
         return menuItems;
     }

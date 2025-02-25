@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-import type { ITextRangeParam } from '@univerjs/core';
+import type { ITextRangeParam, Nullable } from '@univerjs/core';
+import type { INodePosition } from './interfaces';
 
 export interface ITextSelectionStyle {
     strokeWidth: number;
@@ -31,20 +32,31 @@ export const NORMAL_TEXT_SELECTION_PLUGIN_STYLE: ITextSelectionStyle = {
 };
 
 export interface ITextRangeWithStyle extends ITextRangeParam {
+    startNodePosition?: Nullable<INodePosition>;
+    endNodePosition?: Nullable<INodePosition>;
     style?: ITextSelectionStyle;
+}
+
+export interface IRectRangeWithStyle extends ITextRangeWithStyle {
+    startRow: number;
+    startColumn: number;
+    endRow: number;
+    endColumn: number;
+    tableId: string;
+    spanEntireRow: boolean;
+    spanEntireColumn: boolean;
+    spanEntireTable: boolean;
 }
 
 // Only use in add/replaceTextRanges methods.
-export interface ISuccinctTextRangeParam {
-    startOffset: number;
-    endOffset: number;
-    segmentId?: string; // Header of footer id.
-    segmentPage?: number; // Optional, because header and footer are in different pages, so need pageIndex to allocate selection in header or footer.
-    style?: ITextSelectionStyle;
-}
+export type ISuccinctDocRangeParam = Pick<ITextRangeWithStyle, 'startOffset' | 'endOffset' | 'segmentId' | 'segmentPage' | 'style' | 'rangeType'>;
 
-export enum RANGE_DIRECTION {
-    NONE = 'none',
-    BACKWARD = 'backward',
-    FORWARD = 'forward',
+export interface IDocSelectionInnerParam {
+    textRanges: ITextRangeWithStyle[];
+    rectRanges: IRectRangeWithStyle[];
+    segmentId: string;
+    isEditing: boolean;
+    style: ITextSelectionStyle;
+    segmentPage: number;
+    options?: { [key: string]: boolean };
 }

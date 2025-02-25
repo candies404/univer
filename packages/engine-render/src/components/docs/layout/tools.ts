@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,43 @@
 
 import type {
     DocumentDataModel,
+    IBullet,
+    IDocumentStyle,
     INumberUnit,
     IObjectPositionH,
     IObjectPositionV,
+    IParagraph,
     IParagraphStyle,
     ISectionBreak,
     ITextStyle,
     Nullable,
 } from '@univerjs/core';
+import type {
+    IDocumentSkeletonCached,
+    IDocumentSkeletonColumn,
+    IDocumentSkeletonDivide,
+    IDocumentSkeletonFontStyle,
+    IDocumentSkeletonGlyph,
+    IDocumentSkeletonLine,
+    IDocumentSkeletonPage,
+    IDocumentSkeletonSection,
+    ISkeletonResourceReference,
+} from '../../../basics/i-document-skeleton-cached';
+
+import type { IDocsConfig, IParagraphConfig, ISectionBreakConfig } from '../../../basics/interfaces';
+import type { DataStreamTreeNode } from '../view-model/data-stream-tree-node';
+import type { DocumentViewModel } from '../view-model/document-view-model';
+import type { Hyphen } from './hyphenation/hyphen';
+import type { LanguageDetector } from './hyphenation/language-detector';
 import {
     AlignTypeH,
     AlignTypeV,
     BooleanNumber,
     ColumnSeparatorType,
+    DocumentFlavor,
     GridType,
     HorizontalAlign,
+    mergeWith,
     NumberUnitType,
     ObjectMatrix,
     ObjectRelativeFromH,
@@ -41,30 +63,12 @@ import {
     VerticalAlign,
     WrapStrategy,
 } from '@univerjs/core';
-
 import { DEFAULT_DOCUMENT_FONTSIZE } from '../../../basics/const';
-import type {
-    IDocumentSkeletonCached,
-    IDocumentSkeletonColumn,
-    IDocumentSkeletonDivide,
-    IDocumentSkeletonDrawing,
-    IDocumentSkeletonFontStyle,
-    IDocumentSkeletonGlyph,
-    IDocumentSkeletonLine,
-    IDocumentSkeletonPage,
-    IDocumentSkeletonSection,
-    ISkeletonResourceReference,
-} from '../../../basics/i-document-skeleton-cached';
 import { GlyphType } from '../../../basics/i-document-skeleton-cached';
-import type { IDocsConfig, IParagraphConfig, ISectionBreakConfig } from '../../../basics/interfaces';
-import { getFontStyleString, isFunction } from '../../../basics/tools';
-import type { DataStreamTreeNode } from '../view-model/data-stream-tree-node';
-import type { DocumentViewModel } from '../view-model/document-view-model';
-import type { Hyphen } from './hyphenation/hyphen';
-import type { LanguageDetector } from './hyphenation/language-detector';
+import { getFontStyleString, isFunction, ptToPixel } from '../../../basics/tools';
+import { updateInlineDrawingPosition } from './block/paragraph/layout-ruler';
 import { getCustomDecorationStyle } from './style/custom-decoration';
 import { getCustomRangeStyle } from './style/custom-range';
-import { updateInlineDrawingPosition } from './block/paragraph/layout-ruler';
 
 export function getLastPage(pages: IDocumentSkeletonPage[]) {
     return pages[pages.length - 1];
@@ -321,7 +325,7 @@ export function updateBlockIndex(pages: IDocumentSkeletonPage[], start: number =
     let prePageStartIndex = start;
 
     for (const page of pages) {
-        const { sections } = page;
+        const { sections, skeTables } = page;
         const pageStartIndex = prePageStartIndex;
         const pageEndIndex = pageStartIndex;
         let preSectionStartIndex = pageStartIndex;
@@ -346,8 +350,14 @@ export function updateBlockIndex(pages: IDocumentSkeletonPage[], start: number =
                 // const preLine: Nullable<IDocumentSkeletonLine> = null;
 
                 for (const line of lines) {
-                    const { divides, lineHeight, top } = line;
-                    const lineStartIndex = preLineStartIndex;
+                    const { divides, lineHeight, top, isBehindTable, tableId } = line;
+                    let lineStartIndex = preLineStartIndex;
+                    if (isBehindTable && tableId) {
+                        const table = skeTables.get(tableId);
+                        if (table) {
+                            lineStartIndex = table.ed;
+                        }
+                    }
                     const lineEndIndex = lineStartIndex;
                     let preDivideStartIndex = lineStartIndex;
                     let actualWidth = 0;
@@ -417,8 +427,6 @@ export function updateBlockIndex(pages: IDocumentSkeletonPage[], start: number =
                     maxColumnWidth = Math.max(maxColumnWidth, actualWidth);
                     // Please do not use pre line's top and height to calculate the current's top,
                     // because of float objects will between lines.
-                    // line.top = (preLine?.top || 0) + (preLine?.lineHeight || 0);
-                    // preLine = line;
                     preLineStartIndex = line.ed;
                 }
                 column.st = columStartIndex + 1;
@@ -441,6 +449,13 @@ export function updateBlockIndex(pages: IDocumentSkeletonPage[], start: number =
             maxContentWidth = Math.max(maxContentWidth, sectionWidth);
 
             preSectionStartIndex = section.ed;
+        }
+
+        // Some tables may across pages, so we need to calculate the page's end index by the tables.
+        for (const table of skeTables.values()) {
+            const { ed } = table;
+
+            preSectionStartIndex = Math.max(preSectionStartIndex, ed);
         }
 
         page.st = pageStartIndex + 1;
@@ -504,15 +519,15 @@ export function glyphIterator(
 }
 
 export function lineIterator(
-    pages: IDocumentSkeletonPage[],
+    pagesOrCells: (IDocumentSkeletonPage)[],
     cb: (
         line: IDocumentSkeletonLine,
         column: IDocumentSkeletonColumn,
         section: IDocumentSkeletonSection,
         page: IDocumentSkeletonPage
     ) => void) {
-    for (const page of pages) {
-        const { sections } = page;
+    for (const pageOrCell of pagesOrCells) {
+        const { sections } = pageOrCell;
 
         for (const section of sections) {
             const { columns } = section;
@@ -522,7 +537,7 @@ export function lineIterator(
 
                 for (const line of lines) {
                     if (cb && isFunction(cb)) {
-                        cb(line, column, section, page);
+                        cb(line, column, section, pageOrCell);
                     }
                 }
             }
@@ -781,12 +796,21 @@ export function getFontConfigFromLastGlyph(
     return result;
 }
 
+function getBulletParagraphTextStyle(bullet: IBullet, viewModel: DocumentViewModel) {
+    const { listType } = bullet;
+    const lists = viewModel.getDataModel().getBulletPresetList();
+
+    return lists[listType].nestingLevel[0].paragraphProperties?.textStyle;
+}
+
+const DEFAULT_TEXT_RUN = { ts: {}, st: 0, ed: 0 };
+
 export function getFontCreateConfig(
     index: number,
     viewModel: DocumentViewModel,
     paragraphNode: DataStreamTreeNode,
     sectionBreakConfig: ISectionBreakConfig,
-    paragraphStyle: IParagraphStyle
+    paragraph: IParagraph
 ) {
     const {
         gridType = GridType.LINES,
@@ -796,36 +820,45 @@ export function getFontCreateConfig(
             width: Number.POSITIVE_INFINITY,
             height: Number.POSITIVE_INFINITY,
         },
-
         marginRight = 0,
         marginLeft = 0,
-        localeService,
+        // localeService,
         renderConfig = {},
     } = sectionBreakConfig;
+    const { paragraphStyle = {}, bullet } = paragraph;
     const { isRenderStyle } = renderConfig;
     const { startIndex } = paragraphNode;
+    const originTextRun = viewModel.getTextRun(index + startIndex);
 
     const textRun = isRenderStyle === BooleanNumber.FALSE
-        ? { ts: {}, st: 0, ed: 0 }
-        : viewModel.getTextRun(index + startIndex) || { ts: {}, st: 0, ed: 0 };
+        ? DEFAULT_TEXT_RUN
+        : originTextRun ?? DEFAULT_TEXT_RUN;
     const customDecoration = viewModel.getCustomDecoration(index + startIndex);
     const showCustomDecoration = customDecoration && (customDecoration.show !== false);
     const customDecorationStyle = showCustomDecoration ? getCustomDecorationStyle(customDecoration) : null;
     const customRange = viewModel.getCustomRange(index + startIndex);
     const showCustomRange = customRange && (customRange.show !== false);
     const customRangeStyle = showCustomRange ? getCustomRangeStyle(customRange) : null;
-    const hasAddonStyle = showCustomRange || showCustomDecoration;
+    const hasAddonStyle = showCustomRange || showCustomDecoration || !!bullet;
     const { st, ed } = textRun;
     let { ts: textStyle = {} } = textRun;
     const cache = fontCreateConfigCache.getValue(st, ed);
-    if (cache && !hasAddonStyle) {
+    if (cache && !hasAddonStyle && originTextRun) {
         return cache;
     }
 
     const { snapToGrid = BooleanNumber.TRUE } = paragraphStyle;
-    textStyle = { ...documentTextStyle, ...textStyle, ...customDecorationStyle, ...customRangeStyle };
+    const bulletTextStyle = bullet ? getBulletParagraphTextStyle(bullet, viewModel) : null;
 
-    const fontStyle = getFontStyleString(textStyle, localeService);
+    textStyle = {
+        ...documentTextStyle,
+        ...textStyle,
+        ...customDecorationStyle,
+        ...customRangeStyle,
+        ...bulletTextStyle,
+    };
+
+    const fontStyle = getFontStyleString(textStyle);
 
     const mixTextStyle: ITextStyle = {
         ...documentTextStyle,
@@ -843,7 +876,8 @@ export function getFontCreateConfig(
         pageWidth,
     };
 
-    if (!hasAddonStyle) {
+    if (!hasAddonStyle && originTextRun) {
+        // TODO: cache should more precisely, take custom-range, custom-decoration, paragraphStyle into considering.
         fontCreateConfigCache.setValue(st, ed, result);
     }
 
@@ -870,6 +904,22 @@ export function setPageParent(pages: IDocumentSkeletonPage[], parent: IDocumentS
     }
 }
 
+export enum FloatObjectType {
+    IMAGE = 'IMAGE',
+    TABLE = 'TABLE',
+}
+
+export interface IFloatObject {
+    id: string;
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+    angle: number;
+    type: FloatObjectType;
+    positionV: IObjectPositionV;
+}
+
 // The context state of the layout process, which is used to store some cache and intermediate states in the typesetting process,
 // as well as identifying information such as the pointer of the layout.
 export interface ILayoutContext {
@@ -894,10 +944,10 @@ export interface ILayoutContext {
     // Used to store the resource of document and resource cache.
     skeletonResourceReference: ISkeletonResourceReference;
     // Positioned float objects cache.
-    drawingsCache: Map<string, {
+    floatObjectsCache: Map<string, {
         count: number;
         page: IDocumentSkeletonPage;
-        drawing: IDocumentSkeletonDrawing;
+        floatObject: IFloatObject;
     }>;
     paragraphConfigCache: Map<string, Map<number, IParagraphConfig>>;
     sectionBreakConfigCache: Map<number, ISectionBreakConfig>;
@@ -917,11 +967,55 @@ const DEFAULT_SECTION_BREAK: ISectionBreak = {
 
 export const DEFAULT_PAGE_SIZE = { width: Number.POSITIVE_INFINITY, height: Number.POSITIVE_INFINITY };
 
+const DEFAULT_MODERN_DOCUMENT_STYLE: IDocumentStyle = {
+    pageNumberStart: 1,
+    pageSize: {
+        width: ptToPixel(595),
+        height: Number.POSITIVE_INFINITY,
+    },
+    marginTop: ptToPixel(50),
+    marginBottom: ptToPixel(50),
+    marginRight: ptToPixel(50),
+    marginLeft: ptToPixel(50),
+    renderConfig: {
+        vertexAngle: 0,
+        centerAngle: 0,
+        background: {
+            rgb: '#FFFFFF',
+        },
+    },
+    defaultHeaderId: '',
+    defaultFooterId: '',
+    evenPageHeaderId: '',
+    evenPageFooterId: '',
+    firstPageHeaderId: '',
+    firstPageFooterId: '',
+    evenAndOddHeaders: BooleanNumber.FALSE,
+    useFirstPageHeaderFooter: BooleanNumber.FALSE,
+    marginHeader: 0,
+    marginFooter: 0,
+};
+
+const DEFAULT_MODERN_SECTION_BREAK: Partial<ISectionBreak> = {
+    columnProperties: [],
+    columnSeparatorType: ColumnSeparatorType.NONE,
+    sectionType: SectionType.SECTION_TYPE_UNSPECIFIED,
+};
+
 export function prepareSectionBreakConfig(ctx: ILayoutContext, nodeIndex: number) {
     const { viewModel, dataModel, docsConfig } = ctx;
-    const sectionNode = viewModel.children[nodeIndex];
-    const sectionBreak = viewModel.getSectionBreak(sectionNode.endIndex) || DEFAULT_SECTION_BREAK;
-    const { documentStyle } = dataModel;
+    const sectionNode = viewModel.getChildren()[nodeIndex];
+    let { documentStyle } = dataModel;
+    const { documentFlavor } = documentStyle;
+    let sectionBreak = viewModel.getSectionBreak(sectionNode.endIndex) || DEFAULT_SECTION_BREAK;
+
+    // If the configuration is in modern mode, use the style configuration of modern mode to overwrite the original configuration.
+    // In modern mode, there are no pages, no sections, no columns. There are no headers and footers, and margins are all defaults.
+    if (documentFlavor === DocumentFlavor.MODERN) {
+        sectionBreak = Object.assign({}, sectionBreak, DEFAULT_MODERN_SECTION_BREAK);
+        documentStyle = Object.assign({}, documentStyle, DEFAULT_MODERN_DOCUMENT_STYLE);
+    }
+
     const {
         pageNumberStart: global_pageNumberStart = 1, // pageNumberStart
         pageSize: global_pageSize = DEFAULT_PAGE_SIZE,
@@ -987,7 +1081,7 @@ export function prepareSectionBreakConfig(ctx: ILayoutContext, nodeIndex: number
         renderConfig = global_renderConfig,
     } = sectionBreak;
 
-    const sectionNodeNext = viewModel.children[nodeIndex + 1];
+    const sectionNodeNext = viewModel.getChildren()[nodeIndex + 1];
     const sectionTypeNext = viewModel.getSectionBreak(sectionNodeNext?.endIndex)?.sectionType;
 
     const headerIds = { defaultHeaderId, evenPageHeaderId, firstPageHeaderId };
@@ -1044,4 +1138,47 @@ export function prepareSectionBreakConfig(ctx: ILayoutContext, nodeIndex: number
 export function resetContext(ctx: ILayoutContext) {
     ctx.isDirty = false;
     ctx.skeleton.drawingAnchor?.clear();
+}
+
+export function mergeByV<T = unknown>(object: unknown, originObject: unknown, type: 'max' | 'min') {
+    const mergeIterator = (obj: unknown, originObj: unknown, key: string) => {
+        if (key !== 'v') {
+            if (typeof originObj === 'object') {
+                return mergeWith(obj, originObj, mergeIterator);
+            } else {
+                return originObj ?? obj;
+            }
+        }
+        if (typeof originObj === 'number') {
+            if (typeof obj === 'number') {
+                return type === 'max' ? Math.max(originObj, obj) : Math.min(originObj, obj);
+            }
+        }
+        return originObj ?? obj;
+    };
+    return mergeWith(object, originObject, mergeIterator) as T;
+}
+
+export function getPageFromPath(skeletonData: IDocumentSkeletonCached, path: (string | number)[]): Nullable<IDocumentSkeletonPage> {
+    const pathCopy = [...path];
+    let page: Nullable<IDocumentSkeletonPage> = null;
+
+    while (pathCopy.length > 0) {
+        const field = pathCopy.shift();
+
+        if (field === 'pages') {
+            const pageIndex = pathCopy.shift() as number;
+            page = skeletonData.pages[pageIndex];
+        } else if (field === 'skeTables') {
+            const tableId = pathCopy.shift() as string;
+            pathCopy.shift(); // rows
+            const rowIndex = pathCopy.shift() as number;
+            pathCopy.shift(); // cells
+            const cellIndex = pathCopy.shift() as number;
+
+            page = page!.skeTables?.get(tableId)?.rows[rowIndex]?.cells[cellIndex];
+        }
+    }
+
+    return page;
 }

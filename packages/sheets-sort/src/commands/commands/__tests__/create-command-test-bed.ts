@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,11 @@
 
 import type { Dependency, IWorkbookData, Workbook } from '@univerjs/core';
 import { BooleanNumber, ILogService, Inject, Injector, IUniverInstanceService, LocaleService, LocaleType, LogLevel, Plugin, Tools, Univer, UniverInstanceType } from '@univerjs/core';
-import { SheetInterceptorService, SheetsSelectionsService } from '@univerjs/sheets';
 import { FormulaDataModel } from '@univerjs/engine-formula';
+import { SheetInterceptorService, SheetsSelectionsService } from '@univerjs/sheets';
+import { SheetsSortController } from '../../../controllers/sheets-sort.controller';
 import enUS from '../../../locale/en-US';
 import { SheetsSortService } from '../../../services/sheets-sort.service';
-import { SheetsSortController } from '../../../controllers/sheets-sort.controller';
 
 const TEST_WORKBOOK_DATA_DEMO: IWorkbookData = {
     id: 'test',
@@ -146,6 +146,10 @@ export function createCommandTestBed(workbookData?: IWorkbookData, dependencies?
             injector.add([FormulaDataModel, { useClass: mockFormulaDataModel }]);
 
             dependencies?.forEach((d) => injector.add(d));
+        }
+
+        override onReady(): void {
+            this._injector.get(SheetsSortController);
         }
     }
 

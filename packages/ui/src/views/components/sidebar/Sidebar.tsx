@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,15 +14,14 @@
  * limitations under the License.
  */
 
+import type { ISidebarMethodOptions } from './interface';
+import { clsx } from '@univerjs/design';
 import { CloseSingle } from '@univerjs/icons';
-import { useDependency } from '@univerjs/core';
-import clsx from 'clsx';
 import React, { useEffect, useMemo, useRef } from 'react';
 import { CustomLabel } from '../../../components/custom-label/CustomLabel';
 import { ISidebarService } from '../../../services/sidebar/sidebar.service';
-import { useObservable } from '../../../components/hooks/observable';
+import { useDependency, useObservable } from '../../../utils/di';
 import styles from './index.module.less';
-import type { ISidebarMethodOptions } from './interface';
 
 export function Sidebar() {
     const sidebarService = useDependency(ISidebarService);
@@ -55,6 +54,14 @@ export function Sidebar() {
         return copy;
     }, [sidebarOptions]);
 
+    useEffect(() => {
+        if (scrollRef.current) {
+            sidebarService.setContainer(scrollRef.current);
+        }
+        return () => {
+            sidebarService.setContainer(undefined);
+        };
+    }, [sidebarService]);
     useEffect(() => {
         const handleScroll = (e: Event) => {
             sidebarService.scrollEvent$.next(e);
@@ -89,6 +96,7 @@ export function Sidebar() {
             visible: false,
         };
 
+        sidebarService.options.visible = false;
         sidebarService.sidebarOptions$.next(options);
         options?.onClose?.();
     }
@@ -103,7 +111,7 @@ export function Sidebar() {
                     </a>
                 </header>
 
-                <section className={styles.sidebarBody}>{options?.children}</section>
+                <section className={clsx(styles.sidebarBody, 'univer-py-1')} style={options?.bodyStyle}>{options?.children}</section>
 
                 {options?.footer && <footer className={styles.sidebarFooter}>{options.footer}</footer>}
             </section>

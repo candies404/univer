@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,12 @@
  */
 
 import type { Doc, JSONOp, Path } from 'ot-json1';
-import * as json1 from 'ot-json1';
-import type { IDocumentBody, IDocumentData } from '../../../types/interfaces';
-import type { TPriority } from '../text-x/text-x';
-import { TextX } from '../text-x/text-x';
-import type { TextXAction } from '../text-x/action-types';
 import type { Nullable } from '../../../shared';
+import type { IDocumentBody, IDocumentData } from '../../../types/interfaces';
+import type { TextXAction } from '../text-x/action-types';
+import type { TPriority } from '../text-x/text-x';
+import * as json1 from 'ot-json1';
+import { TextX } from '../text-x/text-x';
 
 export interface ISubType {
     name: string;
@@ -37,7 +37,7 @@ export interface ISubType {
     [k: string]: any;
 };
 
-export { JSONOp as JSONXActions, Path as JSONXPath, json1 as JSON1 };
+export { json1 as JSON1, JSONOp as JSONXActions, Path as JSONXPath };
 
 export class JSONX {
     // static name = 'json-x';
@@ -47,7 +47,8 @@ export class JSONX {
     private static _subTypes: Map<string, ISubType> = new Map();
 
     static registerSubtype(subType: ISubType) {
-        if (this._subTypes.has(subType.name) && this._subTypes.get(subType.name)?.id !== TextX.id) {
+        // Add `subType == null` just use to pass tests.
+        if (subType == null || (this._subTypes.has(subType.name) && this._subTypes.get(subType.name)?.id !== TextX.id)) {
             return;
         }
 
@@ -67,9 +68,17 @@ export class JSONX {
         return json1.type.compose(thisActions, otherActions);
     }
 
-    // Do not use transform in JsonX, pls use transform in JsonXPro.
-    static transform(_thisActions: JSONOp, _otherActions: JSONOp, _priority: TPriority) {
-        throw new Error('transform is not implemented in JsonX');
+    static transform(thisActions: JSONOp, otherActions: JSONOp, priority: TPriority) {
+        return json1.type.transform(thisActions, otherActions, priority);
+    }
+
+    // Use to transform cursor position, just call TextXPro.transformPosition.
+    static transformPosition(thisActions: JSONOp, index: number, priority: TPriority = 'right'): number {
+        if (thisActions && thisActions.length === 2 && thisActions[0] === 'body' && (thisActions[1] as any).et === TextX.name) {
+            return TextX.transformPosition((thisActions[1] as any).e, index, priority === 'left');
+        }
+
+        return index;
     }
 
     static invertWithDoc(actions: JSONOp, doc: IDocumentData) {

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,33 +14,45 @@
  * limitations under the License.
  */
 
-import { DependentOn, Inject, Injector, Plugin, UniverInstanceType } from '@univerjs/core';
 import type { Dependency } from '@univerjs/core';
-import { UniverDrawingUIPlugin } from '@univerjs/drawing-ui';
-import { UniverDrawingPlugin } from '@univerjs/drawing';
+import type { IUniverDocsDrawingUIConfig } from './controllers/config.schema';
+import { DependentOn, IConfigService, Inject, Injector, merge, Plugin, UniverInstanceType } from '@univerjs/core';
 import { UniverDocsDrawingPlugin } from '@univerjs/docs-drawing';
+import { UniverDrawingPlugin } from '@univerjs/drawing';
+import { UniverDrawingUIPlugin } from '@univerjs/drawing-ui';
 import { IRenderManagerService } from '@univerjs/engine-render';
-import { DocDrawingPopupMenuController } from './controllers/drawing-popup-menu.controller';
-import { DocDrawingUIController } from './controllers/doc-drawing.controller';
-import { DocDrawingUpdateRenderController } from './controllers/render-controllers/doc-drawing-update.render-controller';
-import { DocDrawingTransformUpdateController } from './controllers/render-controllers/doc-drawing-transform-update.controller';
+import { UniverUIPlugin } from '@univerjs/ui';
+import { defaultPluginConfig, DOCS_DRAWING_UI_PLUGIN_CONFIG_KEY } from './controllers/config.schema';
 import { DocDrawingAddRemoveController } from './controllers/doc-drawing-notification.controller';
 import { DocDrawingTransformerController } from './controllers/doc-drawing-transformer-update.controller';
+import { DocDrawingUIController } from './controllers/doc-drawing.controller';
+import { DocDrawingPopupMenuController } from './controllers/drawing-popup-menu.controller';
+import { DocDrawingTransformUpdateController } from './controllers/render-controllers/doc-drawing-transform-update.controller';
+import { DocDrawingUpdateRenderController } from './controllers/render-controllers/doc-drawing-update.render-controller';
 import { DocRefreshDrawingsService } from './services/doc-refresh-drawings.service';
 
-const PLUGIN_NAME = 'DOCS_DRAWING_UI_PLUGIN';
+const PLUGIN_NAME = 'DOC_DRAWING_UI_PLUGIN';
 
-@DependentOn(UniverDrawingUIPlugin, UniverDrawingPlugin, UniverDocsDrawingPlugin)
+@DependentOn(UniverDrawingUIPlugin, UniverDrawingPlugin, UniverDocsDrawingPlugin, UniverUIPlugin)
 export class UniverDocsDrawingUIPlugin extends Plugin {
     static override type = UniverInstanceType.UNIVER_DOC;
     static override pluginName = PLUGIN_NAME;
 
     constructor(
-        _config: undefined,
+        private readonly _config: Partial<IUniverDocsDrawingUIConfig> = defaultPluginConfig,
         @Inject(Injector) protected _injector: Injector,
-        @IRenderManagerService private readonly _renderManagerSrv: IRenderManagerService
+        @IRenderManagerService private readonly _renderManagerSrv: IRenderManagerService,
+        @IConfigService private readonly _configService: IConfigService
     ) {
         super();
+
+        // Manage the plugin configuration.
+        const { ...rest } = merge(
+            {},
+            defaultPluginConfig,
+            this._config
+        );
+        this._configService.setConfig(DOCS_DRAWING_UI_PLUGIN_CONFIG_KEY, rest);
     }
 
     override onStarting(): void {
@@ -60,5 +72,13 @@ export class UniverDocsDrawingUIPlugin extends Plugin {
             [DocDrawingUpdateRenderController],
             [DocDrawingTransformUpdateController],
         ] as Dependency[]).forEach((m) => this._renderManagerSrv.registerRenderModule(UniverInstanceType.UNIVER_DOC, m));
+
+        this._injector.get(DocDrawingAddRemoveController);
+        this._injector.get(DocDrawingUIController);
+        this._injector.get(DocDrawingTransformerController);
+    }
+
+    override onRendered(): void {
+        this._injector.get(DocDrawingPopupMenuController);
     }
 }

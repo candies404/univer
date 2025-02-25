@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,15 @@
 
 import type { IWorkbookData } from '@univerjs/core';
 import { Inject, Injector, LocaleType, Plugin, Univer, UniverInstanceType } from '@univerjs/core';
-import { RangeProtectionRefRangeService, RangeProtectionRenderModel, RangeProtectionRuleModel, RangeProtectionService, RefRangeService, SheetInterceptorService,
+import { IRenderManagerService, RenderManagerService } from '@univerjs/engine-render';
+import { RangeProtectionCache, RangeProtectionRefRangeService, RangeProtectionRenderModel, RangeProtectionRuleModel, RangeProtectionService, RefRangeService, SheetInterceptorService,
     SheetsSelectionsService,
     WorkbookPermissionService,
     WorksheetPermissionService,
     WorksheetProtectionPointModel,
     WorksheetProtectionRuleModel,
 } from '@univerjs/sheets';
-import { IMenuService, IPlatformService, IShortcutService, MenuService, PlatformService, ShortcutService } from '@univerjs/ui';
-import { IRenderManagerService, RenderManagerService } from '@univerjs/engine-render';
+import { IMenuManagerService, IPlatformService, IShortcutService, MenuManagerService, PlatformService, ShortcutService } from '@univerjs/ui';
 
 const TEST_WORKBOOK_DATA_DEMO: IWorkbookData = {
     id: 'test',
@@ -66,7 +66,7 @@ export function createMenuTestBed() {
             injector.add([IPlatformService, { useClass: PlatformService }]);
             injector.add([SheetsSelectionsService]);
             injector.add([IShortcutService, { useClass: ShortcutService }]);
-            injector.add([IMenuService, { useClass: MenuService }]);
+            injector.add([IMenuManagerService, { useClass: MenuManagerService }]);
             injector.add([WorkbookPermissionService]);
             injector.add([WorksheetPermissionService]);
             injector.add([WorksheetProtectionPointModel]);
@@ -77,8 +77,13 @@ export function createMenuTestBed() {
 
             injector.add([RangeProtectionRefRangeService]);
             injector.add([RangeProtectionRenderModel]);
+            injector.add([RangeProtectionCache]);
             injector.add([RangeProtectionRuleModel]);
             injector.add([RangeProtectionService]);
+
+            this._injector.get(SheetInterceptorService);
+            this._injector.get(WorkbookPermissionService);
+            this._injector.get(WorksheetPermissionService);
         }
     }
 

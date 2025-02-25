@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,55 +15,33 @@
  */
 
 import type { Dependency } from '@univerjs/core';
-import { DependentOn, ICommandService, Inject, Injector, Plugin, Tools, UniverInstanceType } from '@univerjs/core';
-import { UniverThreadCommentUIPlugin } from '@univerjs/thread-comment-ui';
-import { UniverSheetsThreadCommentBasePlugin } from '@univerjs/sheets-thread-comment-base';
-import type { IUniverSheetsThreadCommentConfig } from './controllers/sheets-thread-comment.controller';
-import { DefaultSheetsThreadCommentConfig, SheetsThreadCommentController } from './controllers/sheets-thread-comment.controller';
-import { SheetsThreadCommentPopupService } from './services/sheets-thread-comment-popup.service';
-import { ShowAddSheetCommentModalOperation } from './commands/operations/comment.operation';
-import { SheetsThreadCommentRenderController } from './controllers/render-controllers/render.controller';
-import { SHEETS_THREAD_COMMENT } from './types/const';
-import { SheetsThreadCommentCopyPasteController } from './controllers/sheets-thread-comment-copy-paste.controller';
-import { SheetsThreadCommentHoverController } from './controllers/sheets-thread-comment-hover.controller';
-import { ThreadCommentRemoveSheetsController } from './controllers/sheets-thread-comment-remove.controller';
+import { DependentOn, ICommandService, Inject, Injector, Plugin, UniverInstanceType } from '@univerjs/core';
+import { UniverThreadCommentPlugin } from '@univerjs/thread-comment';
+import { SheetsThreadCommentRefRangeController } from './controllers/sheets-thread-comment-ref-range.controller';
+import { SheetsThreadCommentModel } from './models/sheets-thread-comment.model';
+import { SHEET_THREAD_COMMENT_BASE } from './types/const';
 
-@DependentOn(UniverThreadCommentUIPlugin, UniverSheetsThreadCommentBasePlugin)
+@DependentOn(UniverThreadCommentPlugin)
 export class UniverSheetsThreadCommentPlugin extends Plugin {
-    static override pluginName = SHEETS_THREAD_COMMENT;
+    static override pluginName = SHEET_THREAD_COMMENT_BASE;
     static override type = UniverInstanceType.UNIVER_SHEET;
 
-    private _pluginConfig: IUniverSheetsThreadCommentConfig;
-
     constructor(
-        config: Partial<IUniverSheetsThreadCommentConfig> = {},
+        config: unknown,
         @Inject(Injector) protected override _injector: Injector,
         @Inject(ICommandService) protected _commandService: ICommandService
     ) {
         super();
-
-        this._pluginConfig = Tools.deepMerge({}, DefaultSheetsThreadCommentConfig, config);
     }
 
     override onStarting(): void {
         ([
-            [
-                SheetsThreadCommentController,
-                {
-                    useFactory: () => this._injector.createInstance(SheetsThreadCommentController, this._pluginConfig),
-                },
-            ],
-            [SheetsThreadCommentRenderController],
-            [SheetsThreadCommentCopyPasteController],
-            [SheetsThreadCommentHoverController],
-            [ThreadCommentRemoveSheetsController],
-            [SheetsThreadCommentPopupService],
+            [SheetsThreadCommentModel],
+            [SheetsThreadCommentRefRangeController],
         ] as Dependency[]).forEach((dep) => {
             this._injector.add(dep);
         });
 
-        [ShowAddSheetCommentModalOperation].forEach((command) => {
-            this._commandService.registerCommand(command);
-        });
+        this._injector.get(SheetsThreadCommentRefRangeController);
     }
 }

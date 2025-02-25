@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,10 @@
  */
 
 import type { IDisposable, IMutationInfo, IRange, Nullable, Workbook } from '@univerjs/core';
+import type { IMoveRangeMutationParams } from '../../commands/mutations/move-range.mutation';
+
+import type { ISheetCommandSharedParams } from '../../commands/utils/interface';
+import type { EffectRefRangeParams } from './type';
 import {
     CommandType,
     createInterceptorKey,
@@ -23,18 +27,15 @@ import {
     Inject,
     InterceptorManager,
     IUniverInstanceService,
-    LifecycleStages,
-    OnLifecycle,
     RANGE_TYPE,
     Rectangle,
     toDisposable,
     UniverInstanceType,
 } from '@univerjs/core';
-
-import { SheetsSelectionsService } from '../selections/selection-manager.service';
+import { MoveRangeMutation } from '../../commands/mutations/move-range.mutation';
+import { RemoveSheetMutation } from '../../commands/mutations/remove-sheet.mutation';
+import { SheetsSelectionsService } from '../selections/selection.service';
 import { SheetInterceptorService } from '../sheet-interceptor/sheet-interceptor.service';
-import type { ISheetCommandSharedParams } from '../../commands/utils/interface';
-import type { EffectRefRangeParams } from './type';
 import { EffectRefRangId } from './type';
 import { adjustRangeOnMutation, getEffectedRangesOnMutation } from './util';
 
@@ -64,16 +65,30 @@ class WatchRange extends Disposable {
     }
 
     onMutation(mutation: IMutationInfo<ISheetCommandSharedParams>) {
-        if (mutation.params?.unitId !== this._unitId || mutation.params?.subUnitId !== this._subUnitId) {
+        if (mutation.params?.unitId !== this._unitId) {
             return;
         }
+        // move range don't have subUnitId on params
+        if (mutation.id === MoveRangeMutation.id) {
+            const params = mutation.params as unknown as IMoveRangeMutationParams;
+            if (params.from.subUnitId !== this._subUnitId || params.to.subUnitId !== this._subUnitId) {
+                return;
+            }
+        } else if (mutation.params?.subUnitId !== this._subUnitId) {
+            return;
+        }
+
         if (!this._range) {
             return;
         }
+
         if (this._skipIntersects) {
+            if (mutation.id === RemoveSheetMutation.id) {
+                return;
+            }
             const effectRanges = getEffectedRangesOnMutation(mutation);
             if (effectRanges?.some((effectRange) => Rectangle.intersects(effectRange, this._range!))) {
-                return false;
+                return;
             }
         }
 
@@ -91,7 +106,6 @@ class WatchRange extends Disposable {
 /**
  * Collect side effects caused by ref range change
  */
-@OnLifecycle(LifecycleStages.Ready, RefRangeService)
 export class RefRangeService extends Disposable {
     interceptor = new InterceptorManager({ MERGE_REDO, MERGE_UNDO });
 

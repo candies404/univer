@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,30 +14,31 @@
  * limitations under the License.
  */
 
-import { type DependencyOverride, LifecycleStages, runOnLifecycle } from '@univerjs/core';
 import { createIdentifier } from '@univerjs/core';
-import type { MenuConfig } from '../../services/menu/menu';
 
 export interface IWorkbenchOptions {
     container?: string | HTMLElement;
 
+    /**
+     * If Univer should make the header bar visible.
+     */
     header?: boolean;
+
+    /**
+     * If Univer should make the toolbar bar visible.
+     */
     toolbar?: boolean;
+
+    /**
+     * If Univer should make the footer bar visible.
+     */
     footer?: boolean;
+
+    /**
+     * If Univer should make the context menu usable.
+     */
     contextMenu?: boolean;
 }
 
-export interface IUIController {}
+export interface IUIController { }
 export const IUIController = createIdentifier<IUIController>('univer.ui.ui-controller');
-runOnLifecycle(LifecycleStages.Ready, IUIController);
-
-export interface IUniverUIConfig extends IWorkbenchOptions {
-    /** Disable auto focus when Univer bootstraps. */
-    disableAutoFocus?: true;
-
-    override?: DependencyOverride;
-
-    menu?: MenuConfig;
-}
-
-export const UI_CONFIG_KEY = 'UNIVER_UI_CONFIG_KEY';

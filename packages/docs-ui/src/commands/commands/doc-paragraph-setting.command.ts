@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,42 +15,45 @@
  */
 
 import type { DocumentDataModel, IAccessor, ICommand, IMutationInfo, IParagraphStyle } from '@univerjs/core';
-import { CommandType, ICommandService, IUniverInstanceService, JSONX, MemoryCursor, TextX, TextXActionType, UniverInstanceType, UpdateDocsAttributeType } from '@univerjs/core';
 import type { IRichTextEditingMutationParams } from '@univerjs/docs';
-import { getParagraphsInRange, getRichTextEditPath, RichTextEditingMutation, serializeTextRange, TextSelectionManagerService } from '@univerjs/docs';
+import { CommandType, ICommandService, IUniverInstanceService, JSONX, MemoryCursor, TextX, TextXActionType, UniverInstanceType, UpdateDocsAttributeType } from '@univerjs/core';
+import { DocSelectionManagerService, RichTextEditingMutation } from '@univerjs/docs';
+import { getRichTextEditPath } from '../util';
+import { getParagraphsInRanges } from './list.command';
 
-export type IDocParagraphSettingCommandParams = Partial<Pick<IParagraphStyle, 'hanging' | 'horizontalAlign' | 'spaceBelow' | 'spaceAbove' | 'indentEnd' | 'indentStart' | 'lineSpacing' | 'indentFirstLine'>>;
+export interface IDocParagraphSettingCommandParams {
+    paragraph: Partial<Pick<IParagraphStyle, 'hanging' | 'horizontalAlign' | 'spaceBelow' | 'spaceAbove' | 'indentEnd' | 'indentStart' | 'lineSpacing' | 'indentFirstLine' | 'snapToGrid' | 'spacingRule'>>;
+    sections?: Record<string, any>;
+};
 export const DocParagraphSettingCommand: ICommand<IDocParagraphSettingCommandParams> = {
     id: 'doc-paragraph-setting.command',
     type: CommandType.COMMAND,
     handler: async (accessor: IAccessor, config) => {
-        const textSelectionManagerService = accessor.get(TextSelectionManagerService);
+        const docSelectionManagerService = accessor.get(DocSelectionManagerService);
 
         const univerInstanceService = accessor.get(IUniverInstanceService);
         const commandService = accessor.get(ICommandService);
 
         const docDataModel = univerInstanceService.getCurrentUnitForType<DocumentDataModel>(UniverInstanceType.UNIVER_DOC);
-        const activeRange = textSelectionManagerService.getActiveRange();
+        const docRanges = docSelectionManagerService.getDocRanges();
 
-        if (!docDataModel || !activeRange || !config) {
+        if (!docDataModel || docRanges.length === 0 || !config) {
             return false;
         }
 
-        const segmentId = activeRange.segmentId;
+        const segmentId = docRanges[0].segmentId;
+
         const unitId = docDataModel.getUnitId();
 
         const allParagraphs = docDataModel.getSelfOrHeaderFooterModel(segmentId).getBody()?.paragraphs ?? [];
-        const paragraphs = getParagraphsInRange(activeRange, allParagraphs) ?? [];
-
-        const selections = textSelectionManagerService.getCurrentSelections() ?? [];
-        const serializedSelections = selections.map(serializeTextRange);
+        const paragraphs = getParagraphsInRanges(docRanges, allParagraphs) ?? [];
 
         const doMutation: IMutationInfo<IRichTextEditingMutationParams> = {
             id: RichTextEditingMutation.id,
             params: {
                 unitId,
                 actions: [],
-                textRanges: serializedSelections,
+                textRanges: docRanges,
             },
         };
 
@@ -65,12 +68,11 @@ export const DocParagraphSettingCommand: ICommand<IDocParagraphSettingCommandPar
             textX.push({
                 t: TextXActionType.RETAIN,
                 len: startIndex - memoryCursor.cursor,
-                segmentId,
             });
             // See: univer/packages/engine-render/src/components/docs/block/paragraph/layout-ruler.ts line:802 comments.
             const paragraphStyle: IParagraphStyle = {
                 ...paragraph.paragraphStyle,
-                ...config,
+                ...config.paragraph,
             };
             textX.push({
                 t: TextXActionType.RETAIN,
@@ -85,7 +87,6 @@ export const DocParagraphSettingCommand: ICommand<IDocParagraphSettingCommandPar
                         },
                     ],
                 },
-                segmentId,
                 coverType: UpdateDocsAttributeType.REPLACE,
             });
 
@@ -99,6 +100,7 @@ export const DocParagraphSettingCommand: ICommand<IDocParagraphSettingCommandPar
             IRichTextEditingMutationParams,
             IRichTextEditingMutationParams
         >(doMutation.id, doMutation.params);
+
         return !!result;
     },
 };

@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,10 +14,12 @@
  * limitations under the License.
  */
 
-import type { CellValue, IDataValidationRule, IDataValidationRuleBase, Nullable } from '@univerjs/core';
+import type { CellValue, IDataValidationRule, IDataValidationRuleBase, IStyleData, Nullable, Workbook, Worksheet } from '@univerjs/core';
+import type { CellValueType } from '@univerjs/protocol';
+import type { ISheetLocationBase } from '@univerjs/sheets';
+import type { IBaseDataValidationWidget } from './base-widget';
 import { DataValidationOperator, Inject, Injector, LocaleService, Tools } from '@univerjs/core';
 import { OperatorErrorTitleMap, OperatorTitleMap } from '../types/const/operator-text-map';
-import type { IBaseDataValidationWidget } from './base-widget';
 
 const FORMULA1 = '{FORMULA1}';
 const FORMULA2 = '{FORMULA2}';
@@ -35,15 +37,20 @@ const operatorNameMap: Record<DataValidationOperator, string> = {
 
 export interface IValidatorCellInfo<DataType = Nullable<CellValue>> {
     value: DataType;
+    interceptValue: Nullable<CellValue>;
     row: number;
     column: number;
     unitId: string;
     subUnitId: string;
+    worksheet: Worksheet;
+    workbook: Workbook;
+    t: Nullable<CellValueType>;
 }
 
 export interface IFormulaResult<T = any> {
     formula1: T;
     formula2: T;
+    isFormulaValid: boolean;
 }
 
 export interface IFormulaValidResult {
@@ -52,22 +59,22 @@ export interface IFormulaValidResult {
     formula2?: string;
 }
 
-export abstract class BaseDataValidator<DataType = CellValue> {
+export abstract class BaseDataValidator {
     abstract id: string;
-
     abstract title: string;
-
     abstract operators: DataValidationOperator[];
-
     abstract scopes: string[] | string;
 
-    abstract formulaInput: string;
+    offsetFormulaByRange = true;
 
+    // #region UI related
+
+    formulaInput: string | undefined = undefined;
     canvasRender: Nullable<IBaseDataValidationWidget> = null;
-
     dropdown: string | undefined = undefined;
-
     optionsInput: string | undefined = undefined;
+
+    // #endregion
 
     constructor(
         @Inject(LocaleService) readonly localeService: LocaleService,
@@ -84,9 +91,7 @@ export abstract class BaseDataValidator<DataType = CellValue> {
         return this.localeService.t(this.title);
     }
 
-    skipDefaultFontRender(rule: IDataValidationRule, cellValue: Nullable<CellValue>, pos: any) {
-        return false;
-    };
+    skipDefaultFontRender: ((rule: IDataValidationRule, cellValue: Nullable<CellValue>, pos: any) => boolean) | undefined;
 
     generateRuleName(rule: IDataValidationRuleBase): string {
         if (!rule.operator) {
@@ -97,7 +102,7 @@ export abstract class BaseDataValidator<DataType = CellValue> {
         return `${this.titleStr} ${ruleName}`;
     }
 
-    generateRuleErrorMessage(rule: IDataValidationRuleBase) {
+    generateRuleErrorMessage(rule: IDataValidationRuleBase, position: ISheetLocationBase) {
         if (!rule.operator) {
             return this.titleStr;
         }
@@ -106,12 +111,14 @@ export abstract class BaseDataValidator<DataType = CellValue> {
         return `${errorMsg}`;
     }
 
-    getRuleFinalError(rule: IDataValidationRule) {
-        if (rule.showInputMessage && rule.error) {
+    getExtraStyle(rule: IDataValidationRuleBase, value: Nullable<CellValue>, ctx: { style: IStyleData }, row: number, column: number): Nullable<IStyleData> {}
+
+    getRuleFinalError(rule: IDataValidationRule, position: ISheetLocationBase) {
+        if (rule.showErrorMessage && rule.error) {
             return rule.error;
         }
 
-        return this.generateRuleErrorMessage(rule);
+        return this.generateRuleErrorMessage(rule, position);
     }
 
     isEmptyCellValue(cellValue: Nullable<CellValue>): cellValue is null | undefined | void {
@@ -122,49 +129,97 @@ export abstract class BaseDataValidator<DataType = CellValue> {
         return false;
     }
 
-    abstract parseFormula(rule: IDataValidationRule, unitId: string, subUnitId: string): Promise<IFormulaResult>;
+    abstract parseFormula(rule: IDataValidationRule, unitId: string, subUnitId: string, row: number, column: number): Promise<IFormulaResult<number | undefined>>;
 
     abstract validatorFormula(rule: IDataValidationRule, unitId: string, subUnitId: string): IFormulaValidResult;
+
+    normalizeFormula(rule: IDataValidationRule, unitId: string, subUnitId: string) {
+        return {
+            formula1: rule.formula1,
+            formula2: rule.formula2,
+        };
+    }
 
     async isValidType(cellInfo: IValidatorCellInfo, formula: IFormulaResult, rule: IDataValidationRule): Promise<boolean> {
         return true;
     };
 
-    transform(cellInfo: IValidatorCellInfo, formula: IFormulaResult, rule: IDataValidationRule): IValidatorCellInfo<DataType> {
-        return cellInfo as IValidatorCellInfo<DataType>;
+    transform(cellInfo: IValidatorCellInfo, formula: IFormulaResult, rule: IDataValidationRule): IValidatorCellInfo<number> {
+        return cellInfo as IValidatorCellInfo<number>;
     };
 
-    async validatorIsEqual(cellInfo: IValidatorCellInfo<DataType>, formula: IFormulaResult, rule: IDataValidationRule): Promise<boolean> {
-        return true;
-    };
+    async validatorIsEqual(cellInfo: IValidatorCellInfo<CellValue>, formula: IFormulaResult, rule: IDataValidationRule) {
+        const { formula1 } = formula;
+        const { value: cellValue } = cellInfo;
+        if (Number.isNaN(formula1)) {
+            return true;
+        }
 
-    async validatorIsNotEqual(cellInfo: IValidatorCellInfo<DataType>, formula: IFormulaResult, rule: IDataValidationRule): Promise<boolean> {
-        return true;
-    };
+        return cellValue === formula1;
+    }
 
-    async validatorIsBetween(cellInfo: IValidatorCellInfo<DataType>, formula: IFormulaResult, rule: IDataValidationRule): Promise<boolean> {
-        return true;
-    };
+    async validatorIsNotEqual(cellInfo: IValidatorCellInfo<number>, formula: IFormulaResult, _rule: IDataValidationRule) {
+        const { formula1 } = formula;
+        if (Number.isNaN(formula1)) {
+            return true;
+        }
 
-    async validatorIsNotBetween(cellInfo: IValidatorCellInfo<DataType>, formula: IFormulaResult, rule: IDataValidationRule): Promise<boolean> {
-        return true;
-    };
+        return cellInfo.value !== formula1;
+    }
 
-    async validatorIsGreaterThan(cellInfo: IValidatorCellInfo<DataType>, formula: IFormulaResult, rule: IDataValidationRule): Promise<boolean> {
-        return true;
-    };
+    async validatorIsBetween(cellInfo: IValidatorCellInfo<number>, formula: IFormulaResult, _rule: IDataValidationRule) {
+        const { formula1, formula2 } = formula;
+        if (Number.isNaN(formula1) || Number.isNaN(formula2)) {
+            return true;
+        }
 
-    async validatorIsGreaterThanOrEqual(cellInfo: IValidatorCellInfo<DataType>, formula: IFormulaResult, rule: IDataValidationRule): Promise<boolean> {
-        return true;
-    };
+        const start = Math.min(formula1, formula2);
+        const end = Math.max(formula1, formula2);
+        return cellInfo.value >= start && cellInfo.value <= end;
+    }
 
-    async validatorIsLessThan(cellInfo: IValidatorCellInfo<DataType>, formula: IFormulaResult, rule: IDataValidationRule): Promise<boolean> {
-        return true;
-    };
+    async validatorIsNotBetween(cellInfo: IValidatorCellInfo<number>, formula: IFormulaResult, _rule: IDataValidationRule) {
+        const { formula1, formula2 } = formula;
+        if (Number.isNaN(formula1) || Number.isNaN(formula2)) {
+            return true;
+        }
+        const start = Math.min(formula1, formula2);
+        const end = Math.max(formula1, formula2);
+        return cellInfo.value < start || cellInfo.value > end;
+    }
 
-    async validatorIsLessThanOrEqual(cellInfo: IValidatorCellInfo<DataType>, formula: IFormulaResult, rule: IDataValidationRule): Promise<boolean> {
-        return true;
-    };
+    async validatorIsGreaterThan(cellInfo: IValidatorCellInfo<number>, formula: IFormulaResult, _rule: IDataValidationRule) {
+        const { formula1 } = formula;
+        if (Number.isNaN(formula1)) {
+            return true;
+        }
+        return cellInfo.value > formula1;
+    }
+
+    async validatorIsGreaterThanOrEqual(cellInfo: IValidatorCellInfo<number>, formula: IFormulaResult, _rule: IDataValidationRule) {
+        const { formula1 } = formula;
+        if (Number.isNaN(formula1)) {
+            return true;
+        }
+        return cellInfo.value >= formula1;
+    }
+
+    async validatorIsLessThan(cellInfo: IValidatorCellInfo<number>, formula: IFormulaResult, _rule: IDataValidationRule) {
+        const { formula1 } = formula;
+        if (Number.isNaN(formula1)) {
+            return true;
+        }
+        return cellInfo.value < formula1;
+    }
+
+    async validatorIsLessThanOrEqual(cellInfo: IValidatorCellInfo<number>, formula: IFormulaResult, _rule: IDataValidationRule) {
+        const { formula1 } = formula;
+        if (Number.isNaN(formula1)) {
+            return true;
+        }
+
+        return cellInfo.value <= formula1;
+    }
 
     async validator(cellInfo: IValidatorCellInfo, rule: IDataValidationRule): Promise<boolean> {
         const { value: cellValue, unitId, subUnitId } = cellInfo;
@@ -174,7 +229,11 @@ export abstract class BaseDataValidator<DataType = CellValue> {
             return allowBlank;
         }
 
-        const formulaInfo = await this.parseFormula(rule, unitId, subUnitId);
+        const formulaInfo = await this.parseFormula(rule, unitId, subUnitId, cellInfo.row, cellInfo.column);
+
+        if (!formulaInfo.isFormulaValid) {
+            return false;
+        }
 
         if (!(await this.isValidType(cellInfo, formulaInfo, rule))) {
             return false;

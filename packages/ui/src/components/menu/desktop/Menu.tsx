@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,17 @@
  * limitations under the License.
  */
 
-import { isRealNum, useDependency } from '@univerjs/core';
-
+import type {
+    MenuRef } from '@univerjs/design';
+import type {
+    IDisplayMenuItem,
+    IMenuButtonItem,
+    IMenuItem,
+    IMenuSelectorItem,
+    IValueOption,
+    MenuItemDefaultValueType,
+} from '../../../services/menu/menu';
+import { isRealNum } from '@univerjs/core';
 import {
     Menu as DesignMenu,
     MenuItem as DesignMenuItem,
@@ -24,30 +33,22 @@ import {
 } from '@univerjs/design';
 import { CheckMarkSingle, MoreSingle } from '@univerjs/icons';
 import clsx from 'clsx';
-import React, { useState } from 'react';
-import { isObservable } from 'rxjs';
 
-import type {
-    IDisplayMenuItem,
-    IMenuButtonItem,
-    IMenuItem,
-    IMenuSelectorItem,
-    IValueOption,
-    MenuItemDefaultValueType,
-} from '../../../services/menu/menu.ts';
-import { MenuGroup, MenuItemType } from '../../../services/menu/menu.ts';
-import { IMenuService } from '../../../services/menu/menu.service.ts';
-import { CustomLabel } from '../../custom-label/CustomLabel.tsx';
-import { useObservable } from '../../hooks/observable.ts';
-import { useScrollYOverContainer } from '../../hooks/layout.ts';
-import { ILayoutService } from '../../../services/layout/layout.service.ts';
+import React, { useEffect, useMemo, useState } from 'react';
+import { combineLatest, isObservable, of } from 'rxjs';
+import { ILayoutService } from '../../../services/layout/layout.service';
+import { MenuItemType } from '../../../services/menu/menu';
+import { IMenuManagerService } from '../../../services/menu/menu-manager.service';
+import { useDependency, useObservable } from '../../../utils/di';
+import { CustomLabel } from '../../custom-label/CustomLabel';
+import { useScrollYOverContainer } from '../../hooks/layout';
 import styles from './index.module.less';
 
 // TODO: @jikkai disabled and hidden are not working
 
 export interface IBaseMenuProps {
     parentKey?: string | number;
-    menuType?: string | string[];
+    menuType?: string;
 
     value?: string | number;
     options?: IValueOption[];
@@ -61,114 +62,123 @@ export interface IBaseMenuProps {
 
 function MenuWrapper(props: IBaseMenuProps) {
     const { menuType, onOptionSelect } = props;
-    const menuService = useDependency(IMenuService);
+
+    const menuManagerService = useDependency(IMenuManagerService);
+
+    const menuItems = useMemo(() => menuType ? menuManagerService.getMenuByPositionKey(menuType) : [], [menuType, menuManagerService]);
+
+    const [hiddenStates, setHiddenStates] = useState<Record<string, boolean>>({});
+
+    const filteredMenuItems = useMemo(() => {
+        return menuItems.filter((item) => {
+            if (!item.children) return item;
+
+            const itemKey = item.key?.toString() || '';
+            return !hiddenStates[itemKey];
+        });
+    }, [menuItems, hiddenStates]);
+
+    useEffect(() => {
+        const subscriptions = menuItems.map((item) => {
+            if (!item.children) return null;
+
+            const hiddenObservables = item.children.map((subItem) => subItem.item?.hidden$ ?? of(false));
+
+            return combineLatest(hiddenObservables).subscribe((hiddenValues) => {
+                const isAllHidden = hiddenValues.every((hidden) => hidden === true);
+                setHiddenStates((prev) => ({
+                    ...prev,
+                    [item.key]: isAllHidden,
+                }));
+            });
+        });
+
+        return () => {
+            subscriptions.forEach((sub) => sub?.unsubscribe());
+            setHiddenStates({});
+        };
+    }, [menuItems]);
 
     if (!menuType) {
         return null;
     };
 
-    if (Array.isArray(menuType)) {
-        const menuTypes = menuType.map((type) => menuService.getMenuItems(type));
-
-        const group = menuTypes.map((menuItems) =>
-            menuItems.reduce(
-                (acc, item: IDisplayMenuItem<IMenuItem>) => {
-                    if (item.group) {
-                        acc[item.group] = acc[item.group] ?? [];
-                        acc[item.group].push(item);
-                    } else {
-                        acc[MenuGroup.CONTEXT_MENU_OTHERS] = acc[MenuGroup.CONTEXT_MENU_OTHERS] ?? [];
-                        acc[MenuGroup.CONTEXT_MENU_OTHERS].push(item);
-                    }
-                    return acc;
-                },
-                {} as Record<MenuGroup, Array<IDisplayMenuItem<IMenuItem>>>
+    return filteredMenuItems && filteredMenuItems.map((item) => item.item
+        ? (
+            <MenuItem
+                key={item.key}
+                menuItem={item.item}
+                onClick={(object: Partial<IValueOption>) => {
+                    onOptionSelect?.({ value: '', label: item.key, ...object });
+                }}
+            />
+        )
+        : item.children?.length
+            ? (
+                <DesignMenuItemGroup key={item.key} eventKey={item.key}>
+                    {item.children.map((child) => (
+                        child.item && (
+                            <MenuItem
+                                key={child.key}
+                                menuItem={child.item}
+                                onClick={(object: Partial<IValueOption>) => {
+                                    onOptionSelect?.({ value: '', label: child.key, ...object });
+                                }}
+                            />
+                        )
+                    ))}
+                </DesignMenuItemGroup>
             )
-        );
-
-        return (
-            <>
-                {group.map((groupItem) =>
-                    Object.keys(groupItem).map((groupKey: string) => (
-                        <DesignMenuItemGroup key={groupKey} eventKey={groupKey}>
-                            {groupItem[groupKey as unknown as MenuGroup].map((item: IDisplayMenuItem<IMenuItem>) => (
-                                <MenuItem
-                                    key={item.id}
-                                    menuItem={item}
-                                    onClick={(object: Partial<IValueOption>) => {
-                                        onOptionSelect?.({ value: '', label: item.id, ...object });
-                                    }}
-                                />
-                            ))}
-                        </DesignMenuItemGroup>
-                    ))
-                )}
-            </>
-        );
-    }
-
-    const menuItems = menuService.getMenuItems(menuType);
-
-    return menuItems.map((item: IDisplayMenuItem<IMenuItem>) => (
-        <MenuItem
-            key={item.id}
-            menuItem={item}
-            onClick={(object: Partial<IValueOption>) => {
-                onOptionSelect?.({ value: '', label: item.id, ...object });
-            }}
-        />
-    ));
+            : null);
 }
 
 function MenuOptionsWrapper(props: IBaseMenuProps) {
     const { options, value, onOptionSelect, parentKey } = props;
 
-    return (
-        options?.map((option: IValueOption, index: number) => {
-            const key = `${parentKey}-${option.label ?? option.id}-${index}`;
+    return options?.map((option: IValueOption, index: number) => {
+        const key = `${parentKey}-${option.label ?? option.id}-${index}`;
 
-            const onChange = (v: string | number) => {
-                onOptionSelect?.({ value: v, label: option?.label });
-            };
+        const onChange = (v: string | number) => {
+            onOptionSelect?.({ value: v, label: option?.label, commandId: option?.commandId });
+        };
 
-            const handleClick = () => {
-                if (typeof option.value === 'undefined') return;
+        const handleClick = () => {
+            if (typeof option.value === 'undefined') return;
 
-                onOptionSelect?.({
-                    ...option,
-                });
-            };
-
-            const _className = clsx({
-                [styles.menuItemNoHover]: typeof option.label !== 'string' && !option.label?.hoverable,
+            onOptionSelect?.({
+                ...option,
             });
+        };
 
-            return (
-                <DesignMenuItem disabled={option.disabled} key={key} eventKey={key} className={_className} onClick={handleClick}>
-                    <span
-                        className={clsx(styles.menuItemContent, {
-                            [styles.menuItemSelectable]: !(
-                                typeof option.label !== 'string' && !option.label?.hoverable
-                            ),
-                        })}
-                    >
-                        {typeof value !== 'undefined' && String(value) === String(option.value) && (
-                            <span className={styles.menuItemSelectableIcon}>
-                                <CheckMarkSingle style={{ color: 'rgb(var(--success-color))' }} />
-                            </span>
-                        )}
-                        <CustomLabel
-                            value$={option.value$}
-                            value={option.value}
-                            label={option.label}
-                            icon={option.icon}
-                            onChange={onChange}
-                        />
-                    </span>
-                </DesignMenuItem>
-            );
-        }) ?? <></>
-    );
+        const _className = clsx({
+            [styles.menuItemNoHover]: typeof option.label !== 'string' && !option.label?.hoverable,
+        });
+
+        return (
+            <DesignMenuItem disabled={option.disabled} key={key} eventKey={key} className={_className} onClick={handleClick}>
+                <span
+                    className={clsx(styles.menuItemContent, {
+                        [styles.menuItemSelectable]: !(
+                            typeof option.label !== 'string' && !option.label?.hoverable
+                        ),
+                    })}
+                >
+                    {typeof value !== 'undefined' && String(value) === String(option.value) && (
+                        <span className={styles.menuItemSelectableIcon}>
+                            <CheckMarkSingle style={{ color: 'rgb(var(--success-color))' }} />
+                        </span>
+                    )}
+                    <CustomLabel
+                        value$={option.value$}
+                        value={option.value}
+                        label={option.label}
+                        icon={option.icon}
+                        onChange={onChange}
+                    />
+                </span>
+            </DesignMenuItem>
+        );
+    }) ?? null;
 }
 
 export const Menu = (props: IBaseMenuProps) => {
@@ -178,9 +188,15 @@ export const Menu = (props: IBaseMenuProps) => {
 
     useScrollYOverContainer(overViewport === 'scroll' ? menuEl : null, layoutService.rootContainerElement);
 
+    function handleSetMenuEl(ref: MenuRef | null) {
+        if (ref) {
+            setMenuEl(ref.list);
+        }
+    }
+
     return (
         <DesignMenu
-            ref={(ref) => ref?.list && setMenuEl(ref.list)}
+            ref={handleSetMenuEl}
             selectable={false}
         >
             <MenuOptionsWrapper {...restProps} />
@@ -195,7 +211,7 @@ interface IMenuItemProps {
 }
 
 function MenuItem({ menuItem, onClick }: IMenuItemProps) {
-    const menuService = useDependency(IMenuService);
+    const menuManagerService = useDependency(IMenuManagerService);
 
     const disabled = useObservable<boolean>(menuItem.disabled$, false);
     const activated = useObservable<boolean>(menuItem.activated$, false);
@@ -232,11 +248,17 @@ function MenuItem({ menuItem, onClick }: IMenuItemProps) {
                     [styles.menuItemActivated]: activated,
                 })}
                 onClick={() => {
-                    onClick({ value: inputValue, id: item.id }); // merge cell
+                    onClick({ commandId: item.commandId, value: inputValue, id: item.id });
                 }}
             >
                 <span className={styles.menuItemContent}>
-                    <CustomLabel value={value} title={title} label={label} icon={item.icon} onChange={onChange} />
+                    <CustomLabel
+                        value={value}
+                        title={title}
+                        label={label}
+                        icon={item.icon}
+                        onChange={onChange}
+                    />
                 </span>
             </DesignMenuItem>
         );
@@ -271,7 +293,7 @@ function MenuItem({ menuItem, onClick }: IMenuItemProps) {
                             menuType={item.id}
                             options={selections}
                             onOptionSelect={(v) => {
-                                onClick({ value: v.value, id: item.id });
+                                onClick({ value: v.value, id: item.id, commandId: v.commandId });
                             }}
                         />
                     )}
@@ -295,7 +317,8 @@ function MenuItem({ menuItem, onClick }: IMenuItemProps) {
         );
     };
 
-    const subMenuItems = menuItem.id ? menuService.getMenuItems(menuItem.id) : [];
+    const subMenuItems = menuItem.id ? menuManagerService.getMenuByPositionKey(menuItem.id) : [];
+
     const renderSubItemsType = () => {
         const item = menuItem as IDisplayMenuItem<IMenuSelectorItem>;
 

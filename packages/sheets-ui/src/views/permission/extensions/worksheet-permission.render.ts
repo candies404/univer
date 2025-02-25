@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-import type { IRange, IScale } from '@univerjs/core';
+import type { IScale } from '@univerjs/core';
 import type { SpreadsheetSkeleton, UniverRenderingContext } from '@univerjs/engine-render';
+import type { IWorksheetProtectionRenderCellData } from '@univerjs/sheets';
 import { SheetExtension } from '@univerjs/engine-render';
 import { UnitAction } from '@univerjs/protocol';
-import type { IWorksheetProtectionRenderCellData } from '@univerjs/sheets';
 import { base64 } from './protect-background-img';
 
 export const worksheetProtectionKey = 'worksheet-protection';
@@ -41,11 +41,10 @@ export class WorksheetProtectionRenderExtension extends SheetExtension {
     override draw(
         ctx: UniverRenderingContext,
         _parentScale: IScale,
-        spreadsheetSkeleton: SpreadsheetSkeleton,
-        _diffRanges?: IRange[]
+        spreadsheetSkeleton: SpreadsheetSkeleton
     ) {
-        const { rowHeightAccumulation, columnWidthAccumulation, worksheet, dataMergeCache } =
-            spreadsheetSkeleton;
+        const { worksheet } = spreadsheetSkeleton;
+
         if (!worksheet) {
             return false;
         }
@@ -55,8 +54,8 @@ export class WorksheetProtectionRenderExtension extends SheetExtension {
             this._pattern = ctx.createPattern(this._img, 'repeat');
         }
         const { startRow, startColumn, endRow, endColumn } = spreadsheetSkeleton.rowColumnSegment;
-        const start = this.getCellIndex(startRow, startColumn, rowHeightAccumulation, columnWidthAccumulation, dataMergeCache);
-        const end = this.getCellIndex(endRow, endColumn, rowHeightAccumulation, columnWidthAccumulation, dataMergeCache);
+        const start = spreadsheetSkeleton.getCellWithCoordByIndex(startRow, startColumn, false);
+        const end = spreadsheetSkeleton.getCellWithCoordByIndex(endRow, endColumn, false);
 
         const { hasWorksheetRule = false, selectionProtection = [] } = worksheet.getCell(startRow, startColumn) as IWorksheetProtectionRenderCellData || {};
         if (!this._pattern) {

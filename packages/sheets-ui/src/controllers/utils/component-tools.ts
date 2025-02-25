@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 
 import type { IUniverInstanceService, Nullable } from '@univerjs/core';
-import { UniverInstanceType, Workbook } from '@univerjs/core';
 import type {
     Engine,
     IRenderContext,
@@ -28,6 +27,7 @@ import type {
     SpreadsheetSkeleton,
     Viewport,
 } from '@univerjs/engine-render';
+import { UniverInstanceType, Workbook } from '@univerjs/core';
 import { SHEET_VIEWPORT_KEY, Vector2 } from '@univerjs/engine-render';
 
 import { SHEET_VIEW_KEY } from '../../common/keys';
@@ -96,7 +96,7 @@ export function getSheetObject(
 }
 
 export function getCoordByCell(row: number, col: number, scene: Scene, skeleton: SpreadsheetSkeleton) {
-    const { startX, startY, endX, endY } = skeleton.getCellByIndex(row, col);
+    const { startX, startY, endX, endY } = skeleton.getCellWithCoordByIndex(row, col);
     return { startX, startY, endX, endY };
 }
 
@@ -108,26 +108,26 @@ export function getCoordByOffset(
     viewport?: Viewport,
     closeFirst?: boolean
 ) {
-    const relativeCoords = scene.getRelativeToViewportCoord(Vector2.FromArray([evtOffsetX, evtOffsetY]));
+    const relativeCoords = scene.getCoordRelativeToViewport(Vector2.FromArray([evtOffsetX, evtOffsetY]));
 
     const { x: newEvtOffsetX, y: newEvtOffsetY } = relativeCoords;
 
-    const scrollXY = scene.getVpScrollXYInfoByPosToVp(relativeCoords, viewport);
+    const scrollXY = scene.getScrollXYInfoByViewport(relativeCoords, viewport);
 
     const { scaleX, scaleY } = scene.getAncestorScale();
 
-    const moveActualSelection = skeleton.getCellPositionByOffset(
+    const moveActualSelection = skeleton.getCellIndexByOffset(
         newEvtOffsetX,
         newEvtOffsetY,
         scaleX,
         scaleY,
         scrollXY,
-        closeFirst
+        { closeFirst }
     );
 
     const { row, column } = moveActualSelection;
 
-    const startCell = skeleton.getNoMergeCellPositionByIndex(row, column);
+    const startCell = skeleton.getNoMergeCellWithCoordByIndex(row, column);
 
     const { startX, startY, endX, endY } = startCell;
 
@@ -142,11 +142,11 @@ export function getCoordByOffset(
 }
 
 export function getTransformCoord(evtOffsetX: number, evtOffsetY: number, scene: Scene, skeleton: SpreadsheetSkeleton) {
-    const relativeCoords = scene.getRelativeToViewportCoord(Vector2.FromArray([evtOffsetX, evtOffsetY]));
+    const relativeCoords = scene.getCoordRelativeToViewport(Vector2.FromArray([evtOffsetX, evtOffsetY]));
 
     const viewMain = scene.getViewport(SHEET_VIEWPORT_KEY.VIEW_MAIN);
 
-    const scrollXY = scene.getVpScrollXYInfoByPosToVp(relativeCoords, viewMain);
+    const scrollXY = scene.getScrollXYInfoByViewport(relativeCoords, viewMain);
     const { scaleX, scaleY } = scene.getAncestorScale();
 
     const { x: scrollX, y: scrollY } = scrollXY;

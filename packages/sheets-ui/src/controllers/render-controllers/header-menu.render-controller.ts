@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,24 +14,23 @@
  * limitations under the License.
  */
 
-import type { Nullable, Workbook } from '@univerjs/core';
 import {
     Disposable,
     ICommandService,
     Inject,
     RANGE_TYPE,
 } from '@univerjs/core';
-import type { IMouseEvent, IPointerEvent, IRenderContext, IRenderModule, SpreadsheetColumnHeader, SpreadsheetHeader } from '@univerjs/engine-render';
 import { CURSOR_TYPE, Rect } from '@univerjs/engine-render';
-import type { ISetSelectionsOperationParams } from '@univerjs/sheets';
 import { SetSelectionsOperation, SheetsSelectionsService } from '@univerjs/sheets';
-import { IContextMenuService } from '@univerjs/ui';
-
+import { ContextMenuPosition, IContextMenuService } from '@univerjs/ui';
 import { Subscription } from 'rxjs';
+import type { Nullable, Workbook } from '@univerjs/core';
+import type { IMouseEvent, IPointerEvent, IRenderContext, IRenderModule, SpreadsheetColumnHeader, SpreadsheetHeader } from '@univerjs/engine-render';
+import type { ISetSelectionsOperationParams } from '@univerjs/sheets';
+
 import { SHEET_COMPONENT_HEADER_LAYER_INDEX, SHEET_VIEW_KEY } from '../../common/keys';
 import { SheetSkeletonManagerService } from '../../services/sheet-skeleton-manager.service';
 import { HEADER_MENU_SHAPE_TYPE, HeaderMenuShape } from '../../views/header-menu-shape';
-import { SheetMenuPosition } from '../menu/menu';
 import { getCoordByOffset } from '../utils/component-tools';
 
 const HEADER_MENU_CONTROLLER_SHAPE = '__SpreadsheetHeaderMenuSHAPEControllerShape__';
@@ -125,7 +124,7 @@ export class HeaderMenuRenderController extends Disposable implements IRenderMod
             initialType === HEADER_HOVER_TYPE.ROW ? spreadsheetRowHeader : spreadsheetColumnHeader;
 
         const pointerMoveHandler = (evt: IPointerEvent | IMouseEvent) => {
-            const skeleton = this._sheetSkeletonManagerService.getCurrent()?.skeleton;
+            const skeleton = this._sheetSkeletonManagerService.getCurrentParam()?.skeleton;
             if (skeleton == null) {
                 return;
             }
@@ -260,7 +259,7 @@ export class HeaderMenuRenderController extends Disposable implements IRenderMod
 
             evt.stopPropagation();
             evt.preventDefault();
-            this._contextMenuService.triggerContextMenu(evt, SheetMenuPosition.COL_HEADER_CONTEXT_MENU);
+            this._contextMenuService.triggerContextMenu(evt, ContextMenuPosition.COL_HEADER);
         });
     }
 

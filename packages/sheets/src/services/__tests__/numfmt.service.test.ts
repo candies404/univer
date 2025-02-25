@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,11 @@
  */
 
 import type { Injector, Styles, Univer, Workbook, Worksheet } from '@univerjs/core';
-import { cellToRange, CellValueType, ICommandService, IUniverInstanceService, UniverInstanceType } from '@univerjs/core';
 import type { IRemoveNumfmtMutationParams, ISetNumfmtMutationParams } from '@univerjs/sheets';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { cellToRange, CellValueType, ICommandService, IUniverInstanceService, UniverInstanceType } from '@univerjs/core';
+import { DEFAULT_TEXT_FORMAT_EXCEL } from '@univerjs/engine-numfmt';
 
-import { DEFAULT_TEXT_FORMAT } from '@univerjs/engine-numfmt';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { RemoveNumfmtMutation, SetNumfmtMutation } from '../../commands/mutations/numfmt-mutation';
 import { NumfmtService } from '../numfmt/numfmt.service';
 import { INumfmtService } from '../numfmt/type';
@@ -106,22 +106,23 @@ describe('test numfmt service', () => {
             subUnitId,
             refMap: {
                 1: {
-                    pattern: DEFAULT_TEXT_FORMAT,
+                    pattern: DEFAULT_TEXT_FORMAT_EXCEL,
                 },
             },
             values: { 1: { ranges: [cellToRange(0, 5)] } },
         };
         commandService.executeCommand(SetNumfmtMutation.id, params);
         const numfmt = numfmtService.getValue(unitId, subUnitId, 0, 5);
-        expect(numfmt?.pattern).toEqual(DEFAULT_TEXT_FORMAT);
+        expect(numfmt?.pattern).toEqual(DEFAULT_TEXT_FORMAT_EXCEL);
 
         const cell = sheet.getCellRaw(0, 5);
         const numfmtId = cell?.s;
-        expect(styles.get(numfmtId)?.n).toEqual({ pattern: DEFAULT_TEXT_FORMAT });
-        expect(cell).toStrictEqual({ v: '1', t: CellValueType.STRING, s: numfmtId });
+        expect(styles.get(numfmtId)?.n).toEqual({ pattern: DEFAULT_TEXT_FORMAT_EXCEL });
     });
 
     it('model set, text format contains number, to number format', () => {
+        // text format set to percentage format, value is not changed, t is not changed, only style is changed
+        // Re-enter a number so that the cell Only then display the percentage
         const params: ISetNumfmtMutationParams = {
             unitId,
             subUnitId,
@@ -139,7 +140,7 @@ describe('test numfmt service', () => {
         const cell = sheet.getCellRaw(0, 6);
         const numfmtId = cell?.s;
         expect(styles.get(numfmtId)?.n).toEqual({ pattern: '0%' });
-        expect(cell).toStrictEqual({ v: 1, t: CellValueType.NUMBER, s: numfmtId });
+        expect(cell).toStrictEqual({ v: '001', t: CellValueType.STRING, s: numfmtId });
     });
 
     it('model set, text format contains text, to number format', () => {

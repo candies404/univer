@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,5 @@
  * limitations under the License.
  */
 
-// @ts-ignore
-import numfmt from 'numfmt';
-
-export { DEFAULT_TEXT_FORMAT } from './const';
-
-export { numfmt };
+export { DEFAULT_NUMBER_FORMAT, DEFAULT_TEXT_FORMAT, DEFAULT_TEXT_FORMAT_EXCEL } from './const';
+export { isDefaultFormat, isTextFormat } from './util';

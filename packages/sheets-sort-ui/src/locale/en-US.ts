@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,7 +39,7 @@ const locale: typeof zhCN = {
             'sort-reminder-desc': 'Extend range sorting or keep range sorting?',
             'sort-reminder-ext': 'Extend range sorting',
             'sort-reminder-no': 'Keep range sorting',
-            'first-row-check': 'First row participates in sorting',
+            'first-row-check': 'First row does not participate in sorting',
             'add-condition': 'Add condition',
             cancel: 'Cancel',
             confirm: 'Confirm',

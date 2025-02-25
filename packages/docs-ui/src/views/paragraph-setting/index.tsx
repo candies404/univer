@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,11 @@
  */
 
 import type { ITextRange } from '@univerjs/core';
-import { generateRandomId, ICommandService, LocaleService, useDependency, useObservable } from '@univerjs/core';
-import React, { useEffect, useRef, useState } from 'react';
 import type { IRichTextEditingMutationParams, ISetTextSelectionsOperationParams } from '@univerjs/docs';
+import { debounce, generateRandomId, ICommandService, LocaleService } from '@univerjs/core';
 import { RichTextEditingMutation, SetTextSelectionsOperation } from '@univerjs/docs';
+import { useDependency, useObservable } from '@univerjs/ui';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { DocParagraphSettingCommand } from '../../commands/commands/doc-paragraph-setting.command';
 import { ParagraphSetting } from './Setting';
 
@@ -28,28 +29,18 @@ const isRangesEqual = (oldRanges: ITextRange[], ranges: ITextRange[]) => {
             range.startOffset === oldRange.startOffset && range.endOffset === oldRange.endOffset));
 };
 
-const isRangesIntersection = (oldRanges: ITextRange[], ranges: ITextRange[]) => {
-    return oldRanges.some((oldRange) => {
-        return ranges.some((range) => {
-            const { startOffset: activeStart, endOffset: activeEnd } = oldRange;
-            const { startOffset: compareStart, endOffset: compareEnd } = range;
-
-            if (activeStart == null || activeEnd == null || compareStart == null || compareEnd == null) {
-                return false;
-            }
-
-            return activeStart <= compareEnd && activeEnd >= compareStart;
-        });
-    });
-};
 export function ParagraphSettingIndex() {
     const commandService = useDependency(ICommandService);
     const localeService = useDependency(LocaleService);
     const currentLocale = useObservable(localeService.currentLocale$);
 
     const [key, keySet] = useState('');
+    const debounceReset = useMemo(() => {
+        return debounce(() => keySet(generateRandomId(4)), 300);
+    }, []);
 
     const rangeRef = useRef<ITextRange[]>([]);
+
     useEffect(() => {
         const dispose = commandService.onCommandExecuted((info) => {
             if (SetTextSelectionsOperation.id === info.id) {
@@ -61,19 +52,20 @@ export function ParagraphSettingIndex() {
             }
             if (RichTextEditingMutation.id === info.id) {
                 const params = info.params as IRichTextEditingMutationParams;
-                const ranges = params.textRanges ?? [];
                 const trigger = params.trigger;
-                if (trigger !== DocParagraphSettingCommand.id && isRangesIntersection(ranges, rangeRef.current)) {
-                    keySet(generateRandomId(4));
+                if (trigger !== DocParagraphSettingCommand.id) {
+                    debounceReset();
                 }
             }
         });
         return () => dispose.dispose();
-    }, []);
+    }, [debounceReset]);
 
     useEffect(() => {
         keySet(generateRandomId(4));
     }, [currentLocale]);
+
+    useEffect(() => () => debounceReset.cancel(), [debounceReset]);
 
     return <ParagraphSetting key={key} />;
 }

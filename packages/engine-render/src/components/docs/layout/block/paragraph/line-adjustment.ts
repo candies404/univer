@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,16 @@
  */
 
 import type { IParagraphStyle } from '@univerjs/core';
-import { HorizontalAlign } from '@univerjs/core';
+import type { ISectionBreakConfig } from '../../../../../basics';
 import type { IDocumentSkeletonDivide, IDocumentSkeletonLine, IDocumentSkeletonPage } from '../../../../../basics/i-document-skeleton-cached';
-import { getFontConfigFromLastGlyph, getGlyphGroupWidth, lineIterator } from '../../tools';
-import { createHyphenDashGlyph, glyphShrinkLeft, glyphShrinkRight, setGlyphGroupLeft } from '../../model/glyph';
+import type { DataStreamTreeNode } from '../../../view-model/data-stream-tree-node';
+import type { DocumentViewModel } from '../../../view-model/document-view-model';
+import { HorizontalAlign } from '@univerjs/core';
 import { hasCJK, hasCJKText, isCjkLeftAlignedPunctuation, isCjkRightAlignedPunctuation } from '../../../../../basics/tools';
 import { BreakPointType } from '../../line-breaker/break';
-import type { DocumentViewModel } from '../../../view-model/document-view-model';
-import type { DataStreamTreeNode } from '../../../view-model/data-stream-tree-node';
-import type { ISectionBreakConfig } from '../../../../../basics';
-import { isLetter } from '../../line-breaker/enhancers/hyphen-enhancer';
+import { isLetter } from '../../line-breaker/enhancers/utils';
+import { createHyphenDashGlyph, glyphShrinkLeft, glyphShrinkRight, setGlyphGroupLeft } from '../../model/glyph';
+import { getFontConfigFromLastGlyph, getGlyphGroupWidth, lineIterator } from '../../tools';
 
 // How much a character should hang into the end margin.
 // For more discussion, see:
@@ -186,6 +186,9 @@ function horizontalAlignHandler(line: IDocumentSkeletonLine, horizontalAlign: Ho
         } else if (horizontalAlign === HorizontalAlign.RIGHT) {
             divide.paddingLeft = width - glyphGroupWidth;
         }
+
+        // To fix https://github.com/dream-num/univer-pro/issues/2930
+        divide.paddingLeft = Math.max(divide.paddingLeft, 0);
     }
 }
 
@@ -280,6 +283,7 @@ export function lineAdjustment(
         if (line.paragraphIndex !== paragraph.startIndex) {
             return;
         }
+
         const { paragraphStyle = {} } = paragraph;
         const { horizontalAlign = HorizontalAlign.UNSPECIFIED } = paragraphStyle;
         // If the last glyph is a CJK punctuation, we want to shrink it.

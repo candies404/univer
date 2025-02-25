@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { LifecycleService, LifecycleStages } from '@univerjs/core';
 import type { Injector } from '@univerjs/core';
+import type { FUniver } from '../everything';
+import { LifecycleService, LifecycleStages } from '@univerjs/core';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { FUniver } from '../facade';
 import { createFacadeTestBed } from './create-test-bed';
 
 describe('Test FUniver', () => {

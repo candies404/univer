@@ -1,5 +1,5 @@
 /**
- * Copyright 2023-present DreamNum Inc.
+ * Copyright 2023-present DreamNum Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,14 @@
  */
 
 import type { Workbook } from '@univerjs/core';
-import { Disposable, Inject, LifecycleStages, OnLifecycle } from '@univerjs/core';
-import { ComponentManager } from '@univerjs/ui';
 import type { IRenderContext, IRenderModule } from '@univerjs/engine-render';
-import { CellAlert } from '../views/cell-alert/CellAlertPopup';
+import { Disposable, Inject } from '@univerjs/core';
+import { ComponentManager } from '@univerjs/ui';
 import { CELL_ALERT_KEY } from '../views/cell-alert';
+import { CellAlert } from '../views/cell-alert/CellAlertPopup';
 
-@OnLifecycle(LifecycleStages.Starting, CellAlertRenderController)
+// FIXME@weird94: this should not be render module
+
 export class CellAlertRenderController extends Disposable implements IRenderModule {
     constructor(
         private readonly _context: IRenderContext<Workbook>,
